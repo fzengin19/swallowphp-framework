@@ -7,7 +7,7 @@ use PDO;
 use SwallowPHP\Framework\Env;
 use SwallowPHP\Framework\Exceptions\EnvPropertyValueException;
 
-if (env('CACHE_DRIVER') == 'FILE') {
+if (env('CACHE_DRIVER','FILE') == 'FILE') {
 
     class Cache
     {
@@ -77,7 +77,7 @@ if (env('CACHE_DRIVER') == 'FILE') {
             return $expiration !== null && time() >= $expiration;
         }
     }
-} else if (env('CACHE_DRIVER') == 'SQLITE') {
+} else if (env('CACHE_DRIVER', 'FILE') == 'SQLITE') {
 
     class Cache
     {

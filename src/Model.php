@@ -1,8 +1,8 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
-use Framework\Database;
+use SwallowPHP\Framework\Database;
 use DateTime;
 
 class Model

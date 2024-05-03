@@ -1,10 +1,10 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
-use Framework\Route;
-use Framework\Exceptions\MethodNotAllowedException;
-use Framework\Exceptions\RouteNotFoundException;
+use SwallowPHP\Framework\Route;
+use SwallowPHP\Framework\Exceptions\MethodNotAllowedException;
+use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
 
 class Router
 {

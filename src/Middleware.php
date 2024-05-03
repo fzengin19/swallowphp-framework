@@ -1,7 +1,7 @@
 <?php 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
-use Framework\Request;
+use SwallowPHP\Framework\Request;
 use Closure;
 
 abstract class Middleware

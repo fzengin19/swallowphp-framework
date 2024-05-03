@@ -1,11 +1,11 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
 use Exception;
 use PDO;
-use Framework\Env;
-use Framework\Exceptions\EnvPropertyValueException;
+use SwallowPHP\Framework\Env;
+use SwallowPHP\Framework\Exceptions\EnvPropertyValueException;
 
 if (env('CACHE_DRIVER') == 'FILE') {
 

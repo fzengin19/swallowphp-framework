@@ -1,13 +1,13 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
 
-use Framework\Database;
-use Framework\Env;
-use Framework\ExceptionHandler;
-use Framework\Request;
-use Framework\Router;
+use SwallowPHP\Framework\Database;
+use SwallowPHP\Framework\Env;
+use SwallowPHP\Framework\ExceptionHandler;
+use SwallowPHP\Framework\Request;
+use SwallowPHP\Framework\Router;
 
 date_default_timezone_set('Europe/Istanbul');
 setlocale(LC_TIME, 'turkish');

@@ -1,10 +1,10 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
-use Framework\Exceptions\RateLimitExceededException;
-use Framework\Cache;
-use Framework\Route;
+use SwallowPHP\Framework\Exceptions\RateLimitExceededException;
+use SwallowPHP\Framework\Cache;
+use SwallowPHP\Framework\Route;
 
 class RateLimiter
 {

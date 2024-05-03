@@ -1,11 +1,11 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
 use Exception;
-use Framework\Exceptions\MethodNotFoundException;
-use Framework\Exceptions\RouteNotFoundException;
-use Framework\Middleware;
+use SwallowPHP\Framework\Exceptions\MethodNotFoundException;
+use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
+use SwallowPHP\Framework\Middleware;
 use ReflectionMethod;
 
 class Route

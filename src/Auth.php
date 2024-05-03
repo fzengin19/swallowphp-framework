@@ -1,8 +1,8 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
-use Framework\Model;
+use SwallowPHP\Framework\Model;
 
 class Auth
 {

@@ -1,12 +1,12 @@
 <?php
 
 
-use Framework\Database;
-use Framework\Env;
-use Framework\Exceptions\ViewNotFoundException;
-use Framework\Model;
-use Framework\Request;
-use Framework\Router;
+use SwallowPHP\Framework\Database;
+use SwallowPHP\Framework\Env;
+use SwallowPHP\Framework\Exceptions\ViewNotFoundException;
+use SwallowPHP\Framework\Model;
+use SwallowPHP\Framework\Request;
+use SwallowPHP\Framework\Router;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
 global $settings;
@@ -16,7 +16,7 @@ global $settings;
 /**
  * Retrieves the settings from the database if not already loaded and returns them.
  *
- * @return FrameworkModel The settings retrieved from the database.
+ * @return SwallowPHP\FrameworkModel The settings retrieved from the database.
  */
 function settings():Model
 {    global $settings;

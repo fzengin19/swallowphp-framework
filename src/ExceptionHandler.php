@@ -1,14 +1,14 @@
 <?php
 
-namespace Framework;
+namespace SwallowPHP\Framework;
 
-use Framework\Exceptions\AuthorizationException;
-use Framework\Exceptions\EnvPropertyValueException;
-use Framework\Exceptions\MethodNotAllowedException;
-use Framework\Exceptions\MethodNotFoundException;
-use Framework\Exceptions\RateLimitExceededException;
-use Framework\Exceptions\RouteNotFoundException;
-use Framework\Exceptions\ViewNotFoundException;
+use SwallowPHP\Framework\Exceptions\AuthorizationException;
+use SwallowPHP\Framework\Exceptions\EnvPropertyValueException;
+use SwallowPHP\Framework\Exceptions\MethodNotAllowedException;
+use SwallowPHP\Framework\Exceptions\MethodNotFoundException;
+use SwallowPHP\Framework\Exceptions\RateLimitExceededException;
+use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
+use SwallowPHP\Framework\Exceptions\ViewNotFoundException;
 use Throwable;
 
 class ExceptionHandler

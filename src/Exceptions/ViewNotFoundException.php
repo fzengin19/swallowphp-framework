@@ -1,5 +1,5 @@
 <?php
-namespace Framework\Exceptions;
+namespace SwallowPHP\Framework\Exceptions;
 
 use Exception;
 

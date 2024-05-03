@@ -23,16 +23,19 @@ class Env
      *
      * @return string JSON representation of environment variables.
      */
-    public static function getAsJson()
-    {
+    public static function getAsJson($environmentFile = null) {
+        if ($environmentFile === null) {
+            $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/../.env';
+        }
         $envArray = [];
 
-        if (file_exists( '../.env')) {
-            $lines = file(  '../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (file_exists( $environmentFile)) {
+            $lines = file(  $environmentFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             foreach ($lines as $line) {
                 list($name, $value) = explode('=', $line, 2);
                 $value = trim($value, "\"");
                 $envArray[$name] = $value;
+       
             }
         }
 
@@ -40,8 +43,10 @@ class Env
     }
 
 
-    public static function load($environmentFile = __DIR__. '/../.env')
-    {
+    public static function load($environmentFile = null) {
+        if ($environmentFile === null) {
+            $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/../.env';
+        }
        
         if (file_exists( $environmentFile)) {
             $lines = file(  $environmentFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);

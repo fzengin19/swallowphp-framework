@@ -18,6 +18,12 @@ class Database
      * @var \mysqli
      */
     protected mysqli $connection;
+    /**
+     * Flag to indicate whether the connection to the database was successful.
+     *
+     * @var bool
+     */
+    protected bool $connectedSuccessfully;
 
     /**
      * The name of the table.
@@ -67,11 +73,12 @@ class Database
      */
     protected $offset = null;
 
-    /**
-     * Database constructor
-     */
-    public function __construct()
+    public function initialize()
     {
+        if ($this->connection && $this->connectedSuccessfully) {
+            return;
+        }
+
         $host = env('DB_HOST', '127.0.0.1');
         $port = env('DB_PORT', '3306');
         $database = env('DB_DATABASE', 'swallowphp');
@@ -85,6 +92,8 @@ class Database
             die('Could not connect to the database: ' . $this->connection->connect_error);
         }
         $this->connection->set_charset($charset);
+
+        $this->connectedSuccessfully = true;
     }
 
     /**
@@ -185,6 +194,7 @@ class Database
      */
     public function get(): array
     {
+        $this->initialize();
         $sql = "SELECT $this->select FROM $this->table";
         $whereConditions = [];
         $bindValues = [];
@@ -247,6 +257,7 @@ class Database
      */
     public function cursorPaginate(int $perPage): array
     {
+        $this->initialize();
         $cursorColumn = 'id';
 
         $currentCursor = isset($_GET['cursor']) ? $_GET['cursor'] : null;
@@ -334,6 +345,7 @@ class Database
      */
     public function insert(array $data): int
     {
+        $this->initialize();
         $columns = implode(', ', array_keys($data));
         $values = implode(', ', array_fill(0, count($data), '?'));
 
@@ -366,6 +378,7 @@ class Database
      */
     public function update(array $data): int
     {
+        $this->initialize();
         $sets = [];
         $params = [];
         foreach ($data as $column => $value) {
@@ -406,6 +419,7 @@ class Database
      */
     public function delete(): int
     {
+        $this->initialize();
         $sql = "DELETE FROM $this->table";
 
         if (!empty($this->where)) {
@@ -444,6 +458,7 @@ class Database
      */
     public function count(): int
     {
+        $this->initialize();
         $sql = "SELECT COUNT(*) AS count FROM $this->table";
         $whereConditions = [];
         $bindValues = [];
@@ -474,77 +489,78 @@ class Database
     }
     public function paginate(int $perPage, int $page = 1): array
     {
+        $this->initialize();
         // Get the full URL
         $url = request()->fullUrl();
-    
+
         // Extract the base URL
         $baseUrl = strtok($url, '?');
-    
+
         // Parse existing GET parameters
         $existingParams = request()->query();
-    
+
         // Remove the 'page' parameter if it exists
         unset($existingParams['page']);
-    
+
         // Append remaining GET parameters to the base URL
         $baseUrlWithParams = $baseUrl . (empty($existingParams) ? '' : '?' . http_build_query($existingParams));
-    
+
         // Calculate the offset
         $offset = ($page - 1) * $perPage;
-    
+
         // Get the total count
         $total = $this->count();
-    
+
         // Fetch the data
         $data = $this->limit($perPage)->offset($offset)->get();
-    
+
         // Calculate total pages
         $totalPages = (int)ceil($total / $perPage);
-    
+
         // Calculate the range of pages to be shown
         $start = max(1, $page - 2);
         $end = min($totalPages, $page + 2);
-    
+
         // Construct pagination links
         $pagination = [];
-    
+
         // Add the link to the first page
         if ($page > 1) {
             $pagination[] = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=1';
         }
-    
+
         // Add "..." if necessary before the first link
         if ($page > 3) {
             $pagination[] = '...';
         }
-    
+
         // Add the links to the pages around the current page
         for ($i = $start; $i <= $end; $i++) {
             $pagination[] = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . $i;
         }
-    
+
         // Add "..." if necessary after the last link
         if ($page < $totalPages - 2) {
             $pagination[] = '...';
         }
-    
+
         // Add the link to the last page
         if ($page < $totalPages) {
             $pagination[] = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . $totalPages;
         }
-    
+
         // Generate prev_page_url and next_page_url
         $prevPageUrl = ($page > 1) ? $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . ($page - 1) : null;
         $nextPageUrl = ($page < $totalPages) ? $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . ($page + 1) : null;
-    
+
         // Check if there are next and previous pages
         $hasNextPage = $page < $totalPages;
         $hasPrevPage = $page > 1;
-        $pagination = removeDuplicates($pagination,['...']);
-    
+        $pagination = removeDuplicates($pagination, ['...']);
+
         // Get the current page URL
         $currentPageUrl = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . $page;
-    
+
         return [
             'data' => $data,
             'total' => $total,
@@ -559,7 +575,7 @@ class Database
             'current_page_url' => $currentPageUrl,
         ];
     }
-    
+
 
 
 

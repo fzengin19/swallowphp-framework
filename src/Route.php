@@ -150,11 +150,11 @@ class Route
     } elseif (is_array($this->action) && count($this->action) === 2 && is_string($this->action[0]) && is_string($this->action[1])) {
       [$controllerName, $method] = $this->action;
     } else {
-      throw new Exception("Invalid action definition", 500);
+      throw new Exception('Invalid action definition', 500);
     }
 
     if (!class_exists($controllerName)) {
-      $controllerName = "\\App\\Controllers\\" . $controllerName;
+      $controllerName = '\\App\\Controllers\\' . $controllerName;
       if (!class_exists($controllerName))
         throw new Exception("Controller '$controllerName' not found", 404);
     }

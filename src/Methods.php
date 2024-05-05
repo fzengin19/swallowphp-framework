@@ -328,13 +328,13 @@ function formatDateForHumans($datetimeString) {
     if ($diff < 60) {
         return "$diff saniye önce";
     } elseif ($diff < 3600) {
-        return floor($diff / 60) . " dakika önce";
+        return floor($diff / 60) . ' dakika önce';
     } elseif ($diff < 86400) {
-        return floor($diff / 3600) . " saat önce";
+        return floor($diff / 3600) . ' saat önce';
     } elseif ($diff < 604800) {
-        return floor($diff / 86400) . " gün önce";
+        return floor($diff / 86400) . ' gün önce';
     } else {
-        return strftime("%d %B %Y", $then);
+        return strftime('%d %B %Y', $then);
     }
 }
 

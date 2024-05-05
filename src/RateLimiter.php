@@ -8,7 +8,7 @@ use SwallowPHP\Framework\Route;
 
 class RateLimiter
 {
-    private static $cacheKeyPrefix = "rate_limit_";
+    private static $cacheKeyPrefix = 'rate_limit_';
 
     /**
      * Executes a request and checks if the rate limit has been exceeded.
@@ -58,7 +58,7 @@ class RateLimiter
             header("X-RateLimit-Limit: $rateLimit");
             header("X-RateLimit-Remaining: $remainingRequests");
             if ($break) {
-                throw new RateLimitExceededException("Too many requests. Please try again later.");
+                throw new RateLimitExceededException('Too many requests. Please try again later.');
             }
         } else {
             // Bu IP için herhangi bir kayıt yoksa, başlangıç verilerini oluştur
@@ -74,7 +74,7 @@ class RateLimiter
             header("X-RateLimit-Limit: $rateLimit");
             header("X-RateLimit-Remaining: $remainingRequests");
             if ($remainingRequests < 0) {
-                throw new RateLimitExceededException("Too many requests. Please try again later.");
+                throw new RateLimitExceededException('Too many requests. Please try again later.');
             }
         }
     }

@@ -84,7 +84,7 @@ class App
         try {
             Env::load();
             if (env('SSL_REDIRECT') == 'TRUE' && empty($_SERVER['HTTPS'])) {
-                header("Location: https://" . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
+                header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
                 exit;
             }
             if (env('ERROR_REPORTING') != 'true') {
@@ -98,12 +98,12 @@ class App
                 session_start();
             }
 
-            if (Env::get("GZIP_COMPRESSION") === "true" && substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')) {
-                ini_set("zlib.output_compression", 1);
-                ob_start("ob_gzhandler");
-                header("Content-Encoding: gzip");
+            if (Env::get('GZIP_COMPRESSION') === 'true' && substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')) {
+                ini_set('zlib.output_compression', 1);
+                ob_start('ob_gzhandler');
+                header('Content-Encoding: gzip');
             } else {
-                ini_set("zlib.output_compression", 0);
+                ini_set('zlib.output_compression', 0);
                 ob_start();
             }
 

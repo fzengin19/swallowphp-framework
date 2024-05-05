@@ -48,7 +48,7 @@ class ExceptionHandler
             $responseBody = ['message' => $exception->getMessage()];
         }
 
-        if (Env::get('APP_DEBUG', "FALSE") === "TRUE") {
+        if (Env::get('APP_DEBUG', 'FALSE') === 'TRUE') {
             $responseBody['message'] = $exception->getMessage();
             $responseBody['trace'] = $exception->getTrace();
         } else {

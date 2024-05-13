@@ -210,14 +210,14 @@ class Database
             $whereConditions[] = implode(' AND ', $this->whereRaw);
         }
         if (!empty($whereConditions)) {
-            $sql .= " WHERE " . implode(' AND ', $whereConditions);
+            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
         }
         if (!empty($this->orderBy)) {
             $orderByColumns = [];
             foreach ($this->orderBy as $order) {
                 $orderByColumns[] = "{$order[0]} {$order[1]}";
             }
-            $sql .= " ORDER BY " . implode(', ', $orderByColumns);
+            $sql .= ' ORDER BY ' . implode(', ', $orderByColumns);
         }
         if ($this->limit !== null) {
             $sql .= " LIMIT $this->limit";
@@ -398,7 +398,7 @@ class Database
                 $whereConditions[] = "{$condition[0]} {$condition[1]} ?";
                 $params[] = $condition[2];
             }
-            $sql .= " WHERE " . implode(' AND ', $whereConditions);
+            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
         }
         $statement = $this->connection->prepare($sql);
 
@@ -427,7 +427,7 @@ class Database
             foreach ($this->where as $condition) {
                 $whereConditions[] = "{$condition[0]} {$condition[1]} ?";
             }
-            $sql .= " WHERE " . implode(' AND ', $whereConditions);
+            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
         }
 
         $statement = $this->connection->prepare($sql);
@@ -472,7 +472,7 @@ class Database
             $whereConditions[] = implode(' AND ', $this->whereRaw);
         }
         if (!empty($whereConditions)) {
-            $sql .= " WHERE " . implode(' AND ', $whereConditions);
+            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
         }
 
         $statement = $this->connection->prepare($sql);

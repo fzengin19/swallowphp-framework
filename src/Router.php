@@ -29,7 +29,7 @@ class Router
      */
     public static function get($uri, $action)
     {
-        $route = new Route("GET", $uri, $action);
+        $route = new Route('GET', $uri, $action);
         array_push(self::$routes, $route);
         return $route;
     }
@@ -43,7 +43,7 @@ class Router
      */
     public static function post($uri, $action)
     {
-        $route = new Route("POST", $uri, $action);
+        $route = new Route('POST', $uri, $action);
         array_push(self::$routes, $route);
         return $route;
     }
@@ -98,7 +98,7 @@ class Router
      */
     public static function delete($uri, $action)
     {
-        $route = new Route("DELETE", $uri, $action);
+        $route = new Route('DELETE', $uri, $action);
         array_push(self::$routes, $route);
         return $route;
     }
@@ -112,7 +112,7 @@ class Router
      */
     public static function put($uri, $action)
     {
-        $route = new Route("PUT", $uri, $action);
+        $route = new Route('PUT', $uri, $action);
         array_push(self::$routes, $route);
         return $route;
     }
@@ -125,7 +125,7 @@ class Router
      */
     public static function patch($uri, $action)
     {
-        $route = new Route("PATCH", $uri, $action);
+        $route = new Route('PATCH', $uri, $action);
         array_push(self::$routes, $route);
         return $route;
     }
@@ -166,7 +166,7 @@ class Router
     public static function dispatch(Request $request)
     {
         $requestUri = parse_url($request->getUri(), PHP_URL_PATH);
-        $requestUri = str_replace(env('APP_PATH'), '', $requestUri);
+        $requestUri = preg_replace('/^' . preg_quote(env('APP_PATH'), '/') . '/', '', $requestUri, 1);
         if ($requestUri != '/') {
             $requestUri = rtrim($requestUri, '/');
         }

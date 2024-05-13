@@ -166,7 +166,7 @@ class Router
     public static function dispatch(Request $request)
     {
         $requestUri = parse_url($request->getUri(), PHP_URL_PATH);
-        $requestUri = str_replace(env('APP_PATH'), '', $requestUri);
+        $requestUri = preg_replace('/^' . preg_quote(env('APP_PATH'), '/') . '/', '', $requestUri, 1);
         if ($requestUri != '/') {
             $requestUri = rtrim($requestUri, '/');
         }

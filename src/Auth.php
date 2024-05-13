@@ -20,7 +20,7 @@ class Auth
         if (strlen($password) < 3) {
             return false;
         }
-        $hashedPassword = password_hash($password, PASSWORD_ARGON2I);
+        $hashedPassword = password_hash($password, PASSWORD_ARGON2ID);
         $user = Model::table('users')->where('email', '=', $email)->first();
 
         if (null != $user->id) {

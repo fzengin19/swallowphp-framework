@@ -7,16 +7,19 @@ use PDO;
 use SwallowPHP\Framework\Env;
 use SwallowPHP\Framework\Exceptions\EnvPropertyValueException;
 
-if (env('CACHE_DRIVER','FILE') == 'FILE') {
+if (env('CACHE_DRIVER', 'FILE') == 'FILE') {
 
     class Cache
     {
+        private static $cacheFile;
         private static $cache = array();
 
         private static function loadCache()
         {
-            if (file_exists('../cache.json')) {
-                $json = file_get_contents('../cache.json');
+            if (!isset(self::$cacheFile))
+                self::$cacheFile = $_SERVER['DOCUMENT_ROOT'] . env('CACHE_FILE', 'cache.json');
+            if (file_exists(self::$cacheFile)) {
+                $json = file_get_contents(self::$cacheFile);
                 $data = json_decode($json, true);
                 if (is_array($data));
                 self::$cache = $data;
@@ -26,7 +29,7 @@ if (env('CACHE_DRIVER','FILE') == 'FILE') {
         private static function saveCache()
         {
             $json = json_encode(self::$cache);
-            file_put_contents('../cache.json', $json);
+            file_put_contents(self::$cacheFile, $json);
         }
 
         public static function has($key)

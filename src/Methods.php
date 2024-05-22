@@ -9,6 +9,8 @@ use SwallowPHP\Framework\Request;
 use SwallowPHP\Framework\Router;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
+use SwallowPHP\Framework\App;
+
 global $settings;
 
 
@@ -63,7 +65,8 @@ function method($method)
 function view($view, $data = [])
 {
     $viewPath = str_replace('.', '/', $view);
-    $viewFile =  '../views/' . $viewPath . '.php';
+    $viewFile =  App::getViewDirectory(). $viewPath . '.php';
+
     if (!file_exists($viewFile)) {
         throw new ViewNotFoundException('view file does not exist  (' . $viewFile . ') ');
     }

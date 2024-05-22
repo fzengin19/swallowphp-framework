@@ -16,16 +16,19 @@ class App
 {
     private static $instance;
     private static Router $router;
-
-
+    private static ?string $viewDirectory ;
+    
     /**
      * Initializes a new instance of the class and creates a new Router object.
      */
     private function __construct()
     {
+        self::$viewDirectory = $_SERVER['DOCUMENT_ROOT'].env('VIEW_DIRECTORY', '/views/');
         self::$router = new Router();
     }
-
+    public static function getViewDirectory(){
+        return self::$viewDirectory;
+    }
     /**
      * Returns a single instance of this class.
      *

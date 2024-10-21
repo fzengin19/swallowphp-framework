@@ -103,41 +103,6 @@ if (!function_exists('slug')) {
     }
 }
 
-if (!function_exists('addFlashMessage')) {
-    function addFlashMessage($message, $status)
-    {
-        $_SESSION['_flash'] = [
-            'message' => $message,
-            'status' => $status
-        ];
-    }
-}
-
-if (!function_exists('displayFlashMessage')) {
-    function displayFlashMessage()
-    {
-        if (isset($_SESSION['_flash'])) {
-            $flashMessage = $_SESSION['_flash'];
-            unset($_SESSION['_flash']);
-
-            $messageClass = ($flashMessage['status'] === 'error') ? 'bg-red-100 border border-red-400 text-red-700' : 'bg-green-100 border border-green-400 text-green-700';
-            $messageTitle = ($flashMessage['status'] === 'error') ? 'Hata!' : 'Başarılı!';
-            $icon = ($flashMessage['status'] === 'error') ?
-                '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-6 h-6 text-red-600"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>' :
-                '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="w-6 h-6 text-green-600"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
-
-            echo "<div class=\"$messageClass rounded p-4 mb-4\" role=\"alert\">
-                <div class=\"flex items-center\">
-                    <div class=\"mr-2\">$icon</div>
-                    <div>
-                        <strong class=\"font-bold\">$messageTitle</strong>
-                        <span class=\"block sm:inline\">{$flashMessage['message']}</span>
-                    </div>
-                </div>
-            </div>";
-        }
-    }
-}
 
 if (!function_exists('redirectToRoute')) {
     function redirectToRoute($urlName, $params = [])
@@ -366,16 +331,7 @@ if (!function_exists('webpImage')) {
     }
 }
 
-if (!function_exists('__include')) {
-    function __include($view)
-    {
-        $viewFile = '../views/' . str_replace('.', '/', $view) . '.php';
-        if (!file_exists($viewFile)) {
-            throw new ViewNotFoundException('view file does not exist (' . $viewFile . ')');
-        }
-        require $viewFile;
-    }
-}
+
 
 if (!function_exists('getFile')) {
     function getFile($name)

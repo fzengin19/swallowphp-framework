@@ -7,21 +7,101 @@ use PDOException;
 use InvalidArgumentException;
 use Exception;
 
+/**
+ * Database class for handling database operations using PDO.
+ */
 class Database
 {
+    /**
+     * PDO connection instance.
+     *
+     * @var PDO|null
+     */
     protected ?PDO $connection = null;
+
+    /**
+     * Flag to indicate if the connection was successful.
+     *
+     * @var bool
+     */
     protected bool $connectedSuccessfully = false;
+
+    /**
+     * The name of the table to perform operations on.
+     *
+     * @var string
+     */
     public string $table = '';
+
+    /**
+     * The columns to select in the query.
+     *
+     * @var string
+     */
     protected string $select = '*';
+
+    /**
+     * Array of where conditions.
+     *
+     * @var array
+     */
     protected array $where = [];
+
+    /**
+     * Array of raw where conditions.
+     *
+     * @var array
+     */
     protected array $whereRaw = [];
+
+    /**
+     * Array of where in conditions.
+     *
+     * @var array
+     */
     protected array $whereIn = [];
+
+    /**
+     * Array of where between conditions.
+     *
+     * @var array
+     */
     protected array $whereBetween = [];
+
+    /**
+     * Array of order by clauses.
+     *
+     * @var array
+     */
     protected array $orderBy = [];
+
+    /**
+     * The limit for the query.
+     *
+     * @var int|null
+     */
     protected ?int $limit = null;
+
+    /**
+     * The offset for the query.
+     *
+     * @var int|null
+     */
     protected ?int $offset = null;
+
+    /**
+     * Array of or where conditions.
+     *
+     * @var array
+     */
     protected array $orWhere = [];
 
+    /**
+     * Initialize the database connection.
+     *
+     * @return void
+     * @throws Exception If the connection fails.
+     */
     public function initialize(): void
     {
         if ($this->connection && $this->connectedSuccessfully) {
@@ -49,12 +129,23 @@ class Database
         }
     }
 
+    /**
+     * Set the table for the query.
+     *
+     * @param string $table The name of the table.
+     * @return self
+     */
     public function table(string $table): self
     {
         $this->table = $table;
         return $this;
     }
 
+    /**
+     * Reset all query parameters.
+     *
+     * @return void
+     */
     public function reset(): void
     {
         $this->table = '';
@@ -69,60 +160,127 @@ class Database
         $this->orWhere = [];
     }
 
+    /**
+     * Set the columns to select.
+     *
+     * @param array $columns The columns to select.
+     * @return self
+     */
     public function select(array $columns = ['*']): self
     {
         $this->select = implode(', ', $columns);
         return $this;
     }
 
+    /**
+     * Add a where condition to the query.
+     *
+     * @param string $column The column name.
+     * @param string $operator The comparison operator.
+     * @param mixed $value The value to compare against.
+     * @return self
+     */
     public function where(string $column, string $operator, $value): self
     {
         $this->where[] = [$column, $operator, $value];
         return $this;
     }
 
+    /**
+     * Add an or where condition to the query.
+     *
+     * @param string $column The column name.
+     * @param string $operator The comparison operator.
+     * @param mixed $value The value to compare against.
+     * @return self
+     */
     public function orWhere(string $column, string $operator, $value): self
     {
         $this->orWhere[] = [$column, $operator, $value];
         return $this;
     }
 
+    /**
+     * Add a where in condition to the query.
+     *
+     * @param string $column The column name.
+     * @param array $values The values to check against.
+     * @return self
+     */
     public function whereIn(string $column, array $values): self
     {
         $this->whereIn[] = [$column, $values];
         return $this;
     }
 
+    /**
+     * Add a where between condition to the query.
+     *
+     * @param string $column The column name.
+     * @param mixed $start The start value.
+     * @param mixed $end The end value.
+     * @return self
+     */
     public function whereBetween(string $column, $start, $end): self
     {
         $this->whereBetween[] = [$column, $start, $end];
         return $this;
     }
 
+    /**
+     * Add a raw where condition to the query.
+     *
+     * @param string $rawCondition The raw SQL condition.
+     * @return self
+     */
     public function whereRaw(string $rawCondition): self
     {
         $this->whereRaw[] = $rawCondition;
         return $this;
     }
 
+    /**
+     * Add an order by clause to the query.
+     *
+     * @param string $column The column to order by.
+     * @param string $direction The direction to order (ASC or DESC).
+     * @return self
+     */
     public function orderBy(string $column, string $direction = 'ASC'): self
     {
         $this->orderBy[] = [$column, $direction];
         return $this;
     }
 
+    /**
+     * Set the limit for the query.
+     *
+     * @param int $limit The limit value.
+     * @return self
+     */
     public function limit(int $limit): self
     {
         $this->limit = $limit;
         return $this;
     }
 
+    /**
+     * Set the offset for the query.
+     *
+     * @param int $offset The offset value.
+     * @return self
+     */
     public function offset(int $offset): self
     {
         $this->offset = $offset;
         return $this;
     }
 
+    /**
+     * Build the where clause for the query.
+     *
+     * @return string The complete where clause.
+     */
     protected function buildWhereClause(): string
     {
         $conditions = [];
@@ -151,11 +309,25 @@ class Database
         return !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
     }
 
+    /**
+     * Build a single condition for the where clause.
+     *
+     * @param string $column The column name.
+     * @param string $operator The comparison operator.
+     * @param mixed $value The value to compare against.
+     * @param string $conjunction The conjunction (AND or OR).
+     * @return string The built condition.
+     */
     protected function buildCondition(string $column, string $operator, $value, string $conjunction): string
     {
         return "$conjunction $column $operator ?";
     }
 
+    /**
+     * Execute the select query and get the results.
+     *
+     * @return array The query results.
+     */
     public function get(): array
     {
         $this->initialize();
@@ -188,6 +360,11 @@ class Database
         return $rows;
     }
 
+    /**
+     * Get the first result from the query.
+     *
+     * @return mixed|null The first result or null if no results.
+     */
     public function first()
     {
         $this->limit(1);
@@ -195,6 +372,12 @@ class Database
         return $result[0] ?? null;
     }
 
+    /**
+     * Insert a new record into the database.
+     *
+     * @param array $data The data to insert.
+     * @return int The ID of the inserted record.
+     */
     public function insert(array $data): int
     {
         $this->initialize();
@@ -217,6 +400,12 @@ class Database
         return $insertId;
     }
 
+    /**
+     * Update records in the database.
+     *
+     * @param array $data The data to update.
+     * @return int The number of affected rows.
+     */
     public function update(array $data): int
     {
         $this->initialize();
@@ -239,6 +428,11 @@ class Database
         return $affectedRows;
     }
 
+    /**
+     * Delete records from the database.
+     *
+     * @return int The number of affected rows.
+     */
     public function delete(): int
     {
         $this->initialize();
@@ -258,6 +452,11 @@ class Database
         return $affectedRows;
     }
 
+    /**
+     * Count the number of records matching the query conditions.
+     *
+     * @return int The count of matching records.
+     */
     public function count(): int
     {
         $this->initialize();
@@ -277,6 +476,13 @@ class Database
         return $count;
     }
 
+    /**
+     * Paginate the query results.
+     *
+     * @param int $perPage The number of items per page.
+     * @param int $page The current page number.
+     * @return array The paginated results.
+     */
     public function paginate(int $perPage, int $page = 1): array
     {
         $this->initialize();
@@ -307,28 +513,12 @@ class Database
         ];
     }
 
-    protected function generatePaginationLinks(int $currentPage, int $totalPages, string $baseUrl): array
-    {
-        $links = [];
-        $range = 2;
-
-        for ($i = max(1, $currentPage - $range); $i <= min($totalPages, $currentPage + $range); $i++) {
-            $links[] = $baseUrl . '&page=' . $i;
-        }
-
-        if ($currentPage - $range > 1) {
-            array_unshift($links, '...');
-            array_unshift($links, $baseUrl . '&page=1');
-        }
-
-        if ($currentPage + $range < $totalPages) {
-            $links[] = '...';
-            $links[] = $baseUrl . '&page=' . $totalPages;
-        }
-
-        return $links;
-    }
-
+    /**
+     * Paginate the query results using a cursor.
+     *
+     * @param int $perPage The number of items per page.
+     * @return array The cursor paginated results.
+     */
     public function cursorPaginate(int $perPage): array
     {
         $this->initialize();
@@ -393,6 +583,11 @@ class Database
         ];
     }
 
+    /**
+     * Get the bind values for the query.
+     *
+     * @return array The bind values.
+     */
     protected function getBindValues(): array
     {
         $bindValues = [];
@@ -418,6 +613,12 @@ class Database
         return $bindValues;
     }
 
+    /**
+     * Get the PDO parameter type for a given value.
+     *
+     * @param mixed $value The value to check.
+     * @return int The PDO parameter type.
+     */
     protected function getPDOParamType($value): int
     {
         if (is_int($value)) {
@@ -431,9 +632,36 @@ class Database
         }
     }
 
+    /**
+     * Close the database connection.
+     *
+     * @return void
+     */
     public function close(): void
     {
         $this->connection = null;
         $this->connectedSuccessfully = false;
+    }
+
+    protected function generatePaginationLinks(int $currentPage, int $totalPages, string $baseUrl): array
+    {
+        $links = [];
+        $range = 2;
+
+        for ($i = max(1, $currentPage - $range); $i <= min($totalPages, $currentPage + $range); $i++) {
+            $links[] = $baseUrl . '&page=' . $i;
+        }
+
+        if ($currentPage - $range > 1) {
+            array_unshift($links, '...');
+            array_unshift($links, $baseUrl . '&page=1');
+        }
+
+        if ($currentPage + $range < $totalPages) {
+            $links[] = '...';
+            $links[] = $baseUrl . '&page=' . $totalPages;
+        }
+
+        return $links;
     }
 }

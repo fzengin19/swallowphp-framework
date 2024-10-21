@@ -73,6 +73,13 @@ class Database
      */
     protected $offset = null;
 
+    /**
+     * The OR where clauses for the query.
+     *
+     * @var array
+     */
+    protected $orWhere = [];
+
     public function initialize()
     {
         if ($this->connection && $this->connectedSuccessfully) {
@@ -186,32 +193,67 @@ class Database
         return $this;
     }
 
+    /**
+     * Add an OR where clause to the query.
+     *
+     * @param string $column The column name.
+     * @param string $operator The comparison operator.
+     * @param mixed $value The value to compare.
+     * @return Database
+     */
+    public function orWhere(string $column, string $operator, $value): Database
+    {
+        $this->orWhere[] = [$column, $operator, $value];
+        return $this;
+    }
+
+    /**
+     * Build the WHERE clause for the query.
+     *
+     * @return string
+     */
+    protected function buildWhereClause(): string
+    {
+        $whereConditions = $this->buildConditions($this->where, 'AND');
+        $orWhereConditions = $this->buildConditions($this->orWhere, 'OR');
+
+        $conditions = array_merge($whereConditions, $orWhereConditions);
+
+        if (!empty($this->whereRaw)) {
+            $conditions[] = '(' . implode(' AND ', $this->whereRaw) . ')';
+        }
+
+        return !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+    }
+
+    /**
+     * Build conditions for WHERE or OR WHERE clauses.
+     *
+     * @param array $conditions
+     * @param string $conjunction
+     * @return array
+     */
+    protected function buildConditions(array $conditions, string $conjunction): array
+    {
+        $result = [];
+        foreach ($conditions as $condition) {
+            $result[] = "({$condition[0]} {$condition[1]} ?)";
+        }
+        return !empty($result) ? ['(' . implode(" $conjunction ", $result) . ')'] : [];
+    }
 
     /**
      * Execute the select query and return the result set.
      *
      * @return array The result set as an associative array.
+     * @throws \Exception If there's an error executing the query.
      */
     public function get(): array
     {
         $this->initialize();
-        $sql = "SELECT $this->select FROM $this->table";
-        $whereConditions = [];
-        $bindValues = [];
-        if ($this->limit ==  14) {
-        }
-        if (!empty($this->where)) {
-            foreach ($this->where as $condition) {
-                $whereConditions[] = "{$condition[0]} {$condition[1]} ?";
-                $bindValues[] = $condition[2];
-            }
-        }
-        if (!empty($this->whereRaw)) {
-            $whereConditions[] = implode(' AND ', $this->whereRaw);
-        }
-        if (!empty($whereConditions)) {
-            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
-        }
+        $sql = "SELECT {$this->select} FROM {$this->table} ";
+        $sql .= $this->buildWhereClause();
+
         if (!empty($this->orderBy)) {
             $orderByColumns = [];
             foreach ($this->orderBy as $order) {
@@ -226,26 +268,32 @@ class Database
             }
         }
         $statement = $this->connection->prepare($sql);
-        if (!empty($this->where)) {
+        if ($statement === false) {
+            throw new \Exception("Query preparation failed: " . $this->connection->error);
+        }
+
+        $bindValues = array_merge(
+            array_column($this->where, 2),
+            array_column($this->orWhere, 2)
+        );
+
+        if (!empty($bindValues)) {
             $bindTypes = $this->getBindTypes($bindValues);
             array_unshift($bindValues, $bindTypes);
-            call_user_func_array([$statement, 'bind_param'], $this->refValues($bindValues));
+            if (!call_user_func_array([$statement, 'bind_param'], $this->refValues($bindValues))) {
+                throw new \Exception("Parameter binding failed: " . $statement->error);
+            }
         }
-        $statement->execute();
+
+        if (!$statement->execute()) {
+            throw new \Exception("Query execution failed: " . $statement->error);
+        }
 
         $result = $statement->get_result();
-
         $rows = $result->fetch_all(MYSQLI_ASSOC);
         $statement->close();
         $this->reset();
         return $rows;
-    }
-
-
-    public function whereRaw($query)
-    {
-        $this->whereRaw[] = $query;
-        return $this;
     }
 
     /**
@@ -626,5 +674,24 @@ class Database
             $refValues[$key] = &$array[$key];
         }
         return $refValues;
+    }
+
+    /**
+     * Close the database connection.
+     */
+    public function close(): void
+    {
+        if ($this->connection) {
+            $this->connection->close();
+            $this->connectedSuccessfully = false;
+        }
+    }
+
+    /**
+     * Destructor to ensure the connection is closed.
+     */
+    public function __destruct()
+    {
+        $this->close();
     }
 }

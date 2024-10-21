@@ -18,10 +18,11 @@ global $settings;
  *
  * @return SwallowPHP\FrameworkModel The settings retrieved from the database.
  */
-function settings():Model
-{    global $settings;
-    if($settings == null)
-    $settings = Model::table('settings')->first();
+function settings(): Model
+{
+    global $settings;
+    if ($settings == null)
+        $settings = Model::table('settings')->first();
     return $settings;
 }
 /**
@@ -36,7 +37,8 @@ function env($key, $default = null)
     return Env::get($key, $default);
 }
 
-function shortenText($text, $length) {
+function shortenText($text, $length)
+{
     // Check the length of the text
     if (mb_strlen($text) <= $length) {
         return $text; // If it doesn't exceed the length limit, return the text as it is
@@ -63,7 +65,7 @@ function method($method)
 function view($view, $data = [])
 {
     $viewPath = str_replace('.', '/', $view);
-    $viewFile =  App::getViewDirectory(). $viewPath . '.php';
+    $viewFile =  App::getViewDirectory() . $viewPath . '.php';
 
     if (!file_exists($viewFile)) {
         throw new ViewNotFoundException('view file does not exist  (' . $viewFile . ') ');
@@ -71,7 +73,7 @@ function view($view, $data = [])
     foreach ($data as $key => $value) {
         ${$key} = $value;
     }
-    
+
     ob_start(); // Çıktı tamponunu başlat
     require $viewFile;
     $html = ob_get_clean(); // Önceki çıktıyı temizle ve sakla
@@ -276,7 +278,7 @@ function _include_js($path, $version = false, $mode = 'default')
         throw new InvalidArgumentException('Invalid mode provided. Use "include", "default", or "async".');
     }
 
-    $jsFile = __DIR__. '/../public/' . $path;
+    $jsFile = __DIR__ . '/../public/' . $path;
     if (!file_exists($jsFile)) {
         throw new Exception('JavaScript file not found (' . $jsFile . ')');
     }
@@ -302,7 +304,8 @@ function _include_js($path, $version = false, $mode = 'default')
         echo '<script async src="' . Env::get('APP_URL') . '/' . $path . '"></script>';
     }
 }
-function removeDuplicates($array, $excludeValues) {
+function removeDuplicates($array, $excludeValues)
+{
     $result = [];
     $uniqueValues = [];
     foreach ($array as $value) {
@@ -316,12 +319,14 @@ function removeDuplicates($array, $excludeValues) {
 
 
 
-function request(){
+function request()
+{
     return Router::getRequest();
 }
 
 
-function formatDateForHumans($datetimeString) {
+function formatDateForHumans($datetimeString)
+{
     $now = time();
     $then = strtotime($datetimeString);
     $diff = $now - $then;
@@ -360,7 +365,7 @@ function _include_css($path, $version = false, $mode = 'default')
         throw new InvalidArgumentException('Invalid mode provided. Use "include", "default", or "lazyload".');
     }
 
-    $cssFile = __DIR__. '/../public/' . $path;
+    $cssFile = __DIR__ . '/../public/' . $path;
     if (!file_exists($cssFile)) {
         throw new Exception('Css file not found (' . $cssFile . ')');
     }

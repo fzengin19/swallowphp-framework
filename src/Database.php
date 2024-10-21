@@ -8,7 +8,7 @@ use Exception;
 
 class Database
 {
-    protected mysqli $connection;
+    protected ?mysqli $connection = null;
     protected bool $connectedSuccessfully = false;
     public string $table = '';
     protected string $select = '*';
@@ -34,14 +34,18 @@ class Database
         $password = env('DB_PASSWORD', '');
         $charset = env('DB_CHARSET', 'utf8mb4');
 
-        $this->connection = new mysqli($host, $username, $password, $database, $port);
+        try {
+            $this->connection = new mysqli($host, $username, $password, $database, $port);
 
-        if ($this->connection->connect_errno) {
-            throw new Exception('Veritabanına bağlanılamadı: ' . $this->connection->connect_error);
+            if ($this->connection->connect_errno) {
+                throw new Exception('Veritabanına bağlanılamadı: ' . $this->connection->connect_error);
+            }
+            $this->connection->set_charset($charset);
+
+            $this->connectedSuccessfully = true;
+        } catch (Exception $e) {
+            throw new Exception('Veritabanı bağlantısı başlatılamadı: ' . $e->getMessage());
         }
-        $this->connection->set_charset($charset);
-
-        $this->connectedSuccessfully = true;
     }
 
     public function table(string $table): self
@@ -441,6 +445,7 @@ class Database
     {
         if ($this->connection) {
             $this->connection->close();
+            $this->connection = null;
             $this->connectedSuccessfully = false;
         }
     }

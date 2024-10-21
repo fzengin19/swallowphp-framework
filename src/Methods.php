@@ -39,24 +39,6 @@ if (!function_exists('method')) {
     }
 }
 
-if (!function_exists('view')) {
-    function view($view, $data = [])
-    {
-        $viewPath = str_replace('.', '/', $view);
-        $viewFile = App::getViewDirectory() . $viewPath . '.php';
-
-        if (!file_exists($viewFile)) {
-            throw new ViewNotFoundException('view file does not exist (' . $viewFile . ')');
-        }
-
-        extract($data);
-
-        ob_start();
-        require $viewFile;
-        return ob_get_clean();
-    }
-}
-
 if (!function_exists('route')) {
     function route($name, $params = [])
     {

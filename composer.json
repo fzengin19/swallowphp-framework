@@ -1,6 +1,6 @@
 {
     "name": "swallowphp/framework",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "Swallow PHP framework",
     "type": "library",
     "keywords": ["SwallowPHP" ,"framework","SwallowPHP"],
@@ -17,7 +17,7 @@
             "email": "fatihzengin654@outlook.com"
         }
     ],
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
         "phpmailer/phpmailer": "^6.9.1"

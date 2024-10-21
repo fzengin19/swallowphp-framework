@@ -6,21 +6,50 @@ use SwallowPHP\Framework\Database;
 use DateTime;
 use InvalidArgumentException;
 
+/**
+ * Model class manages database operations and data manipulation.
+ */
 class Model
 {
+    /** @var int|null Model ID */
     protected static ?int $id = null;
+
+    /** @var Database Database connection */
     protected static Database $database;
+
+    /** @var string Database table name */
     protected static string $table = '';
+
+    /** @var array Model attributes */
     protected array $attributes = [];
+
+    /** @var array Original model attributes */
     protected array $original = [];
+
+    /** @var array Attribute casts */
     protected array $casts = [];
+
+    /** @var array Date fields */
     protected array $dates = ['created_at', 'updated_at'];
+
+    /** @var array Hidden attributes */
     protected array $hidden = [];
+
+    /** @var array Fillable attributes */
     protected array $fillable = [];
+
+    /** @var array Guarded attributes */
     protected array $guarded = ['id'];
 
+    /** @var array Event callbacks */
     protected static array $eventCallbacks = [];
 
+    /**
+     * Model constructor
+     * 
+     * @param string|null $table Table name
+     * @param array $data Initial data
+     */
     public function __construct(string $table = null, array $data = [])
     {
         if ($table !== null) {
@@ -35,6 +64,13 @@ class Model
         static::initializeDatabase();
     }
 
+    /**
+     * Get attribute value
+     * 
+     * @param string $attribute Attribute name
+     * @return mixed Attribute value
+     * @throws InvalidArgumentException If attribute not found
+     */
     public function __get(string $attribute)
     {
         if (isset($this->attributes[$attribute])) {
@@ -49,18 +85,28 @@ class Model
             return $this->$attribute;
         }
 
-        throw new InvalidArgumentException("Özellik '{$attribute}' bulunamadı.");
+        throw new InvalidArgumentException("Attribute '{$attribute}' not found.");
     }
 
+    /**
+     * Set attribute value
+     * 
+     * @param string $key Attribute name
+     * @param mixed $value Attribute value
+     * @throws InvalidArgumentException If trying to set a guarded attribute
+     */
     public function __set(string $key, $value): void
     {
         if (in_array($key, $this->fillable) || empty($this->fillable)) {
             $this->attributes[$key] = $value;
         } elseif (in_array($key, $this->guarded)) {
-            throw new InvalidArgumentException("Özellik '{$key}' korumalıdır ve doğrudan ayarlanamaz.");
+            throw new InvalidArgumentException("Attribute '{$key}' is protected and cannot be set directly.");
         }
     }
 
+    /**
+     * Initialize database connection
+     */
     protected static function initializeDatabase(): void
     {
         if (!isset(static::$database)) {
@@ -69,6 +115,12 @@ class Model
         static::$database->table(static::$table);
     }
 
+    /**
+     * Set table name
+     * 
+     * @param string $table Table name
+     * @return self Model instance
+     */
     public static function table(string $table): self
     {
         static::$table = $table;
@@ -76,6 +128,12 @@ class Model
         return new static();
     }
 
+    /**
+     * Create a new record
+     * 
+     * @param array $data Record data
+     * @return self Created model instance
+     */
     public static function create(array $data): self
     {
         static::fireEvent('creating', $data);
@@ -93,6 +151,12 @@ class Model
         return $model;
     }
 
+    /**
+     * Specify columns to select
+     * 
+     * @param array $columns Column names
+     * @return self Model instance
+     */
     public static function select(array $columns = ['*']): self
     {
         static::initializeDatabase();
@@ -100,6 +164,14 @@ class Model
         return new static();
     }
 
+    /**
+     * Add where condition
+     * 
+     * @param string $column Column name
+     * @param string $operator Comparison operator
+     * @param mixed $value Comparison value
+     * @return self Model instance
+     */
     public static function where(string $column, string $operator, $value): self
     {
         static::initializeDatabase();
@@ -170,6 +242,11 @@ class Model
         }
     }
 
+    /**
+     * Convert model data to array
+     * 
+     * @return array Model data
+     */
     public function toArray(): array
     {
         $array = $this->attributes;
@@ -179,6 +256,11 @@ class Model
         return $array;
     }
 
+    /**
+     * Save model data
+     * 
+     * @return int Number of affected rows
+     */
     public function save(): int
     {
         $this->addCreatedAt();
@@ -203,12 +285,22 @@ class Model
         return $result;
     }
 
+    /**
+     * Create a new model instance
+     * 
+     * @return self New model instance
+     */
     protected static function createModelInstance(): self
     {
         $className = get_called_class();
         return new $className();
     }
 
+    /**
+     * Fill model data
+     * 
+     * @param array $data Data to fill
+     */
     public function fill(array $data): void
     {
         foreach ($data as $key => $value) {
@@ -272,6 +364,13 @@ class Model
         return $data;
     }
 
+    /**
+     * Cast attribute value
+     * 
+     * @param string $key Attribute name
+     * @param mixed $value Attribute value
+     * @return mixed Casted value
+     */
     protected function castAttribute(string $key, $value)
     {
         if (!isset($this->casts[$key])) {
@@ -303,6 +402,12 @@ class Model
         }
     }
 
+    /**
+     * Hydrate multiple models
+     * 
+     * @param array $data Raw data
+     * @return array Hydrated models
+     */
     protected static function hydrateModels(array $data): array
     {
         $models = [];
@@ -312,6 +417,12 @@ class Model
         return $models;
     }
 
+    /**
+     * Hydrate a single model
+     * 
+     * @param array $data Raw data
+     * @return self Hydrated model
+     */
     protected static function hydrateModel(array $data): self
     {
         $model = static::createModelInstance();
@@ -320,16 +431,30 @@ class Model
         return $model;
     }
 
+    /**
+     * Sync original data
+     */
     protected function syncOriginal(): void
     {
         $this->original = $this->attributes;
     }
 
+    /**
+     * Get changed attributes
+     * 
+     * @return array Changed attributes
+     */
     protected function getDirty(): array
     {
         return array_diff_assoc($this->attributes, $this->original);
     }
 
+    /**
+     * Add event listener
+     * 
+     * @param string $event Event name
+     * @param callable $callback Callback function
+     */
     public static function on(string $event, callable $callback): void
     {
         if (!isset(static::$eventCallbacks[$event])) {
@@ -338,6 +463,12 @@ class Model
         static::$eventCallbacks[$event][] = $callback;
     }
 
+    /**
+     * Fire an event
+     * 
+     * @param string $event Event name
+     * @param mixed $payload Event data
+     */
     protected static function fireEvent(string $event, $payload): void
     {
         if (isset(static::$eventCallbacks[$event])) {
@@ -347,12 +478,28 @@ class Model
         }
     }
 
+    /**
+     * Define a one-to-many relationship
+     * 
+     * @param string $relatedModel Related model class
+     * @param string $foreignKey Foreign key
+     * @param string $localKey Local key
+     * @return array Related models
+     */
     public function hasMany(string $relatedModel, string $foreignKey, string $localKey = 'id'): array
     {
         $relatedInstance = new $relatedModel();
         return $relatedInstance::where($foreignKey, '=', $this->$localKey)->get();
     }
 
+    /**
+     * Define a belongs-to relationship
+     * 
+     * @param string $relatedModel Related model class
+     * @param string $foreignKey Foreign key
+     * @param string $ownerKey Owner key
+     * @return Model|null Related model
+     */
     public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): ?Model
     {
         $relatedInstance = new $relatedModel();

@@ -73,7 +73,7 @@ class Model
      */
     public function __get(string $attribute)
     {
-        if (isset($this->attributes[$attribute])) {
+        if (array_key_exists($attribute, $this->attributes)) {
             return $this->castAttribute($attribute, $this->attributes[$attribute]);
         }
 

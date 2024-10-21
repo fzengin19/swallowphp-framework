@@ -136,35 +136,6 @@ if (!function_exists('printVariable')) {
     }
 }
 
-if (!function_exists('_include_js')) {
-    function _include_js($path, $version = false, $mode = 'default')
-    {
-        if (!in_array($mode, ['include', 'default', 'async'])) {
-            throw new InvalidArgumentException('Invalid mode provided. Use "include", "default", or "async".');
-        }
-
-        $jsFile = __DIR__ . '/../public/' . $path;
-        if (!file_exists($jsFile)) {
-            throw new Exception('JavaScript file not found (' . $jsFile . ')');
-        }
-
-        $version = $version === true ? time() : $version;
-        $path .= $version !== false ? "?v=$version" : '';
-
-        switch ($mode) {
-            case 'include':
-                echo '<script>' . file_get_contents($jsFile) . '</script>';
-                break;
-            case 'default':
-                echo '<script src="' . Env::get('APP_URL') . '/' . $path . '"></script>';
-                break;
-            case 'async':
-                echo '<script async src="' . Env::get('APP_URL') . '/' . $path . '"></script>';
-                break;
-        }
-    }
-}
-
 if (!function_exists('removeDuplicates')) {
     function removeDuplicates($array, $excludeValues)
     {
@@ -208,34 +179,7 @@ if (!function_exists('formatDateForHumans')) {
     }
 }
 
-if (!function_exists('_include_css')) {
-    function _include_css($path, $version = false, $mode = 'default')
-    {
-        if (!in_array($mode, ['include', 'default', 'lazyload'])) {
-            throw new InvalidArgumentException('Invalid mode provided. Use "include", "default", or "lazyload".');
-        }
 
-        $cssFile = __DIR__ . '/../public/' . $path;
-        if (!file_exists($cssFile)) {
-            throw new Exception('CSS file not found (' . $cssFile . ')');
-        }
-
-        $version = $version === true ? time() : $version;
-        $path .= $version !== false ? "?v=$version" : '';
-
-        switch ($mode) {
-            case 'include':
-                echo '<style>' . file_get_contents($cssFile) . '</style>';
-                break;
-            case 'default':
-                echo '<link rel="stylesheet" href="' . Env::get('APP_URL') . '/' . $path . '">';
-                break;
-            case 'lazyload':
-                echo '<link rel="stylesheet" href="' . Env::get('APP_URL') . '/' . $path . '" media="print" onload="this.media=\'all\'">';
-                break;
-        }
-    }
-}
 
 if (!function_exists('hasRoute')) {
     function hasRoute($name)

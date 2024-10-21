@@ -652,18 +652,27 @@ class Database
 
         $separator = parse_url($baseUrl, PHP_URL_QUERY) ? '&' : '?';
 
-        for ($i = max(1, $currentPage - $range); $i <= min($totalPages, $currentPage + $range); $i++) {
-            $links[] = $baseUrl . $separator . 'page=' . $i;
+        // İlk sayfa her zaman gösterilir
+        $links[] = ['url' => $baseUrl . $separator . 'page=1', 'label' => '1', 'active' => $currentPage === 1];
+
+        // Eğer gerekirse, ilk sayfadan sonra "..." ekleyin
+        if ($currentPage - $range > 2) {
+            $links[] = ['url' => null, 'label' => '...', 'active' => false];
         }
 
-        if ($currentPage - $range > 1) {
-            array_unshift($links, '...');
-            array_unshift($links, $baseUrl . $separator . 'page=1');
+        // Orta sayfaları ekleyin
+        for ($i = max(2, $currentPage - $range); $i <= min($totalPages - 1, $currentPage + $range); $i++) {
+            $links[] = ['url' => $baseUrl . $separator . 'page=' . $i, 'label' => (string)$i, 'active' => $currentPage === $i];
         }
 
-        if ($currentPage + $range < $totalPages) {
-            $links[] = '...';
-            $links[] = $baseUrl . $separator . 'page=' . $totalPages;
+        // Eğer gerekirse, son sayfadan önce "..." ekleyin
+        if ($currentPage + $range < $totalPages - 1) {
+            $links[] = ['url' => null, 'label' => '...', 'active' => false];
+        }
+
+        // Son sayfa her zaman gösterilir (eğer ilk sayfadan farklıysa)
+        if ($totalPages > 1) {
+            $links[] = ['url' => $baseUrl . $separator . 'page=' . $totalPages, 'label' => (string)$totalPages, 'active' => $currentPage === $totalPages];
         }
 
         return $links;

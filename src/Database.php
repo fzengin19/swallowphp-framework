@@ -650,18 +650,20 @@ class Database
         $links = [];
         $range = 2;
 
+        $separator = parse_url($baseUrl, PHP_URL_QUERY) ? '&' : '?';
+
         for ($i = max(1, $currentPage - $range); $i <= min($totalPages, $currentPage + $range); $i++) {
-            $links[] = $baseUrl . '&page=' . $i;
+            $links[] = $baseUrl . $separator . 'page=' . $i;
         }
 
         if ($currentPage - $range > 1) {
             array_unshift($links, '...');
-            array_unshift($links, $baseUrl . '&page=1');
+            array_unshift($links, $baseUrl . $separator . 'page=1');
         }
 
         if ($currentPage + $range < $totalPages) {
             $links[] = '...';
-            $links[] = $baseUrl . '&page=' . $totalPages;
+            $links[] = $baseUrl . $separator . 'page=' . $totalPages;
         }
 
         return $links;

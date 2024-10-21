@@ -84,8 +84,7 @@ class Model
         if (property_exists($this, $attribute)) {
             return $this->$attribute;
         }
-
-        throw new InvalidArgumentException("Attribute '{$attribute}' not found.");
+        return null;
     }
 
     /**

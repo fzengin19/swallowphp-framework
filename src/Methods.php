@@ -5,10 +5,8 @@ use SwallowPHP\Framework\Database;
 use SwallowPHP\Framework\Env;
 use SwallowPHP\Framework\Exceptions\ViewNotFoundException;
 use SwallowPHP\Framework\Model;
-use SwallowPHP\Framework\Request;
 use SwallowPHP\Framework\Router;
 use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\SMTP;
 use SwallowPHP\Framework\App;
 
 global $settings;
@@ -319,7 +317,7 @@ function removeDuplicates($array, $excludeValues) {
 
 
 function request(){
-    return new Request();
+    return Router::getRequest();
 }
 
 

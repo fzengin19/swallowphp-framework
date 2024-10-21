@@ -9,6 +9,9 @@ use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
 class Router
 {
 
+    protected static Request $request;
+
+
     /**
      * Route collection for storing registered routes.
      *
@@ -102,7 +105,10 @@ class Router
         array_push(self::$routes, $route);
         return $route;
     }
-
+    
+    public static function getRequest(){
+        return self::$request;
+    }
     /**
      * Creates and returns a new Route object for a PUT request with the given URI and action.
      * 
@@ -165,7 +171,8 @@ class Router
      */
     public static function dispatch(Request $request)
     {
-        $requestUri = parse_url($request->getUri(), PHP_URL_PATH);
+        self::$request = $request;
+        $requestUri = parse_url(self::$request->getUri(), PHP_URL_PATH);
         $requestUri = preg_replace('/^' . preg_quote(env('APP_PATH'), '/') . '/', '', $requestUri, 1);
         if ($requestUri != '/') {
             $requestUri = rtrim($requestUri, '/');
@@ -177,11 +184,11 @@ class Router
             $pattern = '/^' . str_replace(['\{', '\}'], ['(?P<', '>[^\/]+)'], $routeUri) . '$/';
      
             if (preg_match($pattern, $requestUri, $matches)) {
-                if ($route->getMethod() === $request->getMethod() || $route->getMethod() === $request->get('_method')) {
+                if ($route->getMethod() === self::$request->getMethod() || $route->getMethod() === self::$request->get('_method')) {
 
                     RateLimiter::execute($route);
                     $params = array_filter($matches, '\is_string', ARRAY_FILTER_USE_KEY);
-                    $request->setAll(array_merge($params, $request->all()));
+                    self::$request->setAll(array_merge($params, self::$request->all()));
                     return $route->execute($request);
                 }
                 $supportedMethods[] = $route->getMethod();

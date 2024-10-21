@@ -16,7 +16,7 @@ class App
 {
     private static $instance;
     private static Router $router;
-    private static ?string $viewDirectory ;
+    private static ?string $viewDirectory;
     
     /**
      * Initializes a new instance of the class and creates a new Router object.

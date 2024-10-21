@@ -285,8 +285,8 @@ class Database
     {
         $conditions = [];
 
-        foreach ($this->where as $condition) {
-            $conditions[] = $this->buildCondition($condition[0], $condition[1], $condition[2], 'AND');
+        foreach ($this->where as $index => $condition) {
+            $conditions[] = $this->buildCondition($condition[0], $condition[1], $condition[2], $index === 0 ? 'WHERE' : 'AND');
         }
 
         foreach ($this->orWhere as $condition) {
@@ -295,18 +295,20 @@ class Database
 
         foreach ($this->whereIn as $condition) {
             $placeholders = implode(', ', array_fill(0, count($condition[1]), '?'));
-            $conditions[] = "{$condition[0]} IN ($placeholders)";
+            $conditions[] = (empty($conditions) ? 'WHERE ' : 'AND ') . "{$condition[0]} IN ($placeholders)";
         }
 
         foreach ($this->whereBetween as $condition) {
-            $conditions[] = "{$condition[0]} BETWEEN ? AND ?";
+            $conditions[] = (empty($conditions) ? 'WHERE ' : 'AND ') . "{$condition[0]} BETWEEN ? AND ?";
         }
 
         if (!empty($this->whereRaw)) {
-            $conditions = array_merge($conditions, $this->whereRaw);
+            foreach ($this->whereRaw as $index => $rawCondition) {
+                $conditions[] = (empty($conditions) && $index === 0 ? 'WHERE ' : 'AND ') . $rawCondition;
+            }
         }
 
-        return !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+        return implode(' ', $conditions);
     }
 
     /**

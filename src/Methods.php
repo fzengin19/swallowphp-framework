@@ -8,15 +8,7 @@ use SwallowPHP\Framework\Router;
 use PHPMailer\PHPMailer\PHPMailer;
 use SwallowPHP\Framework\App;
 
-global $settings;
 
-if (!function_exists('settings')) {
-    function settings(): Model
-    {
-        global $settings;
-        return $settings ?? ($settings = Model::table('settings')->first());
-    }
-}
 
 if (!function_exists('env')) {
     function env($key, $default = null)

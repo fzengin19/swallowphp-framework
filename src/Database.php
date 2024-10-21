@@ -2,13 +2,14 @@
 
 namespace SwallowPHP\Framework;
 
-use mysqli;
+use PDO;
+use PDOException;
 use InvalidArgumentException;
 use Exception;
 
 class Database
 {
-    protected ?mysqli $connection = null;
+    protected ?PDO $connection = null;
     protected bool $connectedSuccessfully = false;
     public string $table = '';
     protected string $select = '*';
@@ -35,15 +36,15 @@ class Database
         $charset = env('DB_CHARSET', 'utf8mb4');
 
         try {
-            $this->connection = new mysqli($host, $username, $password, $database, $port);
-
-            if ($this->connection->connect_errno) {
-                throw new Exception('Veritabanına bağlanılamadı: ' . $this->connection->connect_error);
-            }
-            $this->connection->set_charset($charset);
-
+            $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
+            $options = [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ];
+            $this->connection = new PDO($dsn, $username, $password, $options);
             $this->connectedSuccessfully = true;
-        } catch (Exception $e) {
+        } catch (PDOException $e) {
             throw new Exception('Veritabanı bağlantısı başlatılamadı: ' . $e->getMessage());
         }
     }
@@ -152,7 +153,7 @@ class Database
 
     protected function buildCondition(string $column, string $operator, $value, string $conjunction): string
     {
-        return "($conjunction $column $operator ?)";
+        return "$conjunction $column $operator ?";
     }
 
     public function get(): array
@@ -174,23 +175,15 @@ class Database
         }
 
         $statement = $this->connection->prepare($sql);
-        if ($statement === false) {
-            throw new Exception("Sorgu hazırlanamadı: " . $this->connection->error);
-        }
 
         $bindValues = $this->getBindValues();
-        if (!empty($bindValues)) {
-            $bindTypes = $this->getBindTypes($bindValues);
-            $statement->bind_param($bindTypes, ...$bindValues);
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
         }
 
-        if (!$statement->execute()) {
-            throw new Exception("Sorgu çalıştırılamadı: " . $statement->error);
-        }
+        $statement->execute();
 
-        $result = $statement->get_result();
-        $rows = $result->fetch_all(MYSQLI_ASSOC);
-        $statement->close();
+        $rows = $statement->fetchAll();
         $this->reset();
         return $rows;
     }
@@ -206,16 +199,19 @@ class Database
     {
         $this->initialize();
         $columns = implode(', ', array_keys($data));
-        $values = implode(', ', array_fill(0, count($data), '?'));
+        $placeholders = implode(', ', array_fill(0, count($data), '?'));
 
-        $sql = "INSERT INTO {$this->table} ($columns) VALUES ($values)";
+        $sql = "INSERT INTO {$this->table} ($columns) VALUES ($placeholders)";
         $statement = $this->connection->prepare($sql);
 
-        $bindTypes = $this->getBindTypes(array_values($data));
-        $statement->bind_param($bindTypes, ...array_values($data));
+        $values = array_values($data);
+        foreach ($values as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        }
+
         $statement->execute();
 
-        $insertId = $this->connection->insert_id;
+        $insertId = $this->connection->lastInsertId();
         $this->reset();
 
         return $insertId;
@@ -231,11 +227,13 @@ class Database
         $statement = $this->connection->prepare($sql);
 
         $bindValues = array_merge(array_values($data), $this->getBindValues());
-        $bindTypes = $this->getBindTypes($bindValues);
-        $statement->bind_param($bindTypes, ...$bindValues);
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        }
+
         $statement->execute();
 
-        $affectedRows = $statement->affected_rows;
+        $affectedRows = $statement->rowCount();
         $this->reset();
 
         return $affectedRows;
@@ -249,13 +247,12 @@ class Database
         $statement = $this->connection->prepare($sql);
 
         $bindValues = $this->getBindValues();
-        if (!empty($bindValues)) {
-            $bindTypes = $this->getBindTypes($bindValues);
-            $statement->bind_param($bindTypes, ...$bindValues);
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
         }
 
         $statement->execute();
-        $affectedRows = $statement->affected_rows;
+        $affectedRows = $statement->rowCount();
         $this->reset();
 
         return $affectedRows;
@@ -269,15 +266,13 @@ class Database
         $statement = $this->connection->prepare($sql);
 
         $bindValues = $this->getBindValues();
-        if (!empty($bindValues)) {
-            $bindTypes = $this->getBindTypes($bindValues);
-            $statement->bind_param($bindTypes, ...$bindValues);
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
         }
 
         $statement->execute();
-        $result = $statement->get_result();
-        $count = $result->fetch_assoc()['count'];
-        $statement->close();
+        $result = $statement->fetch(PDO::FETCH_ASSOC);
+        $count = $result['count'];
 
         return $count;
     }
@@ -423,35 +418,22 @@ class Database
         return $bindValues;
     }
 
-    protected function getBindType($value): string
+    protected function getPDOParamType($value): int
     {
         if (is_int($value)) {
-            return 'i';
-        } elseif (is_float($value)) {
-            return 'd';
-        } elseif (is_string($value)) {
-            return 's';
+            return PDO::PARAM_INT;
+        } elseif (is_bool($value)) {
+            return PDO::PARAM_BOOL;
+        } elseif (is_null($value)) {
+            return PDO::PARAM_NULL;
         } else {
-            return 'b';
+            return PDO::PARAM_STR;
         }
-    }
-
-    protected function getBindTypes(array $values): string
-    {
-        return implode('', array_map([$this, 'getBindType'], $values));
     }
 
     public function close(): void
     {
-        if ($this->connection) {
-            $this->connection->close();
-            $this->connection = null;
-            $this->connectedSuccessfully = false;
-        }
-    }
-
-    public function __destruct()
-    {
-        $this->close();
+        $this->connection = null;
+        $this->connectedSuccessfully = false;
     }
 }

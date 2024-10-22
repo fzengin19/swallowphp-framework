@@ -17,7 +17,7 @@ if (env('CACHE_DRIVER', 'FILE') == 'FILE') {
         private static function loadCache()
         {
             if (!isset(self::$cacheFile))
-                self::$cacheFile = $_SERVER['DOCUMENT_ROOT'] . '/../' . env('CACHE_FILE', 'cache.json');
+                self::$cacheFile = $_SERVER['DOCUMENT_ROOT'] .env('CACHE_FILE',  '/../' . 'cache.json');
             if (file_exists(self::$cacheFile)) {
                 $json = file_get_contents(self::$cacheFile);
                 $data = json_decode($json, true);

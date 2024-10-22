@@ -29,7 +29,6 @@ class Env
             while(!file_exists($environmentFile)){
                 $environmentFile = '../'.$environmentFile;
             }
-            var_dump($environmentFile);die;
         }
         $envArray = [];
 
@@ -49,7 +48,7 @@ class Env
 
     public static function load($environmentFile = null) {
         if ($environmentFile === null) {
-         
+            $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/.env';
             if (!file_exists($environmentFile)) {
                 $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/../.env';
             }

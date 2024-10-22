@@ -501,6 +501,8 @@ class Database
         unset($existingParams['page']);
         $baseUrlWithParams = $baseUrl . (empty($existingParams) ? '' : '?' . http_build_query($existingParams));
 
+        $separator = strpos($baseUrlWithParams, '?') === false ? '?' : '&';
+
         $pagination = $this->generatePaginationLinks($page, $totalPages, $baseUrlWithParams);
 
         return [
@@ -509,8 +511,8 @@ class Database
             'per_page' => $perPage,
             'current_page' => $page,
             'last_page' => $totalPages,
-            'prev_page_url' => $page > 1 ? $baseUrlWithParams . '&page=' . ($page - 1) : null,
-            'next_page_url' => $page < $totalPages ? $baseUrlWithParams . '&page=' . ($page + 1) : null,
+            'prev_page_url' => $page > 1 ? $baseUrlWithParams . $separator . 'page=' . ($page - 1) : null,
+            'next_page_url' => $page < $totalPages ? $baseUrlWithParams . $separator . 'page=' . ($page + 1) : null,
             'pagination_links' => $pagination,
         ];
     }

@@ -204,13 +204,13 @@ if (!function_exists('send')) {
 }
 
 if (!function_exists('webpImage')) {
-    function webpImage($source, $quality = 75, $removeOld = false)
+    function webpImage($source, $quality = 75, $removeOld = false, $fileName = null)
     {
         if (!file_exists($source)) {
             return $source;
         }
 
-        $name = uniqid() . '.webp';
+        $name = $fileName ?? uniqid() . '.webp';
         $destination = 'files/' . $name;
 
         $info = getimagesize($source);

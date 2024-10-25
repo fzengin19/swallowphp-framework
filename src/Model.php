@@ -252,6 +252,10 @@ class Model
         foreach ($this->hidden as $hidden) {
             unset($array[$hidden]);
         }
+
+        foreach ($this->attributes as $key => $attribute) {
+            $array[$key]= $this->castAttribute($key, $attribute);
+        }
         return $array;
     }
 
@@ -273,7 +277,7 @@ class Model
             static::fireEvent('updated', $this);
         } else {
             static::fireEvent('creating', $this);
-            $result = static::insert($this->attributes);
+            $result = static::insert($this->toArray());
             $this->id = $result;
             static::fireEvent('created', $this);
         }
@@ -375,7 +379,6 @@ class Model
         if (!isset($this->casts[$key])) {
             return $value;
         }
-
         switch ($this->casts[$key]) {
             case 'int':
             case 'integer':

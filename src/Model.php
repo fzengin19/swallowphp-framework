@@ -448,7 +448,12 @@ class Model
      */
     protected function getDirty(): array
     {
-        return array_diff_assoc($this->attributes, $this->original);
+        $dirty = array_diff_assoc($this->attributes, $this->original);
+        $data = [];
+        foreach ($dirty as $key => $value) {
+            $data[$key] = $this->castAttribute($key, $value);
+        }
+        return $data;
     }
 
     /**

@@ -266,16 +266,18 @@ class Model
      */
     public function save(): int
     {
-        $this->addCreatedAt();
         $this->attributes['updated_at'] = date('Y-m-d H:i:s');
-
+        
         static::fireEvent('saving', $this);
-
+        
         if (isset($this->attributes['id'])) {
+
             static::fireEvent('updating', $this);
+            $this->where('id', '=', $this->id);
             $result = $this->update($this->getDirty());
             static::fireEvent('updated', $this);
         } else {
+            $this->addCreatedAt();
             static::fireEvent('creating', $this);
             $result = static::insert($this->toArray());
             $this->id = $result;

@@ -38,17 +38,6 @@ if (!function_exists('route')) {
     }
 }
 
-if (!function_exists('_include')) {
-    function _include($view)
-    {
-        $viewFile = '../views/' . str_replace('.', '/', $view) . '.php';
-        if (!file_exists($viewFile)) {
-            throw new ViewNotFoundException('view file does not exist (' . $viewFile . ')');
-        }
-        require_once $viewFile;
-    }
-}
-
 if (!function_exists('slug')) {
     function slug($value)
     {

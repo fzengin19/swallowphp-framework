@@ -27,7 +27,7 @@ class Env
         if ($environmentFile === null) {
             $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/.env';
             while(!file_exists($environmentFile)){
-                $environmentFile = '../'.$environmentFile;
+                $environmentFile = $_SERVER['DOCUMENT_ROOT'].'/../'.$environmentFile;
             }
         }
         $envArray = [];

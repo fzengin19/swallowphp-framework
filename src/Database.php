@@ -97,6 +97,13 @@ class Database
     protected array $orWhere = [];
 
     /**
+     * Array of raw where conditions with bindings.
+     *
+     * @var array
+     */
+    protected array $whereRawBindings = [];
+
+    /**
      * Initialize the database connection.
      *
      * @return void
@@ -158,6 +165,7 @@ class Database
         $this->limit = null;
         $this->offset = null;
         $this->orWhere = [];
+        $this->whereRawBindings = [];
     }
 
     /**
@@ -231,11 +239,13 @@ class Database
      * Add a raw where condition to the query.
      *
      * @param string $rawCondition The raw SQL condition.
+     * @param array $bindings The parameter bindings for the raw condition.
      * @return self
      */
-    public function whereRaw(string $rawCondition): self
+    public function whereRaw(string $rawCondition, array $bindings = []): self
     {
         $this->whereRaw[] = $rawCondition;
+        $this->whereRawBindings[] = $bindings;
         return $this;
     }
 
@@ -607,6 +617,9 @@ class Database
         foreach ($this->whereBetween as $condition) {
             $bindValues[] = $condition[1];
             $bindValues[] = $condition[2];
+        }
+        foreach ($this->whereRawBindings as $bindings) {
+            $bindValues = array_merge($bindValues, $bindings);
         }
         if ($this->limit !== null) {
             $bindValues[] = $this->limit;

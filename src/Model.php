@@ -69,9 +69,8 @@ class Model
      * 
      * @param string $attribute Attribute name
      * @return mixed Attribute value
-     * @throws InvalidArgumentException If attribute not found
      */
-    public function __get(string $attribute)
+    public function __get(string $attribute): mixed
     {
         if (array_key_exists($attribute, $this->attributes)) {
             return $this->castAttribute($attribute, $this->attributes[$attribute]);
@@ -139,11 +138,10 @@ class Model
 
         static::initializeDatabase();
         $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
-        $id = static::$database->insert($data);
 
         $model = static::createModelInstance();
         $model->fill($data);
-        $model->id = $id;
+        $model->save();
 
         static::fireEvent('created', $model);
 
@@ -254,7 +252,7 @@ class Model
         }
 
         foreach ($this->attributes as $key => $attribute) {
-            $array[$key]= $this->castAttribute($key, $attribute);
+            $array[$key] = $this->castAttribute($key, $attribute);
         }
         return $array;
     }
@@ -267,9 +265,9 @@ class Model
     public function save(): int
     {
         $this->attributes['updated_at'] = date('Y-m-d H:i:s');
-        
+
         static::fireEvent('saving', $this);
-        
+
         if (isset($this->attributes['id'])) {
             static::fireEvent('updating', $this);
             $this->where('id', '=', $this->id);
@@ -309,7 +307,7 @@ class Model
     {
         foreach ($data as $key => $value) {
             if (in_array($key, $this->fillable) || empty($this->fillable)) {
-                $this->attributes[$key] = $value;
+                $this->attributes[$key] = $this->castAttribute($key, $value);
             }
         }
     }
@@ -328,11 +326,19 @@ class Model
 
     public function refresh(): self
     {
-        if (isset($this->attributes['id'])) {
-            static::initializeDatabase();
-            $this->attributes = static::$database->where('id', '=', $this->attributes['id'])->first();
-            $this->syncOriginal();
+        if (!isset($this->attributes['id'])) {
+            throw new InvalidArgumentException('Model must have an ID to refresh');
         }
+
+        static::initializeDatabase();
+        $result = static::$database->where('id', '=', $this->attributes['id'])->first();
+
+        if (!$result) {
+            throw new InvalidArgumentException('Model not found in database');
+        }
+
+        $this->attributes = $result;
+        $this->syncOriginal();
         return $this;
     }
 
@@ -353,10 +359,10 @@ class Model
         return $data;
     }
 
-    public static function whereRaw(string $query): self
+    public static function whereRaw(string $query, array $bindings = []): self
     {
         static::initializeDatabase();
-        static::$database->whereRaw($query);
+        static::$database->whereRaw($query, $bindings);
         return new static();
     }
 
@@ -449,12 +455,13 @@ class Model
      */
     protected function getDirty(): array
     {
-        $dirty = array_diff_assoc($this->attributes, $this->original);
-        $data = [];
-        foreach ($dirty as $key => $value) {
-            $data[$key] = $this->castAttribute($key, $value);
+        $dirty = [];
+        foreach ($this->attributes as $key => $value) {
+            if (!array_key_exists($key, $this->original) || $this->original[$key] !== $value) {
+                $dirty[$key] = $this->castAttribute($key, $value);
+            }
         }
-        return $data;
+        return $dirty;
     }
 
     /**

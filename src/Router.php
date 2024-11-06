@@ -105,8 +105,9 @@ class Router
         array_push(self::$routes, $route);
         return $route;
     }
-    
-    public static function getRequest(){
+
+    public static function getRequest()
+    {
         return self::$request;
     }
     /**
@@ -141,7 +142,7 @@ class Router
      * @param string $name The name of the route.
      * @param array $params An array of path parameters and their corresponding values.
      * @throws RouteNotFoundException If the route with the given name is not found.
-     * @return string The URL of the route with path parameters replaced.
+     * @return string The URL of the route with path parameters replaced or as query parameters if not found in the URI.
      */
     public static function getRouteByName($name, $params = [])
     {
@@ -151,14 +152,22 @@ class Router
 
                 // Replace path parameters with actual values
                 foreach ($params as $param => $value) {
-                    $uriPattern = str_replace('{' . $param . '}', $value, $uriPattern);
+                    if (strpos($uriPattern, '{' . $param . '}') !== false) {
+                        $uriPattern = str_replace('{' . $param . '}', $value, $uriPattern);
+                        unset($params[$param]); // Path parametrelerini query parametrelerinden çıkar
+                    }
                 }
 
-                return env('APP_URL') . $uriPattern;
+                // Kalan parametreler query string olarak eklenir
+                $queryString = http_build_query($params);
+                $url = env('APP_URL') . $uriPattern;
+
+                return $queryString ? $url . '?' . $queryString : $url;
             }
         }
         throw new RouteNotFoundException($name . ' route not found', 404);
     }
+
 
 
     /**
@@ -182,7 +191,7 @@ class Router
             $routeUri = preg_quote($route->getUri(), '/');
 
             $pattern = '/^' . str_replace(['\{', '\}'], ['(?P<', '>[^\/]+)'], $routeUri) . '$/';
-     
+
             if (preg_match($pattern, $requestUri, $matches)) {
                 if ($route->getMethod() === self::$request->getMethod() || $route->getMethod() === self::$request->get('_method')) {
 

@@ -342,10 +342,21 @@ class Model
         return $this;
     }
 
+    /**
+     * Delete record(s)
+     * 
+     * @return int Number of affected rows
+     */
     public static function delete(): int
     {
         static::initializeDatabase();
         static::fireEvent('deleting', new static());
+
+        // Eğer instance üzerinden çağrıldıysa (this->id varsa) sadece o kaydı sil
+        if (isset(static::$attributes['id'])) {
+            static::$database->where('id', '=', static::$attributes['id']);
+        }
+
         $result = static::$database->delete();
         static::fireEvent('deleted', new static());
         return $result;

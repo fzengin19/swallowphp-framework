@@ -22,11 +22,11 @@ class Request
     }
 
     /**
-     * Initializes a new instance of the class and sets its data property to the value of the $_REQUEST superglobal.
+     * Initializes a new instance of the class and sets its data property to the value of the request body.
      */
     public function __construct()
     {
-        $this->data = $_REQUEST;
+        $this->data = json_decode(file_get_contents('php://input'), true) ?? $_REQUEST;
     }
 
     /**
@@ -101,10 +101,6 @@ class Request
     /**
      * Creates a new instance of this class based on the current request globals.
      *
-     * This method reads the current HTTP request method, URI, headers, and body
-     * from the $_SERVER, getallheaders(), and php://input globals, respectively.
-     * It then uses these values to create and return a new instance of this class.
-     *
      * @return self A new instance of this class representing the current request.
      */
     public static function createFromGlobals()
@@ -114,7 +110,9 @@ class Request
         $headers = getallheaders();
         $body = file_get_contents('php://input');
 
-        return new static($method, $uri, $headers, $body);
+        $request = new static();
+        $request->data['_method'] = $method;
+        return $request;
     }
 
     /**

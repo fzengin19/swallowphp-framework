@@ -11,7 +11,7 @@ use SwallowPHP\Framework\Router;
 
 date_default_timezone_set('Europe/Istanbul');
 setlocale(LC_TIME, 'turkish');
-set_time_limit(10);
+
 class App
 {
     private static $instance;
@@ -86,6 +86,7 @@ class App
     {
         try {
             Env::load();
+            set_time_limit(env('MAX_EXECUTION_TIME',20));
             if (env('SSL_REDIRECT') == 'TRUE' && empty($_SERVER['HTTPS'])) {
                 header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
                 exit;

@@ -24,9 +24,46 @@ class Request
     /**
      * Initializes a new instance of the class and sets its data property to the value of the request body.
      */
+    private const ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    private $headers = [];
+    private $rawInput;
+
     public function __construct()
     {
-        $this->data = json_decode(file_get_contents('php://input'), true) ?? $_REQUEST;
+        // Store raw input securely
+        $this->rawInput = file_get_contents('php://input');
+        
+        // Parse and sanitize input data
+        $jsonData = $this->rawInput ? json_decode($this->rawInput, true) : null;
+        $this->data = $this->sanitizeData($jsonData ?? $_REQUEST);
+        
+        // Parse headers
+        $this->headers = $this->getRequestHeaders();
+    }
+
+    private function sanitizeData($data)
+    {
+        if (is_array($data)) {
+            return array_map([$this, 'sanitizeData'], $data);
+        }
+        if (is_string($data)) {
+            // Remove null bytes and sanitize
+            $data = str_replace(chr(0), '', $data);
+            return htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+        }
+        return $data;
+    }
+
+    private function getRequestHeaders()
+    {
+        $headers = [];
+        foreach ($_SERVER as $key => $value) {
+            if (substr($key, 0, 5) === 'HTTP_') {
+                $header = str_replace(' ', '-', ucwords(str_replace('_', ' ', strtolower(substr($key, 5)))));
+                $headers[$header] = $this->sanitizeData($value);
+            }
+        }
+        return $headers;
     }
 
     /**
@@ -82,8 +119,13 @@ class Request
      */
     public function set($key, $value)
     {
-        if ($key != '_method')
-            $this->data[$key] = $value;
+        // Prevent method override injection
+        if ($key === '_method') {
+            if (!in_array(strtoupper($value), self::ALLOWED_METHODS)) {
+                return;
+            }
+        }
+        $this->data[$key] = $this->sanitizeData($value);
     }
 
     /**
@@ -122,7 +164,14 @@ class Request
      */
     public function getMethod()
     {
-        return $_SERVER['REQUEST_METHOD'];
+        $method = $_SERVER['REQUEST_METHOD'];
+        $override = $this->get('_method');
+        
+        if ($method === 'POST' && $override && in_array(strtoupper($override), self::ALLOWED_METHODS)) {
+            return strtoupper($override);
+        }
+        
+        return $method;
     }
 
     /**
@@ -144,7 +193,16 @@ class Request
     public static function getClientIp()
     {
         $ip = null;
-        if (isset($_SERVER['HTTP_CLIENT_IP'])) {
+
+        // Check for proxy-forwarded IP
+        if (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && 
+            filter_var($_SERVER['HTTP_X_FORWARDED_FOR'], FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return $_SERVER['HTTP_X_FORWARDED_FOR'];
+        }
+
+        // Check for client IP
+        if (isset($_SERVER['HTTP_CLIENT_IP']) && 
+            filter_var($_SERVER['HTTP_CLIENT_IP'], FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
             $ip = $_SERVER['HTTP_CLIENT_IP'];
         } elseif (isset($_SERVER['HTTP_X_FORWARDED_FOR'])) {
             $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];

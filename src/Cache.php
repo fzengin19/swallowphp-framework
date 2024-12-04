@@ -14,61 +14,162 @@ if (env('CACHE_DRIVER', 'FILE') == 'FILE') {
         private static $cacheFile;
         private static $cache = array();
 
+        private const MAX_CACHE_SIZE = 52428800; // 50MB
+        private const CACHE_PERMISSIONS = 0600;
+        
         private static function loadCache()
         {
-            if (!isset(self::$cacheFile))
-                self::$cacheFile = $_SERVER['DOCUMENT_ROOT'] .env('CACHE_FILE',  '/../' . 'cache.json');
-            if (file_exists(self::$cacheFile)) {
-                $json = file_get_contents(self::$cacheFile);
-                $data = json_decode($json, true);
-                if (is_array($data));
-                self::$cache = $data;
+            if (!isset(self::$cacheFile)) {
+                $cacheDir = dirname($_SERVER['DOCUMENT_ROOT'] . env('CACHE_FILE', '/../cache.json'));
+                if (!is_dir($cacheDir)) {
+                    mkdir($cacheDir, 0750, true);
+                }
+                self::$cacheFile = $_SERVER['DOCUMENT_ROOT'] . env('CACHE_FILE', '/../cache.json');
+            }
+
+            if (!file_exists(self::$cacheFile)) {
+                touch(self::$cacheFile);
+                chmod(self::$cacheFile, self::CACHE_PERMISSIONS);
+            }
+
+            // File locking for concurrent access
+            $fp = fopen(self::$cacheFile, 'r');
+            if (flock($fp, LOCK_SH)) {
+                $json = stream_get_contents($fp);
+                flock($fp, LOCK_UN);
+                fclose($fp);
+
+                if (!empty($json)) {
+                    $data = json_decode($json, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
+                        self::$cache = $data;
+                    } else {
+                        error_log("Cache file corruption detected: " . json_last_error_msg());
+                        self::$cache = [];
+                    }
+                }
+            } else {
+                error_log("Could not acquire shared lock for cache file");
+                self::$cache = [];
             }
         }
 
         private static function saveCache()
         {
-            $json = json_encode(self::$cache);
-            file_put_contents(self::$cacheFile, $json);
+            // Check cache size before saving
+            $cacheSize = strlen(json_encode(self::$cache));
+            if ($cacheSize > self::MAX_CACHE_SIZE) {
+                // Remove oldest entries until under limit
+                while ($cacheSize > self::MAX_CACHE_SIZE && !empty(self::$cache)) {
+                    reset(self::$cache);
+                    $oldestKey = key(self::$cache);
+                    unset(self::$cache[$oldestKey]);
+                    $cacheSize = strlen(json_encode(self::$cache));
+                }
+            }
+
+            $fp = fopen(self::$cacheFile, 'c+');
+            if (flock($fp, LOCK_EX)) {
+                ftruncate($fp, 0);
+                rewind($fp);
+                $json = json_encode(self::$cache);
+                fwrite($fp, $json);
+                fflush($fp);
+                flock($fp, LOCK_UN);
+                fclose($fp);
+            } else {
+                error_log("Could not acquire exclusive lock for cache file");
+                fclose($fp);
+            }
         }
 
         public static function has($key)
         {
-            self::loadCache();
-            if (is_array(self::$cache) && array_key_exists($key, self::$cache) && !self::isExpired($key))
-                return true;
-            return false;
+            try {
+                self::loadCache();
+                return is_array(self::$cache) && 
+                       array_key_exists($key, self::$cache) && 
+                       !self::isExpired($key);
+            } catch (\Exception $e) {
+                error_log("Cache error in has(): " . $e->getMessage());
+                return false;
+            }
         }
 
         public static function get($key)
         {
-            self::loadCache();
-            if (self::has($key) && !self::isExpired($key)) {
-                return self::$cache[$key]['value'];
-            } else {
-                self::delete($key);
+            try {
+                self::loadCache();
+                if (self::has($key)) {
+                    $item = self::$cache[$key];
+                    // Validate data structure
+                    if (!isset($item['value'])) {
+                        self::delete($key);
+                        return null;
+                    }
+                    return $item['value'];
+                }
+                return null;
+            } catch (\Exception $e) {
+                error_log("Cache error in get(): " . $e->getMessage());
                 return null;
             }
         }
 
         public static function set($key, $value, $expiration = null)
         {
-            self::loadCache();
-            self::$cache[$key] = array('value' => $value, 'expiration' => $expiration);
-            self::saveCache();
+            try {
+                if (!is_string($key)) {
+                    throw new \InvalidArgumentException("Cache key must be a string");
+                }
+                
+                self::loadCache();
+                
+                // Validate expiration
+                if ($expiration !== null && (!is_int($expiration) || $expiration < time())) {
+                    throw new \InvalidArgumentException("Invalid expiration time");
+                }
+
+                self::$cache[$key] = [
+                    'value' => $value,
+                    'expiration' => $expiration,
+                    'created_at' => time()
+                ];
+                
+                self::saveCache();
+                return true;
+            } catch (\Exception $e) {
+                error_log("Cache error in set(): " . $e->getMessage());
+                return false;
+            }
         }
 
         public static function delete($key)
         {
-            self::loadCache();
-            unset(self::$cache[$key]);
-            self::saveCache();
+            try {
+                self::loadCache();
+                if (array_key_exists($key, self::$cache)) {
+                    unset(self::$cache[$key]);
+                    self::saveCache();
+                    return true;
+                }
+                return false;
+            } catch (\Exception $e) {
+                error_log("Cache error in delete(): " . $e->getMessage());
+                return false;
+            }
         }
 
         public static function clear()
         {
-            self::$cache = array();
-            self::saveCache();
+            try {
+                self::$cache = [];
+                self::saveCache();
+                return true;
+            } catch (\Exception $e) {
+                error_log("Cache error in clear(): " . $e->getMessage());
+                return false;
+            }
         }
 
         private static function isExpired($key)

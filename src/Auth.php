@@ -69,11 +69,6 @@ class Auth
 
         $expire_days = $remember ? 30 : 1;
         
-        // Remember token oluştur ve kullanıcıya kaydet
-        $user->remember_token = static::generateToken();
-        $user->save();
-        
-        // Gerekli tüm cookie'leri ayarla
         Cookie::set('remember_token', $user->remember_token, $expire_days);
         Cookie::set('user_id', $user->id, $expire_days);
         Cookie::set('user', $user->toArray(), $expire_days);

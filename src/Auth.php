@@ -16,21 +16,25 @@ class Auth
      */
     public static function register($email, $password, $role = 'member')
     {
-        
         if (strlen($password) < 3) {
             return false;
         }
+        
         $hashedPassword = password_hash($password, PASSWORD_ARGON2ID);
-        $user = Model::table('users')->where('email', '=', $email)->first();
+        $existingUser = Model::table('users')->where('email', '=', $email)->first();
 
-        if (null != $user->id) {
+        // Kullanıcı zaten varsa
+        if ($existingUser && $existingUser->id) {
             return false;
         }
+        
         $user = Model::table('users')->create([
             'email' => $email,
             'password' => $hashedPassword,
-            'role' => $role
+            'role' => $role,
+            'remember_token' => static::generateToken() // Yeni kullanıcı için token oluştur
         ]);
+        
         return $user;
     }
     /**
@@ -40,6 +44,8 @@ class Auth
     public static function logout()
     {
         Cookie::delete('user');
+        Cookie::delete('remember_token');
+        Cookie::delete('user_id');
     }
     /**
      * Authenticates a user with the given email and password.
@@ -51,16 +57,28 @@ class Auth
      */
     public static function authenticate($email, $password, $remember = false)
     {
-        $user = Model::table('users')->where('email', '=', $email)->first();
-        if ($user && password_verify($password, $user->password)) {
-            if ($remember) {
-                Cookie::set('remember', 'true', 30);
-                Cookie::set('user', $user->toArray(), 30);
-            } else
-                Cookie::set('user', $user->toArray());
-            return true;
+        if (empty($email) || empty($password)) {
+            return false;
         }
-        return false;
+
+        $user = Model::table('users')->where('email', '=', $email)->first();
+        
+        if (!$user || !password_verify($password, $user->password)) {
+            return false;
+        }
+
+        $expire_days = $remember ? 30 : 1;
+        
+        // Remember token oluştur ve kullanıcıya kaydet
+        $user->remember_token = static::generateToken();
+        $user->save();
+        
+        // Gerekli tüm cookie'leri ayarla
+        Cookie::set('remember_token', $user->remember_token, $expire_days);
+        Cookie::set('user_id', $user->id, $expire_days);
+        Cookie::set('user', $user->toArray(), $expire_days);
+        
+        return true;
     }
 
     /**
@@ -70,34 +88,47 @@ class Auth
      */
     public static function isAuthenticated()
     {
-        if (Cookie::has('user')) {
-
-            $cookieUser = Cookie::get('user');
-            if ($cookieUser == null) {
-                return false;
-            }
-            $dbUser = Model::table('users')->where('id', '=', $cookieUser['id'])->first();
-            if ($dbUser !== null) {
-                if ($cookieUser != $dbUser->toArray()) {
-                    Cookie::delete('user');
-                    return false;
-                }
-            } else {
-
-                Cookie::delete('user');
-                return false;
-            }
-            if (Cookie::get('remember') == 'true') {
-
-                Cookie::set('user', $dbUser->toArray(), 30);
-            }
-            return true;
+        if (!Cookie::has('user_id') || !Cookie::has('user') || !Cookie::has('remember_token')) {
+            static::logout();
+            return false;
         }
 
+        $cookieUser = Cookie::get('user');
+        $userId = Cookie::get('user_id');
+        $rememberToken = Cookie::get('remember_token');
 
-        return false;
+        if (!$cookieUser || !$userId || !$rememberToken) {
+            static::logout();
+            return false;
+        }
+
+        $user = Model::table('users')->where('id', '=', $userId)->first();
+        
+        if (!$user || $user->remember_token !== $rememberToken) {
+            static::logout();
+            return false;
+        }
+
+        // Kullanıcı verilerini güncelle
+        Cookie::set('user', $user->toArray(), 30);
+        return true;
+    }
+    public static function logoutOtherSessions()
+    {
+        $user = static::user();
+        $user->remember_token = static::generateToken();
+        $user->save();
+        $expire_days = 30;
+        Cookie::set('remember_token', $user->remember_token, $expire_days);
+        Cookie::set('user_id', $user->id, $expire_days);
+        Cookie::set('user', $user->toArray(), $expire_days);
+
     }
 
+    public static function generateToken()
+    {
+        return bin2hex(random_bytes(32));
+    }
 
     /**
      * Retrieves the user object if the user is authenticated.

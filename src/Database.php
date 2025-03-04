@@ -2,78 +2,114 @@
 
 namespace SwallowPHP\Framework;
 
-use mysqli;
+use PDO;
+use PDOException;
+use InvalidArgumentException;
+use Exception;
 
 /**
- * Class Database
- *
- * This class provides a fluent interface for building and executing SQL queries using MySQLi,
- * and includes pagination functionality.
+ * Database class for handling database operations using PDO.
  */
 class Database
 {
     /**
-     * The MySQLi instance to use for database connections.
+     * PDO connection instance.
      *
-     * @var \mysqli
+     * @var PDO|null
      */
-    protected mysqli $connection;
+    protected ?PDO $connection = null;
+
     /**
-     * Flag to indicate whether the connection to the database was successful.
+     * Flag to indicate if the connection was successful.
      *
      * @var bool
      */
-    protected bool $connectedSuccessfully;
+    protected bool $connectedSuccessfully = false;
 
     /**
-     * The name of the table.
+     * The name of the table to perform operations on.
      *
      * @var string
      */
-    public $table;
+    public string $table = '';
 
     /**
-     * The columns to select.
+     * The columns to select in the query.
      *
-     * @var string|array
+     * @var string
      */
-    protected $select = '*';
+    protected string $select = '*';
 
     /**
-     * The where clauses for the query.
-     *
-     * @var array
-     */
-    protected $where = [];
-
-    /**
-     * The where clauses for the raw query.
+     * Array of where conditions.
      *
      * @var array
      */
-    protected $whereRaw = [];
+    protected array $where = [];
+
     /**
-     * The order by clauses for the query.
+     * Array of raw where conditions.
      *
      * @var array
      */
-    protected $orderBy = [];
+    protected array $whereRaw = [];
 
     /**
-     * The maximum number of rows to return.
+     * Array of where in conditions.
+     *
+     * @var array
+     */
+    protected array $whereIn = [];
+
+    /**
+     * Array of where between conditions.
+     *
+     * @var array
+     */
+    protected array $whereBetween = [];
+
+    /**
+     * Array of order by clauses.
+     *
+     * @var array
+     */
+    protected array $orderBy = [];
+
+    /**
+     * The limit for the query.
      *
      * @var int|null
      */
-    protected $limit = null;
+    protected ?int $limit = null;
 
     /**
-     * The number of rows to skip.
+     * The offset for the query.
      *
      * @var int|null
      */
-    protected $offset = null;
+    protected ?int $offset = null;
 
-    public function initialize()
+    /**
+     * Array of or where conditions.
+     *
+     * @var array
+     */
+    protected array $orWhere = [];
+
+    /**
+     * Array of raw where conditions with bindings.
+     *
+     * @var array
+     */
+    protected array $whereRawBindings = [];
+
+    /**
+     * Initialize the database connection.
+     *
+     * @return void
+     * @throws Exception If the connection fails.
+     */
+    public function initialize(): void
     {
         if ($this->connection && $this->connectedSuccessfully) {
             return;
@@ -84,68 +120,132 @@ class Database
         $database = env('DB_DATABASE', 'swallowphp');
         $username = env('DB_USERNAME', 'root');
         $password = env('DB_PASSWORD', '');
-        $charset = env('DB_CHARSET', 'utf8');
+        $charset = env('DB_CHARSET', 'utf8mb4');
 
-        $this->connection = new \mysqli($host, $username, $password, $database, $port);
-
-        if ($this->connection->connect_errno) {
-            die('Could not connect to the database: ' . $this->connection->connect_error);
+        try {
+            $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
+            $options = [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ];
+            $this->connection = new PDO($dsn, $username, $password, $options);
+            $this->connectedSuccessfully = true;
+        } catch (PDOException $e) {
+            throw new Exception('Veritabanı bağlantısı başlatılamadı: ' . $e->getMessage());
         }
-        $this->connection->set_charset($charset);
-
-        $this->connectedSuccessfully = true;
     }
 
     /**
      * Set the table for the query.
      *
      * @param string $table The name of the table.
-     * @return Database
+     * @return self
      */
-    public function table($table): Database
+    public function table(string $table): self
     {
         $this->table = $table;
         return $this;
     }
+
     /**
-     * Reset all query conditions and properties.
+     * Reset all query parameters.
      *
      * @return void
      */
     public function reset(): void
     {
-        $this->table = null;
+        $this->table = '';
         $this->select = '*';
         $this->where = [];
         $this->whereRaw = [];
+        $this->whereIn = [];
+        $this->whereBetween = [];
         $this->orderBy = [];
         $this->limit = null;
         $this->offset = null;
+        $this->orWhere = [];
+        $this->whereRawBindings = [];
     }
 
     /**
      * Set the columns to select.
      *
      * @param array $columns The columns to select.
-     * @return Database
+     * @return self
      */
-    public function select(array $columns = ['*']): Database
+    public function select(array $columns = ['*']): self
     {
         $this->select = implode(', ', $columns);
         return $this;
     }
 
     /**
-     * Add a where clause to the query.
+     * Add a where condition to the query.
      *
      * @param string $column The column name.
      * @param string $operator The comparison operator.
-     * @param mixed $value The value to compare.
-     * @return Database
+     * @param mixed $value The value to compare against.
+     * @return self
      */
-    public function where(string $column, string $operator, $value): Database
+    public function where(string $column, string $operator, $value): self
     {
         $this->where[] = [$column, $operator, $value];
+        return $this;
+    }
+
+    /**
+     * Add an or where condition to the query.
+     *
+     * @param string $column The column name.
+     * @param string $operator The comparison operator.
+     * @param mixed $value The value to compare against.
+     * @return self
+     */
+    public function orWhere(string $column, string $operator, $value): self
+    {
+        $this->orWhere[] = [$column, $operator, $value];
+        return $this;
+    }
+
+    /**
+     * Add a where in condition to the query.
+     *
+     * @param string $column The column name.
+     * @param array $values The values to check against.
+     * @return self
+     */
+    public function whereIn(string $column, array $values): self
+    {
+        $this->whereIn[] = [$column, $values];
+        return $this;
+    }
+
+    /**
+     * Add a where between condition to the query.
+     *
+     * @param string $column The column name.
+     * @param mixed $start The start value.
+     * @param mixed $end The end value.
+     * @return self
+     */
+    public function whereBetween(string $column, $start, $end): self
+    {
+        $this->whereBetween[] = [$column, $start, $end];
+        return $this;
+    }
+
+    /**
+     * Add a raw where condition to the query.
+     *
+     * @param string $rawCondition The raw SQL condition.
+     * @param array $bindings The parameter bindings for the raw condition.
+     * @return self
+     */
+    public function whereRaw(string $rawCondition, array $bindings = []): self
+    {
+        $this->whereRaw[] = $rawCondition;
+        $this->whereRawBindings[] = $bindings;
         return $this;
     }
 
@@ -153,10 +253,10 @@ class Database
      * Add an order by clause to the query.
      *
      * @param string $column The column to order by.
-     * @param string $direction The sort direction (ASC or DESC).
-     * @return Database
+     * @param string $direction The direction to order (ASC or DESC).
+     * @return self
      */
-    public function orderBy(string $column, string $direction = 'ASC'): Database
+    public function orderBy(string $column, string $direction = 'ASC'): self
     {
         $this->orderBy[] = [$column, $direction];
         return $this;
@@ -165,10 +265,10 @@ class Database
     /**
      * Set the limit for the query.
      *
-     * @param int $limit The maximum number of rows to return.
-     * @return Database
+     * @param int $limit The limit value.
+     * @return self
      */
-    public function limit(int $limit): Database
+    public function limit(int $limit): self
     {
         $this->limit = $limit;
         return $this;
@@ -177,93 +277,271 @@ class Database
     /**
      * Set the offset for the query.
      *
-     * @param int $offset The number of rows to skip.
-     * @return Database
+     * @param int $offset The offset value.
+     * @return self
      */
-    public function offset(int $offset): Database
+    public function offset(int $offset): self
     {
         $this->offset = $offset;
         return $this;
     }
 
+    /**
+     * Build the where clause for the query.
+     *
+     * @return string The complete where clause.
+     */
+    protected function buildWhereClause(): string
+    {
+        $conditions = [];
+
+        foreach ($this->where as $index => $condition) {
+            $conditions[] = $this->buildCondition($condition[0], $condition[1], $condition[2], $index === 0 ? 'WHERE' : 'AND');
+        }
+
+        foreach ($this->orWhere as $condition) {
+            $conditions[] = $this->buildCondition($condition[0], $condition[1], $condition[2], 'OR');
+        }
+
+        foreach ($this->whereIn as $condition) {
+            $placeholders = implode(', ', array_fill(0, count($condition[1]), '?'));
+            $conditions[] = (empty($conditions) ? 'WHERE ' : 'AND ') . "{$condition[0]} IN ($placeholders)";
+        }
+
+        foreach ($this->whereBetween as $condition) {
+            $conditions[] = (empty($conditions) ? 'WHERE ' : 'AND ') . "{$condition[0]} BETWEEN ? AND ?";
+        }
+
+        if (!empty($this->whereRaw)) {
+            foreach ($this->whereRaw as $index => $rawCondition) {
+                $conditions[] = (empty($conditions) && $index === 0 ? 'WHERE ' : 'AND ') . $rawCondition;
+            }
+        }
+
+        return implode(' ', $conditions);
+    }
 
     /**
-     * Execute the select query and return the result set.
+     * Build a single condition for the where clause.
      *
-     * @return array The result set as an associative array.
+     * @param string $column The column name.
+     * @param string $operator The comparison operator.
+     * @param mixed $value The value to compare against.
+     * @param string $conjunction The conjunction (AND or OR).
+     * @return string The built condition.
+     */
+    protected function buildCondition(string $column, string $operator, $value, string $conjunction): string
+    {
+        return "$conjunction $column $operator ?";
+    }
+
+    /**
+     * Execute the select query and get the results.
+     *
+     * @return array The query results.
      */
     public function get(): array
     {
         $this->initialize();
-        $sql = "SELECT $this->select FROM $this->table";
-        $whereConditions = [];
-        $bindValues = [];
-        if ($this->limit ==  14) {
-        }
-        if (!empty($this->where)) {
-            foreach ($this->where as $condition) {
-                $whereConditions[] = "{$condition[0]} {$condition[1]} ?";
-                $bindValues[] = $condition[2];
-            }
-        }
-        if (!empty($this->whereRaw)) {
-            $whereConditions[] = implode(' AND ', $this->whereRaw);
-        }
-        if (!empty($whereConditions)) {
-            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
-        }
+        $sql = "SELECT {$this->select} FROM {$this->table} ";
+        $sql .= $this->buildWhereClause();
+
         if (!empty($this->orderBy)) {
-            $orderByColumns = [];
-            foreach ($this->orderBy as $order) {
-                $orderByColumns[] = "{$order[0]} {$order[1]}";
-            }
+            $orderByColumns = array_map(fn($order) => "{$order[0]} {$order[1]}", $this->orderBy);
             $sql .= ' ORDER BY ' . implode(', ', $orderByColumns);
         }
+
         if ($this->limit !== null) {
-            $sql .= " LIMIT $this->limit";
+            $sql .= " LIMIT ?";
             if ($this->offset !== null) {
-                $sql .= " OFFSET $this->offset";
+                $sql .= " OFFSET ?";
             }
         }
+
         $statement = $this->connection->prepare($sql);
-        if (!empty($this->where)) {
-            $bindTypes = $this->getBindTypes($bindValues);
-            array_unshift($bindValues, $bindTypes);
-            call_user_func_array([$statement, 'bind_param'], $this->refValues($bindValues));
+
+        $bindValues = $this->getBindValues();
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
         }
+
         $statement->execute();
 
-        $result = $statement->get_result();
-
-        $rows = $result->fetch_all(MYSQLI_ASSOC);
-        $statement->close();
+        $rows = $statement->fetchAll();
         $this->reset();
         return $rows;
     }
 
-
-    public function whereRaw($query)
+    /**
+     * Get the first result from the query.
+     *
+     * @return mixed|null The first result or null if no results.
+     */
+    public function first()
     {
-        $this->whereRaw[] = $query;
-        return $this;
+        $this->limit(1);
+        $result = $this->get();
+        return $result[0] ?? null;
     }
 
     /**
-     * Execute the select query and return the result set using cursor-based pagination.
+     * Insert a new record into the database.
      *
-     * @param int $perPage The number of rows per page.
-     * @param string $direction The sort direction for cursor-based pagination (either 'ASC' or 'DESC').
-     * @return array The result set as an associative array.
+     * @param array $data The data to insert.
+     * @return int The ID of the inserted record.
+     */
+    public function insert(array $data): int
+    {
+        $this->initialize();
+        $columns = implode(', ', array_keys($data));
+        $placeholders = implode(', ', array_fill(0, count($data), '?'));
+
+        $sql = "INSERT INTO {$this->table} ($columns) VALUES ($placeholders)";
+        $statement = $this->connection->prepare($sql);
+
+        $values = array_values($data);
+        foreach ($values as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        }
+
+        $statement->execute();
+
+        $insertId = $this->connection->lastInsertId();
+        $this->reset();
+
+        return $insertId;
+    }
+
+    /**
+     * Update records in the database.
+     *
+     * @param array $data The data to update.
+     * @return int The number of affected rows.
+     */
+    public function update(array $data): int
+    {
+        
+        $this->initialize();
+        $sets = array_map(fn($column) => "$column = ?", array_keys($data));
+        $sql = "UPDATE {$this->table} SET " . implode(', ', $sets);
+        $sql .= ' ' . $this->buildWhereClause();
+        
+        $statement = $this->connection->prepare($sql);
+        
+        $bindValues = array_merge(array_values($data), $this->getBindValues());
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        }
+
+        $statement->execute();
+
+        $affectedRows = $statement->rowCount();
+        $this->reset();
+
+        return $affectedRows;
+    }
+
+    /**
+     * Delete records from the database.
+     *
+     * @return int The number of affected rows.
+     */
+    public function delete(): int
+    {
+        $this->initialize();
+        $sql = "DELETE FROM {$this->table} " . $this->buildWhereClause();
+
+        $statement = $this->connection->prepare($sql);
+
+        $bindValues = $this->getBindValues();
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        }
+
+        $statement->execute();
+        $affectedRows = $statement->rowCount();
+        $this->reset();
+
+        return $affectedRows;
+    }
+
+    /**
+     * Count the number of records matching the query conditions.
+     *
+     * @return int The count of matching records.
+     */
+    public function count(): int
+    {
+        $this->initialize();
+        $sql = "SELECT COUNT(*) AS count FROM {$this->table} " . $this->buildWhereClause();
+
+        $statement = $this->connection->prepare($sql);
+
+        $bindValues = $this->getBindValues();
+        foreach ($bindValues as $key => $value) {
+            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        }
+
+        $statement->execute();
+        $result = $statement->fetch(PDO::FETCH_ASSOC);
+        $count = $result['count'];
+
+        return $count;
+    }
+
+    /**
+     * Paginate the query results.
+     *
+     * @param int $perPage The number of items per page.
+     * @param int $page The current page number.
+     * @return array The paginated results.
+     */
+    public function paginate(int $perPage, int $page = 1): array
+    {
+        $this->initialize();
+        $total = $this->count();
+        $totalPages = ceil($total / $perPage);
+        $offset = ($page - 1) * $perPage;
+
+        $this->limit($perPage)->offset($offset);
+        $data = $this->get();
+
+        $baseUrl = request()->fullUrl();
+        $baseUrl = strtok($baseUrl, '?');
+        $existingParams = request()->query();
+        unset($existingParams['page']);
+        $baseUrlWithParams = $baseUrl . (empty($existingParams) ? '' : '?' . http_build_query($existingParams));
+
+        $separator = strpos($baseUrlWithParams, '?') === false ? '?' : '&';
+
+        $pagination = $this->generatePaginationLinks($page, $totalPages, $baseUrlWithParams);
+
+        return [
+            'data' => $data,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => $totalPages,
+            'prev_page_url' => $page > 1 ? $baseUrlWithParams . $separator . 'page=' . ($page - 1) : null,
+            'next_page_url' => $page < $totalPages ? $baseUrlWithParams . $separator . 'page=' . ($page + 1) : null,
+            'pagination_links' => $pagination,
+        ];
+    }
+
+    /**
+     * Paginate the query results using a cursor.
+     *
+     * @param int $perPage The number of items per page.
+     * @return array The cursor paginated results.
      */
     public function cursorPaginate(int $perPage): array
     {
         $this->initialize();
         $cursorColumn = 'id';
 
-        $currentCursor = isset($_GET['cursor']) ? $_GET['cursor'] : null;
+        $currentCursor = $_GET['cursor'] ?? null;
 
         if ($currentCursor) {
-
             $this->where($cursorColumn, '>', $currentCursor);
         }
 
@@ -282,20 +560,17 @@ class Database
             $nextCursor = $lastItem[$cursorColumn];
         }
 
-        // Parse the current URL to preserve other query parameters
         $urlParts = parse_url($_SERVER['REQUEST_URI']);
         $queryParams = [];
         if (isset($urlParts['query'])) {
             parse_str($urlParts['query'], $queryParams);
         }
 
-        // Remove cursor and page parameters from the query string to prevent invalid input
         unset($queryParams['cursor']);
-        unset($queryParams['page']);
 
         $queryString = http_build_query($queryParams);
 
-        $url = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://' . $_SERVER['HTTP_HOST'] . $urlParts['path'];
+        $url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $urlParts['path'];
         $nextPageUrl = $url . ($queryString ? '?' : '') . $queryString;
 
         if ($nextCursor) {
@@ -308,323 +583,114 @@ class Database
         $hasPrevPage = false;
         if ($currentCursor && count($result) > 0) {
             $hasPrevPage = true;
-            // Calculate the previous cursor value by using the first item's ID in the result set
             $firstItem = reset($result);
             $prevCursor = $firstItem[$cursorColumn] - ($perPage + 1);
 
-            // Build the previous page URL
             $prevPageUrl = $url . ($queryString ? '?' : '?') . http_build_query(array_merge($queryParams, ['cursor' => $prevCursor]));
         }
-        $this->reset();
 
         return [
-            'nextPageUrl' => $nextPageUrl,
-            'prevPageUrl' => $prevPageUrl,
-            'hasNextPage' => $hasNextPage,
-            'hasPrevPage' => $hasPrevPage,
             'data' => $result,
-        ];
-    }
-    /**
-     * Execute the select query and return the first result.
-     *
-     * @return array|null The first result as an associative array, or null if no results found.
-     */
-    public function first()
-    {
-        $this->limit(1);
-        $result = $this->get();
-        return $result[0] ?? null;
-    }
-
-    /**
-     * Execute an insert query and return the last inserted ID.
-     *
-     * @param array $data The data to insert as an associative array.
-     * @return int The last inserted ID.
-     */
-    public function insert(array $data): int
-    {
-        $this->initialize();
-        $columns = implode(', ', array_keys($data));
-        $values = implode(', ', array_fill(0, count($data), '?'));
-
-        $params = [];
-        foreach ($data as $value) {
-            if ($value === '') {
-                $params[] = null;
-            } else {
-                $params[] = $value;
-            }
-        }
-
-        $sql = "INSERT INTO $this->table ($columns) VALUES ($values)";
-        $statement = $this->connection->prepare($sql);
-
-        $bindTypes = $this->getBindTypes($params);
-        array_unshift($params, $bindTypes);
-        call_user_func_array([$statement, 'bind_param'], $this->refValues($params));
-        $statement->execute();
-        $this->reset();
-
-        return $this->connection->insert_id;
-    }
-
-    /**
-     * Execute an update query and return the number of affected rows.
-     *
-     * @param array $data The data to update as an associative array.
-     * @return int The number of affected rows.
-     */
-    public function update(array $data): int
-    {
-        $this->initialize();
-        $sets = [];
-        $params = [];
-        foreach ($data as $column => $value) {
-            if ($value === '') { // Eğer değer boşsa
-                $sets[] = "$column = NULL"; // Sütunun değerini NULL olarak ayarla
-            } else {
-                $sets[] = "$column = ?";
-                $params[] = $value;
-            }
-        }
-
-        $sql = "UPDATE $this->table SET " . implode(', ', $sets);
-
-        if (!empty($this->where)) {
-            $whereConditions = [];
-            foreach ($this->where as $condition) {
-                $whereConditions[] = "{$condition[0]} {$condition[1]} ?";
-                $params[] = $condition[2];
-            }
-            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
-        }
-        $statement = $this->connection->prepare($sql);
-
-        $bindTypes = $this->getBindTypes($params);
-        array_unshift($params, $bindTypes);
-        call_user_func_array([$statement, 'bind_param'], $this->refValues($params));
-        $statement->execute();
-        $this->reset();
-
-        return $statement->affected_rows;
-    }
-
-
-    /**
-     * Execute a delete query and return the number of affected rows.
-     *
-     * @return int The number of affected rows.
-     */
-    public function delete(): int
-    {
-        $this->initialize();
-        $sql = "DELETE FROM $this->table";
-
-        if (!empty($this->where)) {
-            $whereConditions = [];
-            foreach ($this->where as $condition) {
-                $whereConditions[] = "{$condition[0]} {$condition[1]} ?";
-            }
-            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
-        }
-
-        $statement = $this->connection->prepare($sql);
-
-        if (!empty($this->where)) {
-            $bindTypes = '';
-            $bindValues = [];
-
-            foreach ($this->where as $condition) {
-                $bindTypes .= $this->getBindType($condition[2]);
-                $bindValues[] = &$condition[2];
-            }
-
-            array_unshift($bindValues, $bindTypes);
-            call_user_func_array([$statement, 'bind_param'], $bindValues);
-        }
-
-        $statement->execute();
-        $this->reset();
-
-        return $statement->affected_rows;
-    }
-
-    /**
-     * Count the number of rows in the current query.
-     *
-     * @return int The number of rows.
-     */
-    public function count(): int
-    {
-        $this->initialize();
-        $sql = "SELECT COUNT(*) AS count FROM $this->table";
-        $whereConditions = [];
-        $bindValues = [];
-        if (!empty($this->where)) {
-            foreach ($this->where as $condition) {
-                $whereConditions[] = "{$condition[0]} {$condition[1]} ?";
-                $bindValues[] = $condition[2];
-            }
-        }
-        if (!empty($this->whereRaw)) {
-            $whereConditions[] = implode(' AND ', $this->whereRaw);
-        }
-        if (!empty($whereConditions)) {
-            $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
-        }
-
-        $statement = $this->connection->prepare($sql);
-        if (!empty($this->where)) {
-            $bindTypes = $this->getBindTypes($bindValues);
-            array_unshift($bindValues, $bindTypes);
-            call_user_func_array([$statement, 'bind_param'], $this->refValues($bindValues));
-        }
-        $statement->execute();
-        $result = $statement->get_result();
-        $count = $result->fetch_assoc()['count'];
-        $statement->close();
-        return $count;
-    }
-    public function paginate(int $perPage, int $page = 1): array
-    {
-        $this->initialize();
-        // Get the full URL
-        $url = request()->fullUrl();
-
-        // Extract the base URL
-        $baseUrl = strtok($url, '?');
-
-        // Parse existing GET parameters
-        $existingParams = request()->query();
-
-        // Remove the 'page' parameter if it exists
-        unset($existingParams['page']);
-
-        // Append remaining GET parameters to the base URL
-        $baseUrlWithParams = $baseUrl . (empty($existingParams) ? '' : '?' . http_build_query($existingParams));
-
-        // Calculate the offset
-        $offset = ($page - 1) * $perPage;
-
-        // Get the total count
-        $total = $this->count();
-
-        // Fetch the data
-        $data = $this->limit($perPage)->offset($offset)->get();
-
-        // Calculate total pages
-        $totalPages = (int)ceil($total / $perPage);
-
-        // Calculate the range of pages to be shown
-        $start = max(1, $page - 2);
-        $end = min($totalPages, $page + 2);
-
-        // Construct pagination links
-        $pagination = [];
-
-        // Add the link to the first page
-        if ($page > 1) {
-            $pagination[] = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=1';
-        }
-
-        // Add "..." if necessary before the first link
-        if ($page > 3) {
-            $pagination[] = '...';
-        }
-
-        // Add the links to the pages around the current page
-        for ($i = $start; $i <= $end; $i++) {
-            $pagination[] = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . $i;
-        }
-
-        // Add "..." if necessary after the last link
-        if ($page < $totalPages - 2) {
-            $pagination[] = '...';
-        }
-
-        // Add the link to the last page
-        if ($page < $totalPages) {
-            $pagination[] = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . $totalPages;
-        }
-
-        // Generate prev_page_url and next_page_url
-        $prevPageUrl = ($page > 1) ? $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . ($page - 1) : null;
-        $nextPageUrl = ($page < $totalPages) ? $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . ($page + 1) : null;
-
-        // Check if there are next and previous pages
-        $hasNextPage = $page < $totalPages;
-        $hasPrevPage = $page > 1;
-        $pagination = removeDuplicates($pagination, ['...']);
-
-        // Get the current page URL
-        $currentPageUrl = $baseUrlWithParams . (empty($existingParams) ? '?' : '&') . 'page=' . $page;
-
-        return [
-            'data' => $data,
-            'total' => $total,
-            'per_page' => $perPage,
-            'current_page' => $page,
-            'last_page' => $totalPages,
-            'prev_page_url' => $prevPageUrl,
             'next_page_url' => $nextPageUrl,
-            'pagination_links' => $pagination,
+            'prev_page_url' => $prevPageUrl,
             'has_next_page' => $hasNextPage,
-            'has_previous_page' => $hasPrevPage,
-            'current_page_url' => $currentPageUrl,
+            'has_prev_page' => $hasPrevPage,
         ];
     }
 
-
-
+    /**
+     * Get the bind values for the query.
+     *
+     * @return array The bind values.
+     */
+    protected function getBindValues(): array
+    {
+        $bindValues = [];
+        foreach ($this->where as $condition) {
+            $bindValues[] = $condition[2];
+        }
+        foreach ($this->orWhere as $condition) {
+            $bindValues[] = $condition[2];
+        }
+        foreach ($this->whereIn as $condition) {
+            $bindValues = array_merge($bindValues, $condition[1]);
+        }
+        foreach ($this->whereBetween as $condition) {
+            $bindValues[] = $condition[1];
+            $bindValues[] = $condition[2];
+        }
+        foreach ($this->whereRawBindings as $bindings) {
+            $bindValues = array_merge($bindValues, $bindings);
+        }
+        if ($this->limit !== null) {
+            $bindValues[] = $this->limit;
+            if ($this->offset !== null) {
+                $bindValues[] = $this->offset;
+            }
+        }
+        return $bindValues;
+    }
 
     /**
-     * Get the bind type for a given value.
+     * Get the PDO parameter type for a given value.
      *
-     * @param mixed $value The value to get the bind type for.
-     * @return string The bind type.
+     * @param mixed $value The value to check.
+     * @return int The PDO parameter type.
      */
-    protected function getBindType($value): string
+    protected function getPDOParamType($value): int
     {
         if (is_int($value)) {
-            return 'i';
-        } elseif (is_float($value)) {
-            return 'd';
-        } elseif (is_string($value)) {
-            return 's';
+            return PDO::PARAM_INT;
+        } elseif (is_bool($value)) {
+            return PDO::PARAM_BOOL;
+        } elseif (is_null($value)) {
+            return PDO::PARAM_NULL;
         } else {
-            return 'b';
+            return PDO::PARAM_STR;
         }
     }
 
     /**
-     * Get the bind types for an array of values.
+     * Close the database connection.
      *
-     * @param array $values The values to get the bind types for.
-     * @return string The bind types.
+     * @return void
      */
-    protected function getBindTypes(array $values): string
+    public function close(): void
     {
-        $bindTypes = '';
-        foreach ($values as $value) {
-            $bindTypes .= $this->getBindType($value);
-        }
-        return $bindTypes;
+        $this->connection = null;
+        $this->connectedSuccessfully = false;
     }
 
-    /**
-     * Get the reference values for a given array of values.
-     *
-     * @param array $array The array of values.
-     * @return array The reference values.
-     */
-    protected function refValues(array $array): array
+    protected function generatePaginationLinks(int $currentPage, int $totalPages, string $baseUrl): array
     {
-        $refValues = [];
-        foreach ($array as $key => $value) {
-            $refValues[$key] = &$array[$key];
+        $links = [];
+        $range = 2;
+
+        $separator = parse_url($baseUrl, PHP_URL_QUERY) ? '&' : '?';
+
+        // İlk sayfa her zaman gösterilir
+        $links[] = ['url' => $baseUrl . $separator . 'page=1', 'label' => '1', 'active' => $currentPage === 1];
+
+        // Eğer gerekirse, ilk sayfadan sonra "..." ekleyin
+        if ($currentPage - $range > 2) {
+            $links[] = ['url' => null, 'label' => '...', 'active' => false];
         }
-        return $refValues;
+
+        // Orta sayfaları ekleyin
+        for ($i = max(2, $currentPage - $range); $i <= min($totalPages - 1, $currentPage + $range); $i++) {
+            $links[] = ['url' => $baseUrl . $separator . 'page=' . $i, 'label' => (string)$i, 'active' => $currentPage === $i];
+        }
+
+        // Eğer gerekirse, son sayfadan önce "..." ekleyin
+        if ($currentPage + $range < $totalPages - 1) {
+            $links[] = ['url' => null, 'label' => '...', 'active' => false];
+        }
+
+        // Son sayfa her zaman gösterilir (eğer ilk sayfadan farklıysa)
+        if ($totalPages > 1) {
+            $links[] = ['url' => $baseUrl . $separator . 'page=' . $totalPages, 'label' => (string)$totalPages, 'active' => $currentPage === $totalPages];
+        }
+
+        return $links;
     }
 }

@@ -4,452 +4,531 @@ namespace SwallowPHP\Framework;
 
 use SwallowPHP\Framework\Database;
 use DateTime;
+use InvalidArgumentException;
 
+/**
+ * Model class manages database operations and data manipulation.
+ */
 class Model
 {
+    /** @var int|null Model ID */
+    protected static ?int $id = null;
 
-    protected static $id;
-
-    /**
-     * The instance of the Database class.
-     *
-     * @var Database
-     */
+    /** @var Database Database connection */
     protected static Database $database;
 
-    /**
-     * The name of the table associated with the model.
-     *
-     * @var string
-     */
+    /** @var string Database table name */
     protected static string $table = '';
 
-    /**
-     * The array of model attributes that correspond to columns in the database table.
-     * These are dynamically filled during object retrieval or instantiation.
-     *
-     * @var array
-     */
+    /** @var array Model attributes */
     protected array $attributes = [];
 
+    /** @var array Original model attributes */
+    protected array $original = [];
+
+    /** @var array Attribute casts */
+    protected array $casts = [];
+
+    /** @var array Date fields */
+    protected array $dates = ['created_at', 'updated_at'];
+
+    /** @var array Hidden attributes */
+    protected array $hidden = [];
+
+    /** @var array Fillable attributes */
+    protected array $fillable = [];
+
+    /** @var array Guarded attributes */
+    protected array $guarded = ['id'];
+
+    /** @var array Event callbacks */
+    protected static array $eventCallbacks = [];
+
     /**
-     * Magic method to get the value of a model attribute or related method.
+     * Model constructor
      * 
-     * This method is triggered when invoking inaccessible or non-existing properties.
-     * It first checks whether the attribute is available within the $attributes array.
-     * If not, it checks if there is a method with the same name as the attribute,
-     * and if such method exists, it is called. Otherwise, it returns the property directly.
-     *
-     * @param string $attribute The name of the attribute to get.
-     * @return mixed The value of the attribute or the return value of the method, or the property.
+     * @param string|null $table Table name
+     * @param array $data Initial data
      */
-    public function __get($attribute)
+    public function __construct(string $table = null, array $data = [])
     {
-        if (isset($this->attributes[$attribute])) {
-            // Return the attribute from the attributes array if it exists
-            return $this->attributes[$attribute];
-        } elseif (method_exists($this, $attribute)) {
-            return call_user_func([$this, $attribute]);
-        } elseif (property_exists($this, $attribute)) {
-            return $this->$attribute;
-        }
-        // Fallback: return the property directly
-
-    }
-
-    /**
-     * Magic method to set the value of a model attribute.
-     *
-     * This method is triggered when writing data to inaccessible or non-existing properties.
-     * It checks if a property with the given key already exists on the model.
-     * If it does, the property is updated; otherwise, the key-value pair is added to the attributes array.
-     *
-     * @param string $key The attribute key to set.
-     * @param mixed $value The value to set for the attribute.
-     * @return void
-     */
-    public function __set($key, $value)
-    {
-        if (isset($this->$key)) {
-            // Update the property if it exists
-            $this->$key = $value;
-        } else {
-            // Otherwise, add the key-value pair to the attributes array
-            $this->attributes[$key] = $value;
-        }
-    }
-    /**
-     * Constructor for the class.
-     *
-     * @param string $table The name of the table.
-     * @param array $data An array of data to fill the object with.
-     * @return void
-     */
-    public function __construct($table = null, $data = [])
-    {
-        if (null !== $table) {
+        if ($table !== null) {
             static::$table = $table;
         }
 
-        if (count($data) > 0) {
+        if (!empty($data)) {
             $this->fill($data);
         }
+
+        $this->original = $this->attributes;
         static::initializeDatabase();
     }
 
     /**
-     * Initialize the database instance.
-     *
-     * @return void
+     * Get attribute value
+     * 
+     * @param string $attribute Attribute name
+     * @return mixed Attribute value
      */
-    protected static function initializeDatabase()
+    public function __get(string $attribute): mixed
     {
+        if (array_key_exists($attribute, $this->attributes)) {
+            return $this->castAttribute($attribute, $this->attributes[$attribute]);
+        }
 
+        if (method_exists($this, $attribute)) {
+            return $this->$attribute();
+        }
+
+        if (property_exists($this, $attribute)) {
+            return $this->$attribute;
+        }
+        return null;
+    }
+
+    /**
+     * Set attribute value
+     * 
+     * @param string $key Attribute name
+     * @param mixed $value Attribute value
+     * @throws InvalidArgumentException If trying to set a guarded attribute
+     */
+    public function __set(string $key, $value): void
+    {
+        if (in_array($key, $this->fillable) || empty($this->fillable)) {
+            $this->attributes[$key] = $value;
+        } elseif (in_array($key, $this->guarded)) {
+            throw new InvalidArgumentException("Attribute '{$key}' is protected and cannot be set directly.");
+        }
+    }
+
+    /**
+     * Initialize database connection
+     */
+    protected static function initializeDatabase(): void
+    {
         if (!isset(static::$database)) {
             static::$database = new Database();
         }
-
         static::$database->table(static::$table);
     }
 
     /**
-     * Set the table for the query.
-     *
-     * @param string $table The name of the table.
-     * @return Model
+     * Set table name
+     * 
+     * @param string $table Table name
+     * @return self Model instance
      */
-    public static function table(string $table)
+    public static function table(string $table): self
     {
         static::$table = $table;
-        // Database bağlantısını burada başlatın.
         static::initializeDatabase();
         return new static();
     }
+
     /**
-     * Create a new model instance and insert it into the database.
-     *
-     * @param array $data The data to insert as an associative array.
-     * @return Model The created model instance.
+     * Create a new record
+     * 
+     * @param array $data Record data
+     * @return self Created model instance
      */
-    public static function create(array $data)
+    public static function create(array $data): self
     {
+        static::fireEvent('creating', $data);
+
         static::initializeDatabase();
         $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
-        $id = static::$database->insert($data);
 
-        // Create an instance of the appropriate model
         $model = static::createModelInstance();
-
-        // Fill the model with data and set the ID
         $model->fill($data);
-        $model->id = $id;
+        $model->save();
+
+        static::fireEvent('created', $model);
 
         return $model;
     }
+
     /**
-     * Set the columns to select.
-     *
-     * @param array $columns The columns to select.
-     * @return Model
+     * Specify columns to select
+     * 
+     * @param array $columns Column names
+     * @return self Model instance
      */
-    public static function select(array $columns = ['*'])
+    public static function select(array $columns = ['*']): self
     {
         static::initializeDatabase();
         static::$database->select($columns);
         return new static();
     }
-    /**
-     * Add a where clause to the query.
-     *
-     * @param string $column The column name.
-     * @param string $operator The comparison operator.
-     * @param mixed $value The value to compare.
-     * @return Model
-     */
-    public static function where(string $column, string $operator, $value)
-    {
 
+    /**
+     * Add where condition
+     * 
+     * @param string $column Column name
+     * @param string $operator Comparison operator
+     * @param mixed $value Comparison value
+     * @return self Model instance
+     */
+    public static function where(string $column, string $operator, $value): self
+    {
         static::initializeDatabase();
         static::$database->where($column, $operator, $value);
         return new static();
     }
 
-    /**
-     * Add an order by clause to the query.
-     *
-     * @param string $column The column to order by.
-     * @param string $direction The sort direction (ASC or DESC).
-     * @return Model
-     */
-    public static function orderBy(string $column, string $direction = 'ASC')
+    public static function orWhere(string $column, string $operator, $value): self
+    {
+        static::initializeDatabase();
+        static::$database->orWhere($column, $operator, $value);
+        return new static();
+    }
+
+    public static function whereIn(string $column, array $values): self
+    {
+        static::initializeDatabase();
+        static::$database->whereIn($column, $values);
+        return new static();
+    }
+
+    public static function whereBetween(string $column, $start, $end): self
+    {
+        static::initializeDatabase();
+        static::$database->whereBetween($column, $start, $end);
+        return new static();
+    }
+
+    public static function orderBy(string $column, string $direction = 'ASC'): self
     {
         static::initializeDatabase();
         static::$database->orderBy($column, $direction);
         return new static();
     }
 
-    /**
-     * Set the limit for the query.
-     *
-     * @param int $limit The maximum number of rows to return.
-     * @return Model
-     */
-    public static function limit(int $limit)
+    public static function limit(int $limit): self
     {
         static::initializeDatabase();
         static::$database->limit($limit);
         return new static();
     }
 
-    /**
-     * Set the offset for the query.
-     *
-     * @param int $offset The number of rows to skip.
-     * @return Model
-     */
-    public static function offset(int $offset)
+    public static function offset(int $offset): self
     {
         static::initializeDatabase();
         static::$database->offset($offset);
         return new static();
     }
 
-
-    /**
-     * Retrieves data from the database and returns either an array of model instances or a single model instance.
-     *
-     * @return |array Model[] Returns an array of model instances if the result is an array, otherwise returns a single model instance.
-     */
-    public static function get()
+    public static function get(): array
     {
         static::initializeDatabase();
         $result = static::$database->get();
-        if (is_array($result)) {
-            $models = [];
-            foreach ($result as  $value) {
-                $model = static::createModelInstance();
-                $model->fill($value);
-                array_push($models, $model);
-            }
-            return $models;
-        }
-
-        $model = static::createModelInstance();
-
-        $model->fill($result);
-
-        return $model;
+        return static::hydrateModels($result);
     }
 
-
-
-    /**
-     * Retrieves the first record from the database and returns a model instance.
-     *
-     * This function initializes the database, executes the 'first' query and
-     * returns a model instance filled with the retrieved data. If no data is
-     * found, it returns null.
-     *
-     * @return Model|null Returns a model instance filled with the retrieved data, or null if no data is found.
-     */
-    public static function first()
+    public static function first(): ?self
     {
-        // Initialize the database
         static::initializeDatabase();
-
-        // Execute the 'first' query and get the result
         $result = static::$database->first();
-
-        // If data is found, create a model instance and fill it with the data
-        if ($result) {
-            // Create an instance of the appropriate model
-            $model = static::createModelInstance();
-
-            // Fill the model with data
-            $model->fill($result);
-
-            // Return the model instance
-            return $model;
-        }
-
-        // Return null if no data is found
-        return null;
+        return $result ? static::hydrateModel($result) : null;
     }
 
-
-    /**
-     * Sets the 'created_at' attribute to the current date and time if not already set.
-     *
-     * This function is used to automatically set the 'created_at' attribute
-     * before saving a new record to the database. If the 'created_at' attribute
-     * is already set, this function does nothing.
-     *
-     * @return void
-     */
-    public function addCreatedAt()
+    public function addCreatedAt(): void
     {
         if (!isset($this->attributes['created_at'])) {
             $this->attributes['created_at'] = date('Y-m-d H:i:s');
         }
     }
 
-    public function toArray()
-    {
-        return $this->attributes;
-    }
     /**
-     * Save the current object by updating its properties in the database.
-     *
-     * @return int The number of affected rows.
+     * Convert model data to array
+     * 
+     * @return array Model data
      */
-    public function save()
+    public function toArray(): array
     {
-        $this->addCreatedAt();
-        static::where('id', '=', $this->attributes['id']);
-        return $this->update(static::toArray());
+        $array = $this->attributes;
+        foreach ($this->hidden as $hidden) {
+            unset($array[$hidden]);
+        }
+
+        foreach ($this->attributes as $key => $attribute) {
+            $array[$key] = $this->castAttribute($key, $attribute);
+        }
+        return $array;
     }
 
+    /**
+     * Save model data
+     * 
+     * @return int Number of affected rows
+     */
+    public function save(): int
+    {
+        $this->attributes['updated_at'] = date('Y-m-d H:i:s');
+        static::fireEvent('saving', $this);
 
+        if (isset($this->attributes['id'])) {
+            
+            static::fireEvent('updating', $this);
+            $this->where('id', '=', $this->id);
+            $result = $this->update($this->getDirty());
+            static::fireEvent('updated', $this);
+        } else {
+            $this->addCreatedAt();
+            static::fireEvent('creating', $this);
+            $result = static::insert($this->toArray());
+            $this->id = $result;
+            static::fireEvent('created', $this);
+        }
+
+        $this->syncOriginal();
+        static::fireEvent('saved', $this);
+
+        return $result;
+    }
 
     /**
-     * Creates a new instance of the model class.
-     *
-     * @return object The new instance of the model class.
+     * Create a new model instance
+     * 
+     * @return self New model instance
      */
-    private static function createModelInstance()
+    protected static function createModelInstance(): self
     {
         $className = get_called_class();
         return new $className();
     }
 
     /**
-     * Fill the model with data.
-     *
-     * @param array $data The data to fill the model with.
-     * @return void
+     * Fill model data
+     * 
+     * @param array $data Data to fill
      */
-    public function fill(array $data)
+    public function fill(array $data): void
     {
         foreach ($data as $key => $value) {
-
-            $this->attributes[$key] = $value;
+            if (in_array($key, $this->fillable) || empty($this->fillable)) {
+                $this->attributes[$key] = $this->castAttribute($key, $value);
+            }
         }
     }
 
-    /**
-     * Execute an insert query and return the last inserted ID.
-     *
-     * @param array $data The data to insert as an associative array.
-     * @return int The last inserted ID.
-     */
-    public static function insert(array $data)
+    public static function insert(array $data): int
     {
         static::initializeDatabase();
         return static::$database->insert($data);
     }
 
-    /**
-     * Execute an update query and return the number of affected rows.
-     *
-     * @param array $data The data to update as an associative array.
-     * @return int The number of affected rows.
-     */
-    public static function update(array $data)
+    public static function update(array $data): int
     {
         static::initializeDatabase();
         return static::$database->update($data);
     }
 
-    public function refresh()
+    public function refresh(): self
     {
-        if (isset($this->attributes['id'])) {
-            static::initializeDatabase();
-            $this->attributes = static::$database->where('id', '=', $this->attributes['id'])->first();
+        if (!isset($this->attributes['id'])) {
+            throw new InvalidArgumentException('Model must have an ID to refresh');
         }
-        return new static();
+
+        static::initializeDatabase();
+        $result = static::$database->where('id', '=', $this->attributes['id'])->first();
+
+        if (!$result) {
+            throw new InvalidArgumentException('Model not found in database');
+        }
+
+        $this->attributes = $result;
+        $this->syncOriginal();
+        return $this;
     }
 
     /**
-     * Execute a delete query and return the number of affected rows.
-     *
-     * @return int The number of affected rows.
+     * Delete record(s)
+     * 
+     * @return int Number of affected rows
      */
-    public static function delete()
+    public static function delete(): int
     {
         static::initializeDatabase();
-        return static::$database->delete();
+        static::fireEvent('deleting', new static());
+
+        // Eğer instance üzerinden çağrıldıysa (this->id varsa) sadece o kaydı sil
+        if (isset(static::$attributes['id'])) {
+            static::$database->where('id', '=', static::$attributes['id']);
+        }
+
+        $result = static::$database->delete();
+        static::fireEvent('deleted', new static());
+        return $result;
     }
 
-    /**
-     * Paginate the query results.
-     *
-     * @param int $perPage The number of results per page.
-     * @param int $page The page number.
-     * @return array The paginated result set.
-     */
-    public static function paginate(int $perPage)
+    public static function paginate(int $perPage): array
     {
         static::initializeDatabase();
         $data = static::$database->paginate($perPage, $_GET['page'] ?? 1);
-        if (is_array($data['data'])) {
-            $models = [];
-            foreach ($data['data'] as  $value) {
-                $model = static::createModelInstance();
-                $model->fill($value);
-                array_push($models, $model);
-            }
-            $data['data'] = $models;
-            return $data;
-        }
-        if (is_null($data['data'])) {
-            $model = static::createModelInstance();
-            $model->fill($data);
-            return $data;
-        }
+        $data['data'] = static::hydrateModels($data['data']);
+        return $data;
     }
 
-
-
-
-    /**
-     * Perform a raw WHERE clause on the query.
-     *
-     * @param string $query The raw WHERE clause
-     * @return self
-     */
-    public static function whereRaw($query)
+    public static function whereRaw(string $query, array $bindings = []): self
     {
         static::initializeDatabase();
-        static::$database->whereRaw($query);
+        static::$database->whereRaw($query, $bindings);
         return new static();
     }
 
-
-    /**
-     * Paginates the data using a cursor pagination strategy.
-     *
-     * @param int $perPage The number of items per page.
-     * @param int $page The current page number. Default is 1.
-     * @return array The paginated data.
-     */
-    public static function cursorPaginate(int $perPage, int $page = 1)
+    public static function cursorPaginate(int $perPage, int $page = 1): array
     {
         static::initializeDatabase();
         $data = static::$database->cursorPaginate($perPage, $page);
-        if (is_array($data['data'])) {
-            $models = [];
-            foreach ($data['data'] as  $value) {
-                $model = static::createModelInstance();
-                $model->fill($value);
-                array_push($models, $model);
+        $data['data'] = static::hydrateModels($data['data']);
+        return $data;
+    }
+
+    /**
+     * Cast attribute value
+     * 
+     * @param string $key Attribute name
+     * @param mixed $value Attribute value
+     * @return mixed Casted value
+     */
+    protected function castAttribute(string $key, $value)
+    {
+        if (!isset($this->casts[$key])) {
+            return $value;
+        }
+        switch ($this->casts[$key]) {
+            case 'int':
+            case 'integer':
+                return (int) $value;
+            case 'real':
+            case 'float':
+            case 'double':
+                return (float) $value;
+            case 'string':
+                return (string) $value;
+            case 'bool':
+            case 'boolean':
+                return (bool) $value;
+            case 'array':
+                return json_decode($value, true);
+            case 'object':
+                return json_decode($value);
+            case 'date':
+            case 'datetime':
+                return new DateTime($value);
+            default:
+                return $value;
+        }
+    }
+
+    /**
+     * Hydrate multiple models
+     * 
+     * @param array $data Raw data
+     * @return array Hydrated models
+     */
+    protected static function hydrateModels(array $data): array
+    {
+        $models = [];
+        foreach ($data as $item) {
+            $models[] = static::hydrateModel($item);
+        }
+        return $models;
+    }
+
+    /**
+     * Hydrate a single model
+     * 
+     * @param array $data Raw data
+     * @return self Hydrated model
+     */
+    protected static function hydrateModel(array $data): self
+    {
+        $model = static::createModelInstance();
+        $model->fill($data);
+        $model->syncOriginal();
+        return $model;
+    }
+
+    /**
+     * Sync original data
+     */
+    protected function syncOriginal(): void
+    {
+        $this->original = $this->attributes;
+    }
+
+    /**
+     * Get changed attributes
+     * 
+     * @return array Changed attributes
+     */
+    protected function getDirty(): array
+    {
+        $dirty = [];
+        foreach ($this->attributes as $key => $value) {
+            if (!array_key_exists($key, $this->original) || $this->original[$key] !== $value) {
+                $dirty[$key] = $this->castAttribute($key, $value);
             }
-            $data['data'] = $models;
-            return $data;
         }
-        if (is_null($data['data'])) {
-            $model = static::createModelInstance();
-            $model->fill($data);
-            return $data;
+        return $dirty;
+    }
+
+    /**
+     * Add event listener
+     * 
+     * @param string $event Event name
+     * @param callable $callback Callback function
+     */
+    public static function on(string $event, callable $callback): void
+    {
+        if (!isset(static::$eventCallbacks[$event])) {
+            static::$eventCallbacks[$event] = [];
         }
+        static::$eventCallbacks[$event][] = $callback;
+    }
+
+    /**
+     * Fire an event
+     * 
+     * @param string $event Event name
+     * @param mixed $payload Event data
+     */
+    protected static function fireEvent(string $event, $payload): void
+    {
+        if (isset(static::$eventCallbacks[$event])) {
+            foreach (static::$eventCallbacks[$event] as $callback) {
+                call_user_func($callback, $payload);
+            }
+        }
+    }
+
+    /**
+     * Define a one-to-many relationship
+     * 
+     * @param string $relatedModel Related model class
+     * @param string $foreignKey Foreign key
+     * @param string $localKey Local key
+     * @return array Related models
+     */
+    public function hasMany(string $relatedModel, string $foreignKey, string $localKey = 'id'): array
+    {
+        $relatedInstance = new $relatedModel();
+        return $relatedInstance::where($foreignKey, '=', $this->$localKey)->get();
+    }
+
+    /**
+     * Define a belongs-to relationship
+     * 
+     * @param string $relatedModel Related model class
+     * @param string $foreignKey Foreign key
+     * @param string $ownerKey Owner key
+     * @return Model|null Related model
+     */
+    public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): ?Model
+    {
+        $relatedInstance = new $relatedModel();
+        return $relatedInstance::where($ownerKey, '=', $this->$foreignKey)->first();
     }
 }

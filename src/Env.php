@@ -25,7 +25,10 @@ class Env
      */
     public static function getAsJson($environmentFile = null) {
         if ($environmentFile === null) {
-            $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/../.env';
+            $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/.env';
+            while(!file_exists($environmentFile)){
+                $environmentFile = $_SERVER['DOCUMENT_ROOT'].'/../'.$environmentFile;
+            }
         }
         $envArray = [];
 
@@ -45,9 +48,11 @@ class Env
 
     public static function load($environmentFile = null) {
         if ($environmentFile === null) {
-            $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/../.env';
+            $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/.env';
+            if (!file_exists($environmentFile)) {
+                $environmentFile = $_SERVER['DOCUMENT_ROOT'] . '/../.env';
+            }
         }
-       
         if (file_exists( $environmentFile)) {
             $lines = file(  $environmentFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             foreach ($lines as $line) {

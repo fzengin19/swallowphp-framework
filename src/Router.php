@@ -9,6 +9,9 @@ use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
 class Router
 {
 
+    protected static Request $request;
+
+
     /**
      * Route collection for storing registered routes.
      *
@@ -103,6 +106,10 @@ class Router
         return $route;
     }
 
+    public static function getRequest()
+    {
+        return self::$request;
+    }
     /**
      * Creates and returns a new Route object for a PUT request with the given URI and action.
      * 
@@ -135,7 +142,7 @@ class Router
      * @param string $name The name of the route.
      * @param array $params An array of path parameters and their corresponding values.
      * @throws RouteNotFoundException If the route with the given name is not found.
-     * @return string The URL of the route with path parameters replaced.
+     * @return string The URL of the route with path parameters replaced or as query parameters if not found in the URI.
      */
     public static function getRouteByName($name, $params = [])
     {
@@ -145,14 +152,22 @@ class Router
 
                 // Replace path parameters with actual values
                 foreach ($params as $param => $value) {
-                    $uriPattern = str_replace('{' . $param . '}', $value, $uriPattern);
+                    if (strpos($uriPattern, '{' . $param . '}') !== false) {
+                        $uriPattern = str_replace('{' . $param . '}', $value, $uriPattern);
+                        unset($params[$param]); // Path parametrelerini query parametrelerinden çıkar
+                    }
                 }
 
-                return env('APP_URL') . $uriPattern;
+                // Kalan parametreler query string olarak eklenir
+                $queryString = http_build_query($params);
+                $url = env('APP_URL') . $uriPattern;
+
+                return $queryString ? $url . '?' . $queryString : $url;
             }
         }
         throw new RouteNotFoundException($name . ' route not found', 404);
     }
+
 
 
     /**
@@ -165,7 +180,8 @@ class Router
      */
     public static function dispatch(Request $request)
     {
-        $requestUri = parse_url($request->getUri(), PHP_URL_PATH);
+        self::$request = $request;
+        $requestUri = parse_url(self::$request->getUri(), PHP_URL_PATH);
         $requestUri = preg_replace('/^' . preg_quote(env('APP_PATH'), '/') . '/', '', $requestUri, 1);
         if ($requestUri != '/') {
             $requestUri = rtrim($requestUri, '/');
@@ -175,13 +191,13 @@ class Router
             $routeUri = preg_quote($route->getUri(), '/');
 
             $pattern = '/^' . str_replace(['\{', '\}'], ['(?P<', '>[^\/]+)'], $routeUri) . '$/';
-     
+
             if (preg_match($pattern, $requestUri, $matches)) {
-                if ($route->getMethod() === $request->getMethod() || $route->getMethod() === $request->get('_method')) {
+                if ($route->getMethod() === self::$request->getMethod() || $route->getMethod() === self::$request->get('_method')) {
 
                     RateLimiter::execute($route);
                     $params = array_filter($matches, '\is_string', ARRAY_FILTER_USE_KEY);
-                    $request->setAll(array_merge($params, $request->all()));
+                    self::$request->setAll(array_merge($params, self::$request->all()));
                     return $route->execute($request);
                 }
                 $supportedMethods[] = $route->getMethod();

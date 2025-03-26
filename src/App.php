@@ -140,15 +140,27 @@ class App
         // Output response based on selected format
         if ($format === 'json') {
             header('Content-Type: application/json');
-            print_r(json_encode($response));
+            $json = json_encode($response);
+            if ($json === false) {
+                // Handle JSON encoding error
+                http_response_code(500);
+                error_log('JSON encoding error: ' . json_last_error_msg());
+                echo '{"error": "Internal Server Error"}';
+            } else {
+                echo $json;
+            }
         } elseif ($format === 'html') {
             header('Content-Type: text/html');
-            print_r($response); // Assuming $response is already HTML
-        } else {
-            // Handle other formats if needed
-            // Default to HTML
-            header('Content-Type: text/html');
-            print_r($response);
+            // Expecting string, scalar, or null for HTML output
+            if (is_scalar($response) || is_null($response)) {
+                echo $response;
+            } else {
+                // Handle invalid response type for HTML
+                http_response_code(500);
+                error_log('Invalid response type for HTML format. Expected scalar or null, got ' . gettype($response));
+                echo 'Internal Server Error: Invalid response type.';
+            }
         }
+        // Removed redundant else block which defaulted to HTML
     }
 }

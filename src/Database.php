@@ -545,12 +545,12 @@ class Database
      * @param int $perPage The number of items per page.
      * @return array The cursor paginated results.
      */
-    public function cursorPaginate(int $perPage): array
+    public function cursorPaginate(int $perPage, ?string $cursor = null): array
     {
         $this->initialize();
         $cursorColumn = 'id';
 
-        $currentCursor = $_GET['cursor'] ?? null;
+        $currentCursor = $cursor;
 
         if ($currentCursor) {
             $this->where($cursorColumn, '>', $currentCursor);

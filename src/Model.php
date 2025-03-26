@@ -333,7 +333,7 @@ class Model
         return $result;
     }
 
-    public static function paginate(int $perPage): array
+    // Removed duplicate: public static function paginate(int $perPage): array
     public static function paginate(int $perPage, int $page = 1): array
     {
         // Pass the $page parameter down to the Database query builder
@@ -347,9 +347,11 @@ class Model
         return static::query()->whereRaw($query, $bindings);
     }
 
-    public static function cursorPaginate(int $perPage, int $page = 1): array
+    // Removed duplicate: public static function cursorPaginate(int $perPage, int $page = 1): array
+    public static function cursorPaginate(int $perPage, ?string $cursor = null): array
     {
-        $data = static::query()->cursorPaginate($perPage, $page); // Start query and execute cursorPaginate
+        // Pass the $cursor parameter down to the Database query builder
+        $data = static::query()->cursorPaginate($perPage, $cursor);
         $data['data'] = static::hydrateModels($data['data']);
         return $data;
     }

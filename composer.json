@@ -21,6 +21,8 @@
     "prefer-stable": true,
     "require": {
         "phpmailer/phpmailer": "^6.9.1",
-        "maximebf/debugbar": "^1.23"
+        "maximebf/debugbar": "^1.23",
+        "psr/simple-cache": "^3.0",
+        "league/container": "^4.2"
     }
 }

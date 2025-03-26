@@ -67,26 +67,16 @@ class Router
     }
     /**
      * Checks if a route with the given name exists.
+     * Checks if a route with the given name has been defined.
      *
      * @param string $name The name of the route to check.
      * @return bool Returns true if a route with the given name exists, false otherwise.
      */
     public static function hasRoute($name)
     {
-        $request = new Request(); // Assuming you have a way to create the Request object.
-
-        $requestUri = parse_url($request->getUri(), PHP_URL_PATH);
-        $requestUri = str_replace(env('APP_PATH'), '', $requestUri);
-
         foreach (self::getRoutes() as $route) {
-            $routeUri = preg_quote($route->getUri(), '/');
-
-            $pattern = '/^' . str_replace(['\{', '\}'], ['(?P<', '>[^\/]+)'], $routeUri) . '$/';
-
-            if (preg_match($pattern, $requestUri, $matches)) {
-                if ($route->getMethod() === $request->getMethod()) {
-                    return $route->getName() == $name;
-                }
+            if ($route->getName() === $name) {
+                return true;
             }
         }
 

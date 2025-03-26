@@ -269,3 +269,31 @@ if (!function_exists('getIp')) {
         return $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'];
     }
 }
+
+
+if (!function_exists('csrf_field')) {
+    /**
+     * Generate a CSRF token hidden input field.
+     *
+     * @return void
+     */
+    function csrf_field()
+    {
+        // Ensure the middleware class is available
+        if (!class_exists(\SwallowPHP\Framework\Middleware\VerifyCsrfToken::class)) {
+             // Handle error appropriately, maybe log or throw an exception
+             // For now, we'll output a comment in the HTML
+             echo '<!-- CSRF Middleware not found -->';
+             return;
+        }
+        try {
+            $token = \SwallowPHP\Framework\Middleware\VerifyCsrfToken::getToken();
+            echo '<input type="hidden" name="_token" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
+        } catch (\RuntimeException $e) {
+            // Handle session start error
+            error_log("CSRF Field Error: " . $e->getMessage());
+            echo '<!-- CSRF Token Error -->';
+        }
+    }
+}
+

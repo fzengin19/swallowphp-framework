@@ -8,6 +8,7 @@ use SwallowPHP\Framework\Env;
 use SwallowPHP\Framework\ExceptionHandler;
 use SwallowPHP\Framework\Request;
 use SwallowPHP\Framework\Router;
+use SwallowPHP\Framework\Middleware\VerifyCsrfToken; // Import the middleware
 
 date_default_timezone_set('Europe/Istanbul');
 setlocale(LC_TIME, 'turkish');
@@ -111,8 +112,15 @@ class App
                 ob_start();
             }
 
+            // Apply global middleware (e.g., CSRF protection)
+            $csrfMiddleware = new VerifyCsrfToken();
+            $response = $csrfMiddleware->handle($request, function ($request) {
+                // This closure represents the "next" step after the CSRF middleware
+                return self::handleRequest($request);
+            });
+
             // Handle the request and determine the output format
-            $response = self::handleRequest($request);
+            // $response = self::handleRequest($request); // Moved inside the middleware closure
             $acceptHeader = isset($_SERVER['HTTP_ACCEPT']) ? $_SERVER['HTTP_ACCEPT'] : '';
             $format = self::getPreferredFormat($acceptHeader);
 

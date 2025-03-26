@@ -217,4 +217,23 @@ class Request
         }
         return $ip;
     }
+
+    /**
+     * Retrieve a header from the request.
+     *
+     * @param  string  $key
+     * @param  string|array|null  $default
+     * @return string|array|null
+     */
+    public function header($key, $default = null)
+    {
+        $key = str_replace('_', '-', strtolower($key)); // Normalize key (e.g., x_csrf_token -> x-csrf-token)
+        foreach ($this->headers as $headerKey => $value) {
+            if (strtolower($headerKey) === $key) {
+                return $value;
+            }
+        }
+        return $default;
+    }
+
 }

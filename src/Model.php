@@ -11,11 +11,11 @@ use InvalidArgumentException;
  */
 class Model
 {
-    /** @var int|null Model ID */
-    protected static ?int $id = null;
+    /** @var int|null The unique identifier for the model. */
+    protected ?int $id = null;
 
     /** @var Database Database connection */
-    protected static Database $database;
+    // protected static Database $database; // Removed: Will use instance-based query builder
 
     /** @var string Database table name */
     protected static string $table = '';
@@ -52,16 +52,15 @@ class Model
      */
     public function __construct(string $table = null, array $data = [])
     {
-        if ($table !== null) {
-            static::$table = $table;
-        }
+        // Removed static table setting from constructor.
+        // Table name should be defined via static $table property in subclasses
+        // or derived by getTable() method.
 
         if (!empty($data)) {
             $this->fill($data);
         }
 
         $this->original = $this->attributes;
-        static::initializeDatabase();
     }
 
     /**
@@ -103,17 +102,6 @@ class Model
     }
 
     /**
-     * Initialize database connection
-     */
-    protected static function initializeDatabase(): void
-    {
-        if (!isset(static::$database)) {
-            static::$database = new Database();
-        }
-        static::$database->table(static::$table);
-    }
-
-    /**
      * Set table name
      * 
      * @param string $table Table name
@@ -122,7 +110,6 @@ class Model
     public static function table(string $table): self
     {
         static::$table = $table;
-        static::initializeDatabase();
         return new static();
     }
 
@@ -136,7 +123,6 @@ class Model
     {
         static::fireEvent('creating', $data);
 
-        static::initializeDatabase();
         $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
 
         $model = static::createModelInstance();
@@ -152,13 +138,11 @@ class Model
      * Specify columns to select
      * 
      * @param array $columns Column names
-     * @return self Model instance
+     * @return \SwallowPHP\Framework\Database
      */
-    public static function select(array $columns = ['*']): self
+    public static function select(array $columns = ['*']): Database
     {
-        static::initializeDatabase();
-        static::$database->select($columns);
-        return new static();
+        return static::query()->select($columns);
     }
 
     /**
@@ -167,68 +151,52 @@ class Model
      * @param string $column Column name
      * @param string $operator Comparison operator
      * @param mixed $value Comparison value
-     * @return self Model instance
+     * @return \SwallowPHP\Framework\Database
      */
-    public static function where(string $column, string $operator, $value): self
+    public static function where(string $column, string $operator, $value): Database
     {
-        static::initializeDatabase();
-        static::$database->where($column, $operator, $value);
-        return new static();
+        return static::query()->where($column, $operator, $value);
     }
 
-    public static function orWhere(string $column, string $operator, $value): self
+    public static function orWhere(string $column, string $operator, $value): Database
     {
-        static::initializeDatabase();
-        static::$database->orWhere($column, $operator, $value);
-        return new static();
+        return static::query()->orWhere($column, $operator, $value);
     }
 
-    public static function whereIn(string $column, array $values): self
+    public static function whereIn(string $column, array $values): Database
     {
-        static::initializeDatabase();
-        static::$database->whereIn($column, $values);
-        return new static();
+        return static::query()->whereIn($column, $values);
     }
 
-    public static function whereBetween(string $column, $start, $end): self
+    public static function whereBetween(string $column, $start, $end): Database
     {
-        static::initializeDatabase();
-        static::$database->whereBetween($column, $start, $end);
-        return new static();
+        return static::query()->whereBetween($column, $start, $end);
     }
 
-    public static function orderBy(string $column, string $direction = 'ASC'): self
+    public static function orderBy(string $column, string $direction = 'ASC'): Database
     {
-        static::initializeDatabase();
-        static::$database->orderBy($column, $direction);
-        return new static();
+        return static::query()->orderBy($column, $direction);
     }
 
-    public static function limit(int $limit): self
+    public static function limit(int $limit): Database
     {
-        static::initializeDatabase();
-        static::$database->limit($limit);
-        return new static();
+        return static::query()->limit($limit);
     }
 
-    public static function offset(int $offset): self
+    public static function offset(int $offset): Database
     {
-        static::initializeDatabase();
-        static::$database->offset($offset);
-        return new static();
+        return static::query()->offset($offset);
     }
 
     public static function get(): array
     {
-        static::initializeDatabase();
-        $result = static::$database->get();
+        $result = static::query()->get(); // Start query and execute get
         return static::hydrateModels($result);
     }
 
     public static function first(): ?self
     {
-        static::initializeDatabase();
-        $result = static::$database->first();
+        $result = static::query()->first(); // Start query and execute first
         return $result ? static::hydrateModel($result) : null;
     }
 
@@ -270,14 +238,17 @@ class Model
 
         if (isset($this->attributes['id'])) {
             static::fireEvent('updating', $this);
-            $this->where('id', '=', $this->id);
-            $result = $this->update($this->getDirty());
+            // Use the query builder to update the specific record
+            $result = static::query()
+                            ->where('id', '=', $this->attributes['id'])
+                            ->update($this->getDirty());
             static::fireEvent('updated', $this);
         } else {
             $this->addCreatedAt();
             static::fireEvent('creating', $this);
-            $result = static::insert($this->toArray());
-            $this->id = $result;
+            // Use the query builder to insert the new record
+            $result = static::query()->insert($this->toArray());
+            $this->id = (int) $result; // Assign the insert ID back to the model (cast to int)
             static::fireEvent('created', $this);
         }
 
@@ -314,14 +285,18 @@ class Model
 
     public static function insert(array $data): int
     {
-        static::initializeDatabase();
-        return static::$database->insert($data);
+        return static::query()->insert($data); // Start query and execute insert
     }
 
     public static function update(array $data): int
     {
-        static::initializeDatabase();
-        return static::$database->update($data);
+        // This static update is problematic as it lacks WHERE conditions.
+        // It should likely be removed or require conditions.
+        // For now, let it start a query, but it will update ALL rows without a where clause!
+        // Consider deprecating or changing its behavior.
+        // Triggering an error might be safer:
+        throw new \LogicException("Static update without conditions is not supported. Use query()->where(...)->update(...) instead.");
+        // return static::query()->update($data);
     }
 
     public function refresh(): self
@@ -330,8 +305,7 @@ class Model
             throw new InvalidArgumentException('Model must have an ID to refresh');
         }
 
-        static::initializeDatabase();
-        $result = static::$database->where('id', '=', $this->attributes['id'])->first();
+        $result = static::query()->where('id', '=', $this->attributes['id'])->first(); // Use query builder
 
         if (!$result) {
             throw new InvalidArgumentException('Model not found in database');
@@ -349,33 +323,33 @@ class Model
      */
     public static function delete(): int
     {
-        static::initializeDatabase();
         static::fireEvent('deleting', new static());
-
-        $result = static::$database->delete();
+        // The actual delete operation needs a preceding where clause via query()
+        // This static delete without conditions is dangerous.
+        // Triggering an error might be safer:
+        throw new \LogicException("Static delete without conditions is not supported. Use query()->where(...)->delete() instead.");
+        // $result = static::query()->delete(); // This would delete ALL rows!
         static::fireEvent('deleted', new static());
         return $result;
     }
 
     public static function paginate(int $perPage): array
+    public static function paginate(int $perPage, int $page = 1): array
     {
-        static::initializeDatabase();
-        $data = static::$database->paginate($perPage, $_GET['page'] ?? 1);
+        // Pass the $page parameter down to the Database query builder
+        $data = static::query()->paginate($perPage, $page);
         $data['data'] = static::hydrateModels($data['data']);
         return $data;
     }
 
-    public static function whereRaw(string $query, array $bindings = []): self
+    public static function whereRaw(string $query, array $bindings = []): Database
     {
-        static::initializeDatabase();
-        static::$database->whereRaw($query, $bindings);
-        return new static();
+        return static::query()->whereRaw($query, $bindings);
     }
 
     public static function cursorPaginate(int $perPage, int $page = 1): array
     {
-        static::initializeDatabase();
-        $data = static::$database->cursorPaginate($perPage, $page);
+        $data = static::query()->cursorPaginate($perPage, $page); // Start query and execute cursorPaginate
         $data['data'] = static::hydrateModels($data['data']);
         return $data;
     }
@@ -510,7 +484,8 @@ class Model
     public function hasMany(string $relatedModel, string $foreignKey, string $localKey = 'id'): array
     {
         $relatedInstance = new $relatedModel();
-        return $relatedInstance::where($foreignKey, '=', $this->$localKey)->get();
+        // Use the query builder on the related model
+        return $relatedInstance::query()->where($foreignKey, '=', $this->$localKey)->get();
     }
 
     /**
@@ -524,6 +499,41 @@ class Model
     public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): ?Model
     {
         $relatedInstance = new $relatedModel();
-        return $relatedInstance::where($ownerKey, '=', $this->$foreignKey)->first();
+        // Use the query builder on the related model
+        return $relatedInstance::query()->where($ownerKey, '=', $this->$foreignKey)->first();
     }
+
+
+    /**
+     * Get the table associated with the model.
+     * Allows overriding in subclasses.
+     *
+     * @return string
+     */
+    protected static function getTable(): string
+    {
+        // If $table is not set in subclass, generate from class name
+        if (empty(static::$table)) {
+             // Basic pluralization and snake_case conversion
+             $className = basename(str_replace('\\', '/', get_called_class()));
+             $tableName = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className));
+             // Simple pluralization (add 's'), might need a more robust library for complex cases
+             static::$table = $tableName . 's';
+        }
+        return static::$table;
+    }
+
+    /**
+     * Begin querying the model.
+     * Returns a new query builder instance for the model's table.
+     *
+     * @return \SwallowPHP\Framework\Database An instance of the query builder.
+     */
+    public static function query(): Database
+    {
+        $builder = new Database(); // Creates a new builder instance
+        $builder->table(static::getTable()); // Sets the table for this query
+        return $builder;
+    }
+
 }

@@ -214,13 +214,16 @@ class Model
     public function toArray(): array
     {
         $array = $this->attributes;
-        foreach ($this->hidden as $hidden) {
-            unset($array[$hidden]);
-        }
 
         foreach ($this->attributes as $key => $attribute) {
             $array[$key] = $this->castAttribute($key, $attribute);
         }
+
+        // Remove hidden attributes after casting
+        foreach ($this->hidden as $hidden) {
+            unset($array[$hidden]);
+        }
+
         return $array;
     }
 
@@ -484,7 +487,18 @@ class Model
      */
     public function hasMany(string $relatedModel, string $foreignKey, string $localKey = 'id'): array
     {
-        $relatedInstance = new $relatedModel();
+        // Get related model instance from container (assuming it might be registered or resolvable)
+        // Fallback to new instance if container cannot resolve? Or throw error?
+        // For now, let's assume container can handle it or throw appropriate exception.
+        try {
+             $relatedInstance = \SwallowPHP\Framework\Foundation\App::container()->get($relatedModel);
+        } catch (\Exception $e) {
+             // Handle potential container resolution error
+             error_log("Could not resolve related model '{$relatedModel}' from container in hasMany: " . $e->getMessage());
+             // Fallback or re-throw? Re-throwing might be better.
+             throw new \RuntimeException("Failed to resolve related model '{$relatedModel}' for relationship.", 0, $e);
+        }
+
         // Use the query builder on the related model
         return $relatedInstance::query()->where($foreignKey, '=', $this->$localKey)->get();
     }
@@ -499,7 +513,14 @@ class Model
      */
     public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): ?Model
     {
-        $relatedInstance = new $relatedModel();
+        // Get related model instance from container
+        try {
+             $relatedInstance = \SwallowPHP\Framework\Foundation\App::container()->get($relatedModel);
+        } catch (\Exception $e) {
+             error_log("Could not resolve related model '{$relatedModel}' from container in belongsTo: " . $e->getMessage());
+             throw new \RuntimeException("Failed to resolve related model '{$relatedModel}' for relationship.", 0, $e);
+        }
+
         // Use the query builder on the related model
         return $relatedInstance::query()->where($ownerKey, '=', $this->$foreignKey)->first();
     }

@@ -54,7 +54,7 @@ class ExceptionHandler
         }
 
         // Determine if debug mode is enabled (use global helper)
-        $debug = \env('APP_DEBUG', 'false') === 'true';
+        $debug = config('app.debug', false) === true;
 
         // Prepare response body details
         $responseBody = ['message' => $message];
@@ -71,7 +71,7 @@ class ExceptionHandler
         }
 
         // Determine response format (simple check for JSON)
-        $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $acceptHeader = request()->header('Accept', '');
         $wantsJson = str_contains($acceptHeader, 'application/json');
 
         // Ensure output buffer is clean before sending output

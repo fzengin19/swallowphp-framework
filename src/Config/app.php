@@ -85,10 +85,6 @@ return [
     | Encryption Key
     |--------------------------------------------------------------------------
     |
-    | This key is used by the encrypter service and should be set
-    | to a random, 32 character string, otherwise these encrypted strings
-    | will not be safe. Please do this before deploying an application!
-    | You can generate this key using `php artisan key:generate` command.
     |
     */
 
@@ -105,6 +101,40 @@ return [
     | Default assumes a 'storage' directory in the project root.
     |
     */
-    'storage_path' => env('STORAGE_PATH', dirname(__DIR__) . '/storage'), // Assumes config is in project_root/config
+    'storage_path' => env('STORAGE_PATH', dirname(__DIR__, 2) . '/storage'), // Corrected path assumption
+
+    /*
+    |--------------------------------------------------------------------------
+    | View Storage Paths
+    |--------------------------------------------------------------------------
+    |
+    | Most templating systems load templates from disk. Here you may specify
+    | an array of paths that should be checked for your views.
+    | Default is relative to project root's 'resources/views' directory.
+    |
+    */
+    'view_path' => env('VIEW_PATH', dirname(__DIR__, 2) . '/resources/views'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Maximum Execution Time
+    |--------------------------------------------------------------------------
+    */
+    'max_execution_time' => (int) env('MAX_EXECUTION_TIME', 30),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Force SSL
+    |--------------------------------------------------------------------------
+    */
+    'ssl_redirect' => (bool) env('SSL_REDIRECT', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Gzip Compression
+    |--------------------------------------------------------------------------
+    */
+    'gzip_compression' => (bool) env('GZIP_COMPRESSION', true),
+
 
 ];

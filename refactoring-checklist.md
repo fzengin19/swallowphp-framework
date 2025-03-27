@@ -18,8 +18,8 @@
 - [x] Exceptions/RateLimitExceededException.php
 - [x] Exceptions/RouteNotFoundException.php
 - [x] Exceptions/ViewNotFoundException.php
-- [ ] Foundation/App.php
-- [ ] Foundation/Env.php
+- [x] Foundation/App.php
+- [x] Foundation/Env.php
 - [ ] Foundation/ExceptionHandler.php
 - [ ] Http/Cookie.php
 - [ ] Http/Request.php

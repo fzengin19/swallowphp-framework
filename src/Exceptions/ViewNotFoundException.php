@@ -5,9 +5,8 @@ use Exception;
 
 class ViewNotFoundException extends Exception
 {
-    public function __construct($message = 'View not found', $code = 404, Exception $previous = null)
+    public function __construct($message = 'View not found', $code = 404, ?Exception $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }
 }
-?>

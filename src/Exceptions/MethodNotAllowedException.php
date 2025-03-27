@@ -17,7 +17,7 @@ class MethodNotAllowedException extends Exception
      * @throws Exception When an error occurs.
      * @return void
      */
-    public function __construct($message = 'Method Not Allowed', $code = 405, Exception $previous = null)
+    public function __construct($message = 'Method Not Allowed', $code = 405, ?Exception $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }

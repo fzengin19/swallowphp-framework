@@ -14,7 +14,7 @@ class MethodNotFoundException extends Exception
      * @param int $code the exception code
      * @param Exception|null $previous the previous exception used for chaining
      */
-    public function __construct($message = 'Method Not Found', $code = 404, Exception $previous = null)
+    public function __construct($message = 'Method Not Found', $code = 404, ?Exception $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }

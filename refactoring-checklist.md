@@ -7,17 +7,17 @@
 - [x] Cache/CacheManager.php
 - [x] Cache/FileCache.php
 - [x] Cache/SqliteCache.php
-- [ ] Contracts/CacheInterface.php
-- [ ] Database/Database.php
-- [ ] Database/Model.php
-- [ ] Exceptions/AuthorizationException.php
-- [ ] Exceptions/CsrfTokenMismatchException.php
-- [ ] Exceptions/EnvPropertyValueException.php
-- [ ] Exceptions/MethodNotAllowedException.php
-- [ ] Exceptions/MethodNotFoundException.php
-- [ ] Exceptions/RateLimitExceededException.php
-- [ ] Exceptions/RouteNotFoundException.php
-- [ ] Exceptions/ViewNotFoundException.php
+- [x] Contracts/CacheInterface.php
+- [x] Database/Database.php
+- [x] Database/Model.php
+- [x] Exceptions/AuthorizationException.php
+- [x] Exceptions/CsrfTokenMismatchException.php
+- [x] Exceptions/EnvPropertyValueException.php
+- [x] Exceptions/MethodNotAllowedException.php
+- [x] Exceptions/MethodNotFoundException.php
+- [x] Exceptions/RateLimitExceededException.php
+- [x] Exceptions/RouteNotFoundException.php
+- [x] Exceptions/ViewNotFoundException.php
 - [ ] Foundation/App.php
 - [ ] Foundation/Env.php
 - [ ] Foundation/ExceptionHandler.php

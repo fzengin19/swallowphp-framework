@@ -13,8 +13,9 @@ use SwallowPHP\Framework\Routing\Router;
 
 use SwallowPHP\Framework\Foundation\Config; // Config is back in Foundation
 
-date_default_timezone_set('Europe/Istanbul');
-setlocale(LC_TIME, 'turkish');
+// Set timezone from config
+date_default_timezone_set(config('app.timezone', 'Europe/Istanbul'));
+setlocale(LC_TIME, config('app.locale', 'tr') . '.UTF-8'); // Ensure locale includes encoding
 
 class App
 {
@@ -33,7 +34,8 @@ class App
         self::container();
 
         // TODO: View directory path should be more robust (e.g., relative to project root)
-        self::$viewDirectory = $_SERVER['DOCUMENT_ROOT'] . env('VIEW_DIRECTORY', '/views/');
+        // Use config for view path, assuming it's relative to project root
+        self::$viewDirectory = config('app.view_path', dirname(__DIR__, 2) . '/resources/views');
         self::$router = new Router(); // Router could also be managed by container later
 
         // Assign the App instance itself to the container? Optional.
@@ -207,12 +209,13 @@ class App
             Env::load();
 
             // Basic environment setup
-            set_time_limit((int)env('MAX_EXECUTION_TIME', 20));
-            if (env('SSL_REDIRECT') === 'TRUE' && empty($_SERVER['HTTPS'])) {
+            set_time_limit((int)config('app.max_execution_time', 30));
+            if (config('app.ssl_redirect', false) === true && empty($_SERVER['HTTPS'])) {
                 header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
                 exit;
             }
-            if (env('ERROR_REPORTING') !== 'true') {
+            // Use debug config for error reporting
+            if (config('app.debug', false) !== true) {
                 error_reporting(0);
             }
 
@@ -234,7 +237,7 @@ class App
             }
 
             // Output buffering and Gzip
-            if (Env::get('GZIP_COMPRESSION') === 'true' && isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
+            if (config('app.gzip_compression', true) === true && isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
                 ini_set('zlib.output_compression', '1');
                 // ob_start('ob_gzhandler'); // ob_gzhandler can conflict with zlib.output_compression
                 header('Content-Encoding: gzip');
@@ -251,14 +254,32 @@ class App
             $response = $csrfMiddleware->handle($request, function ($request) use ($app) {
                 // Pass request through router
                 return $app->handleRequest($request); // Use instance method? Or keep static?
+                // Ensure handleRequest always returns a Response object
+                $routeResponse = $app->handleRequest($request);
+                if (!$routeResponse instanceof \SwallowPHP\Framework\Http\Response) {
+                     // Attempt to create a response based on the returned content
+                     if (is_array($routeResponse) || is_object($routeResponse)) {
+                         return \SwallowPHP\Framework\Http\Response::json($routeResponse);
+                     } else {
+                         return \SwallowPHP\Framework\Http\Response::html((string) $routeResponse);
+                     }
+                }
+                return $routeResponse;
             });
 
             // Determine output format based on Accept header
-            $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? '';
-            $format = self::getPreferredFormat($acceptHeader);
+            // $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? ''; // No longer needed here
+            // $format = self::getPreferredFormat($acceptHeader); // No longer needed here
 
             // Send the response
-            self::outputResponse($response, $format);
+            // Ensure $response is a Response object before sending
+            if (!$response instanceof \SwallowPHP\Framework\Http\Response) {
+                 // This case might happen if middleware directly returns non-response
+                 // Log error and create a default error response
+                 error_log("Middleware pipeline did not return a Response object. Got: " . gettype($response));
+                 $response = \SwallowPHP\Framework\Http\Response::html('Internal Server Error', 500);
+            }
+            $response->send(); // Send the response object
 
             ob_end_flush(); // Send output buffer content
 
@@ -271,75 +292,6 @@ class App
         }
     }
 
-    /**
-     * Determine the preferred response format based on Accept header.
-     *
-     * @param string $acceptHeader
-     * @return string 'json' or 'html'
-     */
-    private static function getPreferredFormat(string $acceptHeader): string
-    {
-        if (strpos($acceptHeader, 'application/json') !== false) {
-            return 'json';
-        }
-        // Prioritize HTML slightly over wildcard or empty Accept header
-        elseif (strpos($acceptHeader, 'text/html') !== false || strpos($acceptHeader, '*/*') !== false || empty($acceptHeader)) {
-            return 'html';
-        } else {
-            // Default to HTML for other specific types for now
-            return 'html';
-        }
-    }
-
-    /**
-     * Output the response in the determined format.
-     *
-     * @param mixed $response The content to output.
-     * @param string $format The format ('json' or 'html').
-     */
-    private static function outputResponse(mixed $response, string $format): void
-    {
-        if (!headers_sent()) { // Check if headers can still be sent
-            if ($format === 'json') {
-                header('Content-Type: application/json');
-                $json = json_encode($response);
-                if ($json === false) {
-                    http_response_code(500);
-                    error_log('JSON encoding error: ' . json_last_error_msg());
-                    echo '{"error": "Internal Server Error"}';
-                } else {
-                    echo $json;
-                }
-            } elseif ($format === 'html') {
-                header('Content-Type: text/html; charset=UTF-8');
-                if (is_scalar($response) || is_null($response)) {
-                    echo $response;
-                } elseif (is_object($response) && method_exists($response, '__toString')) {
-                    echo (string) $response; // Allow objects with __toString
-                } else {
-                    http_response_code(500);
-                    error_log('Invalid response type for HTML format. Expected scalar, null, or object with __toString, got ' . gettype($response));
-                    echo 'Internal Server Error: Invalid response type.';
-                }
-            } else {
-                // Fallback for unknown format? Or throw error?
-                header('Content-Type: text/plain');
-                echo 'Error: Unsupported response format requested.';
-            }
-        } else {
-            // Headers already sent, likely an error occurred or direct output was used
-            error_log("App::outputResponse - Cannot send headers, already sent. Outputting raw response.");
-            // Attempt to output something anyway, might be mixed with previous output
-            if ($format === 'json') {
-                $json = json_encode($response);
-                echo $json ?: '{"error": "Internal Server Error during output"}';
-            } elseif (is_scalar($response) || is_null($response)) {
-                echo $response;
-            } elseif (is_object($response) && method_exists($response, '__toString')) {
-                echo (string) $response;
-            } else {
-                echo 'Internal Server Error: Invalid response type during output.';
-            }
-        }
-    }
+    // Removed getPreferredFormat() - Logic moved to Response/Content Negotiation if needed
+    // Removed outputResponse() - Logic moved to Response::send()
 }

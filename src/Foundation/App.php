@@ -1,16 +1,15 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Foundation;
 
-use SwallowPHP\Framework\Database;
-use SwallowPHP\Framework\Env;
-use SwallowPHP\Framework\ExceptionHandler;
-use SwallowPHP\Framework\Request;
-use SwallowPHP\Framework\Router;
-use SwallowPHP\Framework\Middleware\VerifyCsrfToken;
-use League\Container\Container; // Import DI Container
-use SwallowPHP\Framework\Contracts\CacheInterface; // Import Cache Interface
-use SwallowPHP\Framework\Cache\CacheManager; // Import Cache Manager
+
+use League\Container\Container;
+use SwallowPHP\Framework\Contracts\CacheInterface;
+use SwallowPHP\Framework\Cache\CacheManager;
+use SwallowPHP\Framework\Database\Database;
+use SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken;
+use SwallowPHP\Framework\Http\Request;
+use SwallowPHP\Framework\Routing\Router;
 
 date_default_timezone_set('Europe/Istanbul');
 setlocale(LC_TIME, 'turkish');
@@ -20,7 +19,7 @@ class App
     private static $instance;
     private static Router $router;
     private static ?string $viewDirectory;
-    private static ?Container $container = null; // Container property correctly placed
+    private static ?Container $container = null;
 
     /**
      * Initializes a new instance of the class and creates a new Router object.
@@ -32,7 +31,7 @@ class App
         self::container();
 
         // TODO: View directory path should be more robust (e.g., relative to project root)
-        self::$viewDirectory = $_SERVER['DOCUMENT_ROOT'].env('VIEW_DIRECTORY', '/views/');
+        self::$viewDirectory = $_SERVER['DOCUMENT_ROOT'] . env('VIEW_DIRECTORY', '/views/');
         self::$router = new Router(); // Router could also be managed by container later
 
         // Assign the App instance itself to the container? Optional.
@@ -66,26 +65,25 @@ class App
             });
 
             // Request Service (Shared Singleton for the current request)
-            // We create it once in run() and could potentially add it to the container
-            // self::$container->addShared(Request::class, function() {
-            //     return Request::createFromGlobals();
-            // });
-            // Or register the instance created in run() later.
+            // Create the request instance once from globals and share it.
+            self::$container->addShared(Request::class, function () {
+                return Request::createFromGlobals();
+            });
 
             // Database Service (Shared Singleton)
             // Assumes Database constructor handles connection
-             self::$container->addShared(Database::class, Database::class);
+            self::$container->addShared(Database::class, Database::class);
 
             // Router Service (Shared Singleton)
             // Using the instance created in App's constructor for now
-             self::$container->addShared(Router::class, function() {
-                 // Ensure router is initialized if getInstance wasn't called first
-                 // This might need adjustment depending on how App lifecycle is managed
-                 if (!isset(self::$router)) {
-                      self::$router = new Router();
-                 }
-                 return self::$router;
-             });
+            self::$container->addShared(Router::class, function () {
+                // Ensure router is initialized if getInstance wasn't called first
+                // This might need adjustment depending on how App lifecycle is managed
+                if (!isset(self::$router)) {
+                    self::$router = new Router();
+                }
+                return self::$router;
+            });
 
             // Add other core services...
 
@@ -101,7 +99,6 @@ class App
     public static function getViewDirectory(): ?string
     {
         // Ensure instance exists if called statically before run()
-        // self::getInstance(); // Might cause issues if called too early
         return self::$viewDirectory;
     }
 
@@ -126,12 +123,12 @@ class App
      */
     public static function getRouter(): Router
     {
-         // Ensure instance/router exists
-         // self::getInstance(); // Might cause issues
-         if (!isset(self::$router)) {
-              // Potentially get from container if registered there
-              return self::container()->get(Router::class);
-         }
+        // Ensure instance/router exists
+        // self::getInstance(); // Might cause issues
+        if (!isset(self::$router)) {
+            // Potentially get from container if registered there
+            return self::container()->get(Router::class);
+        }
         return self::$router;
     }
 
@@ -190,7 +187,7 @@ class App
 
             // Create Request instance
             // TODO: Consider making Request creation managed by the container
-            $request = Request::createFromGlobals();
+            $request = $container->get(Request::class); // Get shared request instance
             // $container->share(Request::class, $request); // Add instance to container?
 
             // Setup encoding and session
@@ -213,11 +210,11 @@ class App
             } else {
                 ini_set('zlib.output_compression', '0');
             }
-             ob_start(); // Always start output buffering
+            ob_start(); // Always start output buffering
 
             // Apply global middleware (e.g., CSRF protection)
             // TODO: Manage middleware pipeline via container or dedicated class
-            $csrfMiddleware = new VerifyCsrfToken(); // Direct instantiation for now
+            $csrfMiddleware = $container->get(VerifyCsrfToken::class);
             // $csrfMiddleware = $container->get(VerifyCsrfToken::class); // Future goal
 
             $response = $csrfMiddleware->handle($request, function ($request) use ($app) {
@@ -237,7 +234,7 @@ class App
         } catch (\Throwable $th) {
             // Ensure output buffer is cleaned on error
             if (ob_get_level() > 0) {
-                 ob_end_clean();
+                ob_end_clean();
             }
             ExceptionHandler::handle($th);
         }
@@ -287,31 +284,31 @@ class App
                 if (is_scalar($response) || is_null($response)) {
                     echo $response;
                 } elseif (is_object($response) && method_exists($response, '__toString')) {
-                     echo (string) $response; // Allow objects with __toString
+                    echo (string) $response; // Allow objects with __toString
                 } else {
                     http_response_code(500);
                     error_log('Invalid response type for HTML format. Expected scalar, null, or object with __toString, got ' . gettype($response));
                     echo 'Internal Server Error: Invalid response type.';
                 }
             } else {
-                 // Fallback for unknown format? Or throw error?
-                 header('Content-Type: text/plain');
-                 echo 'Error: Unsupported response format requested.';
+                // Fallback for unknown format? Or throw error?
+                header('Content-Type: text/plain');
+                echo 'Error: Unsupported response format requested.';
             }
         } else {
-             // Headers already sent, likely an error occurred or direct output was used
-             error_log("App::outputResponse - Cannot send headers, already sent. Outputting raw response.");
-             // Attempt to output something anyway, might be mixed with previous output
-             if ($format === 'json') {
-                 $json = json_encode($response);
-                 echo $json ?: '{"error": "Internal Server Error during output"}';
-             } elseif (is_scalar($response) || is_null($response)) {
-                 echo $response;
-             } elseif (is_object($response) && method_exists($response, '__toString')) {
-                  echo (string) $response;
-             } else {
-                  echo 'Internal Server Error: Invalid response type during output.';
-             }
+            // Headers already sent, likely an error occurred or direct output was used
+            error_log("App::outputResponse - Cannot send headers, already sent. Outputting raw response.");
+            // Attempt to output something anyway, might be mixed with previous output
+            if ($format === 'json') {
+                $json = json_encode($response);
+                echo $json ?: '{"error": "Internal Server Error during output"}';
+            } elseif (is_scalar($response) || is_null($response)) {
+                echo $response;
+            } elseif (is_object($response) && method_exists($response, '__toString')) {
+                echo (string) $response;
+            } else {
+                echo 'Internal Server Error: Invalid response type during output.';
+            }
         }
     }
 }

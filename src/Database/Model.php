@@ -1,8 +1,7 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Database;
 
-use SwallowPHP\Framework\Database;
 use DateTime;
 use InvalidArgumentException;
 

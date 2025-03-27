@@ -1,6 +1,6 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Foundation;
 
 class Env
 {

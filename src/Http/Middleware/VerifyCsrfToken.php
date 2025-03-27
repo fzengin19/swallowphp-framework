@@ -1,13 +1,13 @@
 <?php
 
-namespace SwallowPHP\Framework\Middleware;
+namespace SwallowPHP\Framework\Http\Middleware;
 
 use Closure;
-use SwallowPHP\Framework\Request;
+use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Exceptions\CsrfTokenMismatchException; // Will create this next
 
 // Assuming the base Middleware class is in the parent namespace
-use SwallowPHP\Framework\Middleware;
+
 
 class VerifyCsrfToken extends Middleware
 {

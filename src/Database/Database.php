@@ -1,6 +1,6 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Database;
 
 use PDO;
 use PDOException;
@@ -376,7 +376,6 @@ class Database
         $statement->execute();
 
         $rows = $statement->fetchAll();
-        $this->reset();
         // $this->reset(); // Removed: Builder state should persist until explicitly reset or object destroyed
         return $rows;
     }
@@ -416,7 +415,6 @@ class Database
         $statement->execute();
 
         $insertId = $this->connection->lastInsertId();
-        $this->reset();
         // $this->reset(); // Removed: Builder state should persist
 
         return $insertId;
@@ -445,7 +443,6 @@ class Database
         $statement->execute();
 
         $affectedRows = $statement->rowCount();
-        $this->reset();
         // $this->reset(); // Removed: Builder state should persist
 
         return $affectedRows;
@@ -470,7 +467,6 @@ class Database
 
         $statement->execute();
         $affectedRows = $statement->rowCount();
-        $this->reset();
         // $this->reset(); // Removed: Builder state should persist
 
         return $affectedRows;

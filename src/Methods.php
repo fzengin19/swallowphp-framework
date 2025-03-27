@@ -1,12 +1,15 @@
 <?php
 
-use SwallowPHP\Framework\Database;
-use SwallowPHP\Framework\Env;
+use SwallowPHP\Framework\Database\Database;
+use SwallowPHP\Framework\Foundation\Env;
 use SwallowPHP\Framework\Exceptions\ViewNotFoundException;
-use SwallowPHP\Framework\Model;
-use SwallowPHP\Framework\Router;
+use SwallowPHP\Framework\Database\Model; // Though not directly used here
+use SwallowPHP\Framework\Routing\Router;
 use PHPMailer\PHPMailer\PHPMailer;
-use SwallowPHP\Framework\App;
+use SwallowPHP\Framework\Foundation\App;
+use SwallowPHP\Framework\Http\Request; // Updated Request namespace
+use SwallowPHP\Framework\Contracts\CacheInterface; // Add CacheInterface use statement
+
 
 
 
@@ -34,7 +37,8 @@ if (!function_exists('method')) {
 if (!function_exists('route')) {
     function route($name, $params = [])
     {
-        return Router::getRouteByName($name, $params);
+        // Get Router instance from container
+        return App::container()->get(Router::class)->getRouteByName($name, $params);
     }
 }
 
@@ -70,7 +74,8 @@ if (!function_exists('slug')) {
 if (!function_exists('redirectToRoute')) {
     function redirectToRoute($urlName, $params = [])
     {
-        header('Location: ' . Router::getRouteByName($urlName, $params));
+        // Get Router instance from container
+        header('Location: ' . App::container()->get(Router::class)->getRouteByName($urlName, $params));
         exit();
     }
 }
@@ -143,7 +148,8 @@ if (!function_exists('removeDuplicates')) {
 if (!function_exists('request')) {
     function request()
     {
-        return Router::getRequest();
+        // Get Request instance from container
+        return App::container()->get(Request::class);
     }
 }
 
@@ -173,7 +179,8 @@ if (!function_exists('formatDateForHumans')) {
 if (!function_exists('hasRoute')) {
     function hasRoute($name)
     {
-        return Router::hasRoute($name);
+        // Get Router instance from container
+        return App::container()->get(Router::class)->hasRoute($name);
     }
 }
 
@@ -188,7 +195,7 @@ if (!function_exists('send')) {
     function send($data)
     {
         print_r($data);
-        die;
+        // die; // Avoid using die in helper functions
     }
 }
 
@@ -250,7 +257,8 @@ if (!function_exists('getFile')) {
 if (!function_exists('db')) {
     function db()
     {
-        return new Database();
+        // Get Database instance from container
+        return App::container()->get(Database::class);
     }
 }
 
@@ -259,9 +267,26 @@ if (!function_exists('sendJson')) {
     {
         header('Content-Type: application/json');
         echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK | JSON_PRETTY_PRINT);
-        die;
+        // die; // Avoid using die in helper functions
     }
 }
+
+
+if (!function_exists('cache')) {
+    /**
+     * Get the available cache instance.
+     *
+     * @param string|null $driver Specify a driver or use default.
+     * @return CacheInterface
+     */
+    function cache(?string $driver = null): CacheInterface
+    {
+        // Get Cache instance from container via manager
+        // If specific driver needed, CacheManager::driver($driver) could be used if manager is adapted
+        return App::container()->get(CacheInterface::class);
+    }
+}
+
 
 if (!function_exists('getIp')) {
     function getIp()
@@ -280,14 +305,14 @@ if (!function_exists('csrf_field')) {
     function csrf_field()
     {
         // Ensure the middleware class is available
-        if (!class_exists(\SwallowPHP\Framework\Middleware\VerifyCsrfToken::class)) {
+        if (!class_exists(\SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::class)) {
              // Handle error appropriately, maybe log or throw an exception
              // For now, we'll output a comment in the HTML
              echo '<!-- CSRF Middleware not found -->';
              return;
         }
         try {
-            $token = \SwallowPHP\Framework\Middleware\VerifyCsrfToken::getToken();
+            $token = \SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::getToken();
             echo '<input type="hidden" name="_token" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
         } catch (\RuntimeException $e) {
             // Handle session start error

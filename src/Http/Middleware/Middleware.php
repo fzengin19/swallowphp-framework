@@ -1,8 +1,8 @@
 <?php 
-namespace SwallowPHP\Framework;
-
-use SwallowPHP\Framework\Request;
+namespace SwallowPHP\Framework\Http\Middleware;
 use Closure;
+use SwallowPHP\Framework\Http\Request; // Import Request from Http namespace
+
 
 abstract class Middleware
 {

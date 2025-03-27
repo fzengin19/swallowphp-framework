@@ -1,8 +1,9 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Auth;
 
-use SwallowPHP\Framework\Model;
+use SwallowPHP\Framework\Database\Model;
+use SwallowPHP\Framework\Http\Cookie;
 
 class Auth
 {
@@ -98,18 +99,31 @@ class Auth
             $userData = $user->toArray();
             $userData['session_token'] = $token;
 
-            // Set secure cookies
-            $cookieOptions = [
-                'expires' => $remember ? time() + (86400 * 30) : 0,
-                'path' => '/',
-                'secure' => true,
-                'httponly' => true,
-                'samesite' => 'Strict'
-            ];
+            // Set secure cookies using the updated Cookie::set signature
+            $days = $remember ? 30 : 0; // 30 days or session cookie
+            Cookie::set(
+                name: 'user',
+                value: $userData,
+                days: $days,
+                path: '/',
+                domain: '', // Set domain if needed
+                secure: true, // Always secure
+                httpOnly: true, // Always HttpOnly
+                sameSite: 'Strict' // Use Strict for auth cookies
+            );
 
-            Cookie::set('user', $userData, $cookieOptions);
             if ($remember) {
-                Cookie::set('remember', 'true', $cookieOptions);
+                 // Remember cookie also needs secure flags
+                 Cookie::set(
+                     name: 'remember',
+                     value: 'true',
+                     days: 30, // Remember for 30 days
+                     path: '/',
+                     domain: '',
+                     secure: true,
+                     httpOnly: true,
+                     sameSite: 'Strict'
+                 );
             }
 
             return true;

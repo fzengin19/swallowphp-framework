@@ -1,10 +1,12 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Routing;
 
-use SwallowPHP\Framework\Route;
 use SwallowPHP\Framework\Exceptions\MethodNotAllowedException;
 use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
+use SwallowPHP\Framework\Http\Request;
+use SwallowPHP\Framework\Http\Middleware\RateLimiter;
+use SwallowPHP\Framework\Foundation\Env;
 
 class Router
 {
@@ -150,7 +152,9 @@ class Router
 
                 // Kalan parametreler query string olarak eklenir
                 $queryString = http_build_query($params);
-                $url = env('APP_URL') . $uriPattern;
+
+                // Use Env helper correctly (assuming it's loaded)
+                $url = Env::get('APP_URL') . $uriPattern;
 
                 return $queryString ? $url . '?' . $queryString : $url;
             }
@@ -172,7 +176,11 @@ class Router
     {
         self::$request = $request;
         $requestUri = parse_url(self::$request->getUri(), PHP_URL_PATH);
-        $requestUri = preg_replace('/^' . preg_quote(env('APP_PATH'), '/') . '/', '', $requestUri, 1);
+        // Use Env helper correctly
+        $appPath = Env::get('APP_PATH');
+        if ($appPath) {
+             $requestUri = preg_replace('/^' . preg_quote($appPath, '/') . '/', '', $requestUri, 1);
+        }
         if ($requestUri != '/') {
             $requestUri = rtrim($requestUri, '/');
         }

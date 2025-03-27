@@ -1,12 +1,17 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Routing;
 
 use Exception;
 use SwallowPHP\Framework\Exceptions\MethodNotFoundException;
 use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
-use SwallowPHP\Framework\Middleware;
+use SwallowPHP\Framework\Http\Middleware\Middleware;
+use SwallowPHP\Framework\Foundation\App; // Need access to the container
 use ReflectionMethod;
+use ReflectionFunction;
+use ReflectionParameter;
+use League\Container\Container; // For type hinting
+use SwallowPHP\Framework\Http\Request; // Ensure correct Request is imported
 
 class Route
 {
@@ -141,10 +146,17 @@ class Route
 
   protected function executeAction($request)
   {
-    $params = ['request' => $request];
+    $container = App::container(); // Get the DI container
+    // Route parameters are already added to the request object in Router::dispatch
+    // We'll pass the whole request object and let container/reflection handle it.
+    $routeParameters = $request->all(); // Get all request data, including route params
 
     if (is_callable($this->action)) {
-      return call_user_func($this->action, $request);
+        // Resolve parameters for the closure using reflection and container
+        $reflector = new ReflectionFunction($this->action);
+        $args = $this->resolveMethodDependencies($reflector->getParameters(), $routeParameters, $container, $request);
+        return call_user_func_array($this->action, $args);
+
     } elseif (is_string($this->action)) {
       [$controllerName, $method] = explode('@', $this->action);
     } elseif (is_array($this->action) && count($this->action) === 2 && is_string($this->action[0]) && is_string($this->action[1])) {
@@ -154,34 +166,89 @@ class Route
     }
 
     if (!class_exists($controllerName)) {
+      // TODO: Make controller namespace configurable?
       $controllerName = '\\App\\Controllers\\' . $controllerName;
       if (!class_exists($controllerName))
         throw new Exception("Controller '$controllerName' not found", 404);
     }
 
-    $controller = new $controllerName;
+    // Resolve controller instance from the container
+    try {
+        $controller = $container->get($controllerName);
+    } catch (\Exception $e) {
+         throw new Exception("Could not resolve controller '{$controllerName}' from container: " . $e->getMessage(), 500, $e);
+    }
 
     if (!method_exists($controller, $method)) {
       throw new MethodNotFoundException("Method \"$method\" Not Found on \"$controllerName\"", 404);
     }
 
+    // Resolve dependencies for the controller method
     $reflectionMethod = new ReflectionMethod($controllerName, $method);
     $reflectionParams = $reflectionMethod->getParameters();
-    $finalParams = [];
+    $args = $this->resolveMethodDependencies($reflectionParams, $routeParameters, $container, $request);
 
-    foreach ($reflectionParams as $reflectionParam) {
-      $paramName = $reflectionParam->getName();
-      if (!isset($params[$paramName])) {
-        throw new Exception("Missing parameter '$paramName' for method '$method' in controller '$controllerName'", 500);
-      }
-      $finalParams[] = $params[$paramName];
-    }
-
-    return $reflectionMethod->invokeArgs($controller, $finalParams);
+    // Invoke the method with resolved dependencies
+    return $reflectionMethod->invokeArgs($controller, $args);
   }
 
+  /**
+   * Resolve dependencies for a given set of reflection parameters.
+   * Tries to match parameters with route parameters, the request object, or services from the container.
+   *
+   * @param ReflectionParameter[] $parameters
+   * @param array $routeParameters Parameters extracted from the route URI.
+   * @param Container $container The DI container.
+   * @param Request $request The current request object.
+   * @return array The resolved arguments for the method/function call.
+   * @throws Exception If a required parameter cannot be resolved.
+   */
+  protected function resolveMethodDependencies(array $parameters, array $routeParameters, Container $container, Request $request): array
+  {
+      $args = [];
+      foreach ($parameters as $param) {
+          $paramName = $param->getName();
+          $paramType = $param->getType() instanceof \ReflectionNamedType ? $param->getType()->getName() : null;
 
-  public function execute(Request $request)
+          if (array_key_exists($paramName, $routeParameters)) {
+              // Match by route parameter name
+              $args[] = $routeParameters[$paramName];
+          } elseif ($paramType === Request::class || is_subclass_of($paramType, Request::class)) {
+              // Match by Request type hint
+              $args[] = $request;
+          } elseif ($paramType && $container->has($paramType)) {
+              // Match by type hint in the container
+              try {
+                   $args[] = $container->get($paramType);
+              } catch (\Exception $e) {
+                   // Handle cases where container fails to resolve (e.g., interface not bound)
+                   if ($param->isDefaultValueAvailable()) {
+                        $args[] = $param->getDefaultValue();
+                   } elseif ($param->allowsNull()) {
+                        $args[] = null;
+                   } else {
+                        throw new Exception("Could not resolve parameter '{$paramName}' of type '{$paramType}': " . $e->getMessage(), 500, $e);
+                   }
+              }
+          } elseif ($param->isDefaultValueAvailable()) {
+              // Use default value if available
+              $args[] = $param->getDefaultValue();
+          } elseif ($param->allowsNull()) {
+               // Use null if allowed
+               $args[] = null;
+          }
+           else {
+              // Cannot resolve the parameter
+              $methodName = $param->getDeclaringFunction()->getName();
+              $className = $param->getDeclaringClass() ? $param->getDeclaringClass()->getName() . '::' : '';
+              throw new Exception("Unresolvable dependency resolving [{$param->getName()}] in {$className}{$methodName}");
+          }
+      }
+      return $args;
+  }
+
+  // Removed duplicate: public function execute(Request $request)
+  public function execute(\SwallowPHP\Framework\Http\Request $request)
   {
     // Middleware'leri ters sırayla al
     $pipeline = array_reverse($this->middlewares);

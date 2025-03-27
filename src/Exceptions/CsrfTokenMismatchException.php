@@ -6,7 +6,11 @@ use Exception;
 
 class CsrfTokenMismatchException extends Exception
 {
-    // Typically associated with a 419 HTTP status code,
-    // but the ExceptionHandler can handle this.
-    // A simple Exception is sufficient for now.
+    public $code = 419; // Custom status code for CSRF errors
+  
+    public function __construct($message = 'CSRF token mismatch', $code = 419, Exception $previous = null)
+    {
+        parent::__construct($message, $code, $previous);
+    }
 }
+    

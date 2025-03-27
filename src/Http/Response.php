@@ -1,6 +1,6 @@
 <?php
 
-namespace SwallowPHP\Framework;
+namespace SwallowPHP\Framework\Http;
 
 class Response
 {

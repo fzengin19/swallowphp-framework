@@ -14,7 +14,7 @@ class EnvPropertyValueException extends Exception
      * @param int $code the exception code
      * @param Exception|null $previous the previous exception used for chaining
      */
-    public function __construct($message = 'Env Property Is Not Allowed', $code = 519, Exception $previous = null)
+    public function __construct($message = 'Env Property Is Not Allowed', $code = 500, Exception $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }

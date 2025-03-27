@@ -157,8 +157,14 @@ if (!function_exists('formatDateForHumans')) {
     function formatDateForHumans($datetimeString)
     {
         $now = time();
-        $then = strtotime($datetimeString);
-        $diff = $now - $then;
+        try {
+            $then = new \DateTime($datetimeString);
+        } catch (\Exception $e) {
+            // Handle invalid datetime string
+            return $datetimeString; // Return original string on error
+        }
+        $thenTimestamp = $then->getTimestamp();
+        $diff = $now - $thenTimestamp;
 
         if ($diff < 60) {
             return "$diff saniye önce";
@@ -169,7 +175,7 @@ if (!function_exists('formatDateForHumans')) {
         } elseif ($diff < 604800) {
             return floor($diff / 86400) . ' gün önce';
         } else {
-            return strftime('%d %B %Y', $then);
+            return $then->format('d F Y'); // Example: 27 March 2025
         }
     }
 }
@@ -291,7 +297,7 @@ if (!function_exists('cache')) {
 if (!function_exists('getIp')) {
     function getIp()
     {
-        return $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'];
+        return request()->getClientIp();
     }
 }
 

@@ -2,9 +2,11 @@
 
 - [x] Methods.php
 - [x] Auth/Auth.php
-- [ ] Cache/CacheManager.php
-- [ ] Cache/FileCache.php
-- [ ] Cache/SqliteCache.php
+- [x] Auth/AuthenticatableModel.php
+- [x] Auth/AuthenticatableTrait.php
+- [x] Cache/CacheManager.php
+- [x] Cache/FileCache.php
+- [x] Cache/SqliteCache.php
 - [ ] Contracts/CacheInterface.php
 - [ ] Database/Database.php
 - [ ] Database/Model.php

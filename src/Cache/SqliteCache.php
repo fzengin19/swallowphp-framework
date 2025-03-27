@@ -14,19 +14,20 @@ class SqliteCache implements CacheInterface
 {
     private ?PDO $db = null;
     private string $dbPath;
-    private string $tableName = 'cache'; // Make table name configurable?
+    private string $tableName;
 
     /**
      * SqliteCache constructor.
      *
      * @param string $dbPath Absolute path to the SQLite database file.
      */
-    public function __construct(string $dbPath)
+    public function __construct(string $dbPath, string $tableName = 'cache')
     {
         if (empty($dbPath)) {
-            throw new \InvalidArgumentException("SQLite database path cannot be empty.");
+            throw new Psr16InvalidArgumentException("SQLite database path cannot be empty.");
         }
         $this->dbPath = $dbPath;
+        $this->tableName = $tableName; // Set table name
         // Ensure directory exists
         $dbDir = dirname($this->dbPath);
         if (!is_dir($dbDir)) {
@@ -54,7 +55,7 @@ class SqliteCache implements CacheInterface
                 ];
                 $this->db = new PDO('sqlite:' . $this->dbPath, null, null, $options);
                 $this->db->exec('PRAGMA journal_mode = WAL;'); // Enable WAL mode
-                $this->db->exec("CREATE TABLE IF NOT EXISTS {$this->tableName} (key TEXT PRIMARY KEY, value TEXT, expiration INTEGER)");
+                $this->db->exec("CREATE TABLE IF NOT EXISTS `{$this->tableName}` (key TEXT PRIMARY KEY, value TEXT, expiration INTEGER)");
             } catch (PDOException $e) {
                 // Log the error appropriately
                 error_log("SQLite Cache connection failed: " . $e->getMessage());
@@ -69,7 +70,7 @@ class SqliteCache implements CacheInterface
     {
         $this->validateKey($key);
         try {
-            $stmt = $this->db->prepare("SELECT value, expiration FROM {$this->tableName} WHERE key = ?");
+            $stmt = $this->db->prepare("SELECT value, expiration FROM `{$this->tableName}` WHERE key = ?");
             $stmt->execute([$key]);
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -118,7 +119,7 @@ class SqliteCache implements CacheInterface
         try {
             // Use transaction for INSERT OR REPLACE
             $this->db->beginTransaction();
-            $stmt = $this->db->prepare("INSERT OR REPLACE INTO {$this->tableName} (key, value, expiration) VALUES (?, ?, ?)");
+            $stmt = $this->db->prepare("INSERT OR REPLACE INTO `{$this->tableName}` (key, value, expiration) VALUES (?, ?, ?)");
             $success = $stmt->execute([
                 $key,
                 $encodedValue,
@@ -140,7 +141,7 @@ class SqliteCache implements CacheInterface
     {
         $this->validateKey($key);
         try {
-            $stmt = $this->db->prepare("DELETE FROM {$this->tableName} WHERE key = ?");
+            $stmt = $this->db->prepare("DELETE FROM `{$this->tableName}` WHERE key = ?");
             return $stmt->execute([$key]);
         } catch (PDOException $e) {
             error_log("SQLite Cache error in delete() for key '{$key}': " . $e->getMessage());
@@ -152,7 +153,7 @@ class SqliteCache implements CacheInterface
     {
         try {
             // Use DELETE instead of TRUNCATE for better compatibility and WAL mode
-            $affectedRows = $this->db->exec("DELETE FROM {$this->tableName}");
+            $affectedRows = $this->db->exec("DELETE FROM `{$this->tableName}`");
             // Vacuum might be needed periodically to reclaim space, but not here.
             // $this->db->exec("VACUUM");
             return $affectedRows !== false;
@@ -183,7 +184,7 @@ class SqliteCache implements CacheInterface
         try {
             // Create placeholders for IN clause
             $placeholders = implode(',', array_fill(0, count($validKeys), '?'));
-            $stmt = $this->db->prepare("SELECT key, value, expiration FROM {$this->tableName} WHERE key IN ({$placeholders})");
+            $stmt = $this->db->prepare("SELECT key, value, expiration FROM `{$this->tableName}` WHERE key IN ({$placeholders})");
             $stmt->execute($validKeys);
 
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -220,7 +221,7 @@ class SqliteCache implements CacheInterface
 
         try {
             $this->db->beginTransaction();
-            $stmt = $this->db->prepare("INSERT OR REPLACE INTO {$this->tableName} (key, value, expiration) VALUES (?, ?, ?)");
+            $stmt = $this->db->prepare("INSERT OR REPLACE INTO `{$this->tableName}` (key, value, expiration) VALUES (?, ?, ?)");
 
             foreach ($values as $key => $value) {
                  if (!is_string($key)) {
@@ -232,7 +233,7 @@ class SqliteCache implements CacheInterface
                  // Handle immediate deletion for invalid/expired TTL for this item
                  if (($ttl instanceof \DateInterval && $expirationTimestamp < time()) || (is_int($ttl) && $ttl <= 0)) {
                       // Need separate delete statement within transaction
-                      $deleteStmt = $this->db->prepare("DELETE FROM {$this->tableName} WHERE key = ?");
+                      $deleteStmt = $this->db->prepare("DELETE FROM `{$this->tableName}` WHERE key = ?");
                       $deleteStmt->execute([$key]);
                       continue; // Skip setting this item
                  }
@@ -281,7 +282,7 @@ class SqliteCache implements CacheInterface
 
         try {
             $placeholders = implode(',', array_fill(0, count($validKeys), '?'));
-            $stmt = $this->db->prepare("DELETE FROM {$this->tableName} WHERE key IN ({$placeholders})");
+            $stmt = $this->db->prepare("DELETE FROM `{$this->tableName}` WHERE key IN ({$placeholders})");
             return $stmt->execute($validKeys);
         } catch (PDOException $e) {
             error_log("SQLite Cache error in deleteMultiple(): " . $e->getMessage());
@@ -293,7 +294,7 @@ class SqliteCache implements CacheInterface
     {
         $this->validateKey($key);
         try {
-            $stmt = $this->db->prepare("SELECT expiration FROM {$this->tableName} WHERE key = ?");
+            $stmt = $this->db->prepare("SELECT expiration FROM `{$this->tableName}` WHERE key = ?");
             $stmt->execute([$key]);
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
 

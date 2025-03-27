@@ -18,11 +18,6 @@ class Auth
     /** Stores the currently authenticated user model instance. */
     private static ?AuthenticatableModel $authenticatedUser = null; // Updated type hint
 
-    /** Stores login attempts to prevent brute-force attacks. */
-    // private static array $loginAttempts = []; // Replaced with Cache based tracking
-    private const MAX_LOGIN_ATTEMPTS = 5;
-    private const LOCKOUT_TIME = 900; // 15 minutes
-
     /**
      * Logout the user by deleting the 'user' cookie.
      */
@@ -40,6 +35,8 @@ class Auth
      * @param string $password The password of the user.
      * @param bool $remember (Optional) Whether to remember the user or not. Default is false.
      * @return bool Returns true if authentication is successful, false otherwise.
+     * @throws AuthenticationLockoutException If the account is locked.
+     * @throws RuntimeException If a database or cookie error occurs.
      */
     public static function authenticate(string $email, string $password, bool $remember = false): bool
     {
@@ -49,6 +46,8 @@ class Auth
         $attemptKey = 'login_attempt:' . $ip . ':' . sha1($email); // Add email hash to key for per-user-per-ip limit
         $lockoutKey = 'login_lockout:' . $ip . ':' . sha1($email);
         $now = time();
+        $maxAttempts = config('auth.max_attempts', 5); // Get from config
+        $lockoutTime = config('auth.lockout_time', 900); // Get from config
 
         // Check if currently locked out
         if ($cache->has($lockoutKey)) {
@@ -91,17 +90,18 @@ class Auth
                 name: 'user',
                 value: $userData,
                 days: $days,
-                path: '/',
-                domain: '',
-                secure: true,
-                httpOnly: true,
-                sameSite: 'Lax'
+                path: config('session.path', '/'),
+                domain: config('session.domain', ''),
+                secure: config('session.secure', null), // Let Cookie::set handle default based on env
+                httpOnly: config('session.http_only', true),
+                sameSite: config('session.same_site', 'Lax')
             );
 
             if (!$cookieSet) {
+                 // Throw an exception if cookie setting fails critical auth flow
                  error_log("Authentication failed for {$email}: Could not set user cookie.");
                  self::$authenticatedUser = null;
-                 return false;
+                 throw new RuntimeException("Authentication failed for {$email}: Could not set user cookie.");
             }
 
             if ($remember) {
@@ -109,11 +109,11 @@ class Auth
                      name: 'remember',
                      value: 'true',
                      days: 30,
-                     path: '/',
-                     domain: '',
-                     secure: true,
-                     httpOnly: true,
-                     sameSite: 'Lax'
+                     path: config('session.path', '/'),
+                     domain: config('session.domain', ''),
+                     secure: config('session.secure', null),
+                     httpOnly: config('session.http_only', true),
+                     sameSite: config('session.same_site', 'Lax')
                  );
             } else {
                  Cookie::delete('remember');
@@ -128,13 +128,13 @@ class Auth
 
             // Increment attempt count in cache
             $attempts++;
-            $cache->set($attemptKey, $attempts, self::LOCKOUT_TIME + 60); // Use TTL slightly longer than lockout
+            $cache->set($attemptKey, $attempts, $lockoutTime + 60); // Use TTL slightly longer than lockout
 
             // Check if lockout threshold is reached
-            if ($attempts >= self::MAX_LOGIN_ATTEMPTS) {
-                 error_log("Locking account for {$email} from {$ip} for " . self::LOCKOUT_TIME . " seconds.");
+            if ($attempts >= $maxAttempts) {
+                 error_log("Locking account for {$email} from {$ip} for " . $lockoutTime . " seconds.");
                  // Set lockout key with TTL
-                 $cache->set($lockoutKey, $now, self::LOCKOUT_TIME);
+                 $cache->set($lockoutKey, $now, $lockoutTime);
             }
 
             return false;
@@ -246,26 +246,20 @@ class Auth
     /**
      * Get the class name of the authenticatable model.
      *
-     * TODO: Retrieve this from configuration or DI container.
-     *
      * @return string
      * @throws \RuntimeException If the model class is not configured or invalid.
      */
     protected static function getUserModelClass(): string
     {
-        // For now, hardcode the default User model. Replace with config/DI later.
-        $modelClass = '\\App\\Models\\User'; // Default User model namespace
+        // Get the configured user model class name from config.
+        $modelClass = config('auth.model'); // Get from config
+
+        if (empty($modelClass)) {
+             throw new \RuntimeException("Authenticatable model class is not configured in config/auth.php or .env (AUTH_MODEL).");
+        }
 
         if (!class_exists($modelClass)) {
-            // Try finding User model within a potential framework structure if not in App\Models
-            // This fallback might be removed if App\Models\User is strictly required
-            $fallbackModelClass = '\\SwallowPHP\\Framework\\Auth\\AuthenticatableModel'; // Fallback to base abstract? Maybe not useful.
-             // Let's just throw the error if the primary one isn't found.
-            // if (class_exists($fallbackModelClass)) {
-            //      $modelClass = $fallbackModelClass;
-            // } else {
-                 throw new \RuntimeException("Authenticatable model class '{$modelClass}' not found. Please create this class or configure the correct one.");
-            // }
+            throw new \RuntimeException("Authenticatable model class '{$modelClass}' configured in config/auth.php not found.");
         }
 
         // Check if the class extends AuthenticatableModel

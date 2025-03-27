@@ -11,6 +11,8 @@ use SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken;
 use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Routing\Router;
 
+use SwallowPHP\Framework\Foundation\Config; // Config is back in Foundation
+
 date_default_timezone_set('Europe/Istanbul');
 setlocale(LC_TIME, 'turkish');
 
@@ -49,6 +51,15 @@ class App
         if (is_null(self::$container)) {
             self::$container = new Container();
 
+
+            // --- Configuration Service ---
+            // Load configuration early and share the instance
+            self::$container->addShared(Config::class, function () {
+                 // Assumes config files are in project_root/config
+                 $configPath = dirname(__DIR__, 2) . '/src/Config'; // Correct path to src/Config
+                 return new Config($configPath);
+            });
+
             // --- Service Definitions ---
 
             // Cache Service (Shared Singleton)
@@ -72,14 +83,34 @@ class App
 
             // Database Service (Shared Singleton)
             // Assumes Database constructor handles connection
-            self::$container->addShared(Database::class, Database::class);
+            self::$container->addShared(Database::class, function() {
+                 // Get config service from container
+                 $config = self::container()->get(Config::class);
+                 // Get default connection name
+                 $connectionName = $config->get('database.default', 'mysql');
+                 // Get connection specific config
+                 $connectionConfig = $config->get("database.connections.{$connectionName}");
+
+                 if (!$connectionConfig) {
+                      throw new \RuntimeException("Database configuration for connection '{$connectionName}' not found.");
+                 }
+                 // Pass the specific connection config to the Database constructor
+                 return new Database($connectionConfig);
+             });
 
             // Router Service (Shared Singleton)
+            // TODO: Update Database constructor to accept config array
+            // $config = self::container()->get(Config::class);
+            // $connectionName = $config->get('database.default');
+            // $connectionConfig = $config->get("database.connections.{$connectionName}");
+            // return new Database($connectionConfig);
+
             // Using the instance created in App's constructor for now
             self::$container->addShared(Router::class, function () {
                 // Ensure router is initialized if getInstance wasn't called first
                 // This might need adjustment depending on how App lifecycle is managed
                 if (!isset(self::$router)) {
+ // Keep simple instantiation for now
                     self::$router = new Router();
                 }
                 return self::$router;

@@ -13,6 +13,38 @@ use SwallowPHP\Framework\Contracts\CacheInterface; // Add CacheInterface use sta
 
 
 
+
+if (!function_exists('config')) {
+    /**
+     * Get / set the specified configuration value.
+     *
+     * If an array is passed as the key, we will assume you want to set an array of values.
+     *
+     * @param  array|string|null  $key
+     * @param  mixed  $default
+     * @return mixed|\SwallowPHP\Framework\Foundation\Config
+     */
+    function config($key = null, $default = null)
+    {
+        $config = App::container()->get(\SwallowPHP\Framework\Foundation\Config::class);
+
+        if (is_null($key)) {
+            return $config;
+        }
+
+        if (is_array($key)) {
+            // Set array of configuration values
+            foreach ($key as $k => $v) {
+                 $config->set($k, $v);
+            }
+            return null; // Or return void? Or true?
+        }
+
+        return $config->get($key, $default);
+    }
+}
+
+
 if (!function_exists('env')) {
     function env($key, $default = null)
     {

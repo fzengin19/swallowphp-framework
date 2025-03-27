@@ -6,6 +6,7 @@ use PDO;
 use PDOException;
 use InvalidArgumentException;
 use Exception;
+use SwallowPHP\Framework\Foundation\Config; // Use Config (via helper)
 
 /**
  * Database class for handling database operations using PDO.
@@ -103,11 +104,17 @@ class Database
      */
     protected array $whereRawBindings = [];
 
+    /** @var array The database connection configuration. */
+    protected array $config = [];
+
     /**
      * Database constructor. Initializes the connection.
      */
-    public function __construct()
+    public function __construct(?array $config = null) // Accept optional config array
     {
+        if ($config) {
+            $this->config = $config;
+        }
         $this->initialize();
     }
 
@@ -123,21 +130,30 @@ class Database
             return;
         }
 
-        $host = env('DB_HOST', '127.0.0.1');
-        $port = env('DB_PORT', '3306');
-        $database = env('DB_DATABASE', 'swallowphp');
-        $username = env('DB_USERNAME', 'root');
-        $password = env('DB_PASSWORD', '');
-        $charset = env('DB_CHARSET', 'utf8mb4');
+        // Get config, falling back to env/defaults if config not passed to constructor
+        $config = $this->config ?: config('database.connections.' . config('database.default', 'mysql'), []);
+
+        $driver = $config['driver'] ?? 'mysql'; // Needed for DSN construction if supporting multiple drivers
+        $host = $config['host'] ?? env('DB_HOST', '127.0.0.1');
+        $port = $config['port'] ?? env('DB_PORT', '3306');
+        $database = $config['database'] ?? env('DB_DATABASE', 'swallowphp');
+        $username = $config['username'] ?? env('DB_USERNAME', 'root');
+        $password = $config['password'] ?? env('DB_PASSWORD', '');
+        $charset = $config['charset'] ?? env('DB_CHARSET', 'utf8mb4');
+        $options = $config['options'] ?? []; // Get PDO options from config if set
 
         try {
+            // TODO: Build DSN based on driver (mysql, sqlite, pgsql etc.)
             $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
-            $options = [
+
+            $defaultOptions = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
             ];
-            $this->connection = new PDO($dsn, $username, $password, $options);
+            $pdoOptions = array_replace($defaultOptions, $options); // Merge default and config options
+
+            $this->connection = new PDO($dsn, $username, $password, $pdoOptions);
             $this->connectedSuccessfully = true;
         } catch (PDOException $e) {
             throw new Exception('Veritabanı bağlantısı başlatılamadı: ' . $e->getMessage());

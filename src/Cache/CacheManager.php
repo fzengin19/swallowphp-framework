@@ -3,7 +3,7 @@
 namespace SwallowPHP\Framework\Cache;
 
 use SwallowPHP\Framework\Contracts\CacheInterface;
-use SwallowPHP\Framework\Env;
+use SwallowPHP\Framework\Foundation\Config; // Use Config (via helper)
 use RuntimeException; // For configuration errors
 
 class CacheManager
@@ -62,11 +62,15 @@ class CacheManager
         // Determine cache file path (needs improvement - should not rely on DOCUMENT_ROOT)
         // TODO: Define a proper base path for storage/cache in configuration or App
         // Find the directory containing composer.json (usually the project root)
-        $basePath = dirname(__DIR__, 3); // src/Cache -> src -> project_root
-        $cachePath = Env::get('CACHE_FILE_PATH', $basePath . '/storage/cache/data.json'); // Example path
+        // $basePath = dirname(__DIR__, 3); // No longer needed directly here
+        $storagePath = config('app.storage_path', dirname(__DIR__, 3) . '/storage'); // Get storage path from config
+        $relativePath = config('cache.stores.file.path', 'cache/data.json'); // Get relative path from cache config
+        $cachePath = $storagePath . '/' . ltrim($relativePath, '/');
+        $maxSize = config('cache.stores.file.max_size', 52428800); // Get max size from config
 
         try {
-            return new FileCache($cachePath);
+            // Pass max size to constructor
+            return new FileCache($cachePath, $maxSize);
         } catch (\Exception $e) {
              // Log the specific error
              error_log("Failed to create FileCache driver: " . $e->getMessage());
@@ -83,10 +87,11 @@ class CacheManager
     protected static function createSqliteDriver(): SqliteCache
     {
          // Determine SQLite DB path
-         // TODO: Define a proper base path for storage/cache
          // Find the directory containing composer.json (usually the project root)
-         $basePath = dirname(__DIR__, 3); // src/Cache -> src -> project_root
-         $dbPath = Env::get('CACHE_SQLITE_PATH', $basePath . '/storage/cache/database.sqlite'); // Example path
+         // $basePath = dirname(__DIR__, 3); // No longer needed directly here
+         $storagePath = config('app.storage_path', dirname(__DIR__, 3) . '/storage'); // Get storage path from config
+         $relativePath = config('cache.stores.sqlite.path', 'cache/database.sqlite'); // Get relative path from cache config
+         $dbPath = $storagePath . '/' . ltrim($relativePath, '/');
 
         try {
             return new SqliteCache($dbPath);
@@ -103,7 +108,8 @@ class CacheManager
      */
     public static function getDefaultDriver(): string
     {
-        return strtolower(Env::get('CACHE_DRIVER', 'file')); // Default to 'file'
+        // Get default driver from cache config
+        return strtolower(config('cache.default', 'file'));
     }
 
     /**

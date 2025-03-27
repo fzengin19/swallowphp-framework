@@ -583,7 +583,9 @@ class Database
             $nextCursor = $lastItem[$cursorColumn];
         }
 
-        $urlParts = parse_url($_SERVER['REQUEST_URI']);
+        // Use request() helper to get URI components
+        $currentRequest = request();
+        $urlParts = parse_url($currentRequest->getUri());
         $queryParams = [];
         if (isset($urlParts['query'])) {
             parse_str($urlParts['query'], $queryParams);
@@ -593,7 +595,12 @@ class Database
 
         $queryString = http_build_query($queryParams);
 
-        $url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $urlParts['path'];
+        // Reconstruct base URL from request object (more reliable)
+        $scheme = $currentRequest->getScheme() ?? 'http'; // Assuming getScheme() exists or can be added
+        $host = $currentRequest->getHost(); // Assuming getHost() exists or can be added
+        $path = $urlParts['path'] ?? '/';
+        $url = $scheme . '://' . $host . $path;
+
         $nextPageUrl = $url . ($queryString ? '?' : '') . $queryString;
 
         if ($nextCursor) {

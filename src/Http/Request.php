@@ -186,6 +186,28 @@ class Request
 
 
     /**
+     * Get the scheme (http or https) for the request.
+     *
+     * @return string
+     */
+    public function getScheme(): string
+    {
+        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    }
+
+    /**
+     * Get the host name for the request.
+     *
+     * @return string
+     */
+    public function getHost(): string
+    {
+        return $_SERVER['HTTP_HOST'] ?? '';
+    }
+
+
+
+    /**
      * Returns the client's IP address based on various HTTP headers.
      *
      * @return string|null The client's IP address or null if it could not be determined.

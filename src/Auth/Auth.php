@@ -2,64 +2,37 @@
 
 namespace SwallowPHP\Framework\Auth;
 
-use SwallowPHP\Framework\Database\Model;
+use SwallowPHP\Framework\Database\Model; // Keep for potential User model extension
+// Removed: use App\Models\User; 
+use SwallowPHP\Framework\Auth\AuthenticatableModel; // Use the base model
 use SwallowPHP\Framework\Http\Cookie;
+use Exception; // For mailer exception
+use RuntimeException; // For internal errors
+use SwallowPHP\Framework\Exceptions\AuthenticationLockoutException; // For lockout
+use SwallowPHP\Framework\Contracts\CacheInterface; // Need Cache for login attempts
+use SwallowPHP\Framework\Foundation\App; // Need container access
+
 
 class Auth
 {
+    /** Stores the currently authenticated user model instance. */
+    private static ?AuthenticatableModel $authenticatedUser = null; // Updated type hint
 
-    /**
-     * Register a user with the given email and password.
-     *
-     * @param string $email The email of the user.
-     * @param string $password The password of the user.
-     * @return User|false The created user object or false if registration failed.
-     */
-    public static function register($email, $password, $role = 'member')
-    {
-        // Validate email
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return false;
-        }
+    /** Stores login attempts to prevent brute-force attacks. */
+    // private static array $loginAttempts = []; // Replaced with Cache based tracking
+    private const MAX_LOGIN_ATTEMPTS = 5;
+    private const LOCKOUT_TIME = 900; // 15 minutes
 
-        // Enhanced password validation
-        if (strlen($password) < 8 ||
-            !preg_match('/[A-Z]/', $password) ||
-            !preg_match('/[a-z]/', $password) ||
-            !preg_match('/[0-9]/', $password)) {
-            return false;
-        }
-
-        // Check if user already exists
-        $user = Model::table('users')->where('email', '=', $email)->first();
-        if ($user && $user->id) {
-            return false;
-        }
-
-        // Hash password with strong options
-        $hashedPassword = password_hash(
-            $password,
-            PASSWORD_ARGON2ID,
-            ['memory_cost' => 65536, 'time_cost' => 4, 'threads' => 3]
-        );
-
-        // Create user with sanitized input
-        $user = Model::table('users')->create([
-            'email' => htmlspecialchars($email, ENT_QUOTES, 'UTF-8'),
-            'password' => $hashedPassword,
-            'role' => in_array($role, ['member', 'admin']) ? $role : 'member'
-        ]);
-
-        return $user;
-    }
     /**
      * Logout the user by deleting the 'user' cookie.
-     *
      */
-    public static function logout()
+    public static function logout(): void
     {
         Cookie::delete('user');
+        Cookie::delete('remember'); // Also delete remember cookie
+        self::$authenticatedUser = null; // Clear static user
     }
+
     /**
      * Authenticates a user with the given email and password.
      *
@@ -68,133 +41,238 @@ class Auth
      * @param bool $remember (Optional) Whether to remember the user or not. Default is false.
      * @return bool Returns true if authentication is successful, false otherwise.
      */
-    private static $loginAttempts = [];
-    private const MAX_LOGIN_ATTEMPTS = 5;
-    private const LOCKOUT_TIME = 900; // 15 minutes
-
-    public static function authenticate($email, $password, $remember = false)
+    public static function authenticate(string $email, string $password, bool $remember = false): bool
     {
-        // Check login attempts
-        $ip = $_SERVER['REMOTE_ADDR'];
+        // --- Brute-Force Check ---
+        $ip = \SwallowPHP\Framework\Http\Request::getClientIp() ?? 'unknown_ip';
+        $cache = App::container()->get(CacheInterface::class);
+        $attemptKey = 'login_attempt:' . $ip . ':' . sha1($email); // Add email hash to key for per-user-per-ip limit
+        $lockoutKey = 'login_lockout:' . $ip . ':' . sha1($email);
         $now = time();
-        
-        if (isset(self::$loginAttempts[$ip])) {
-            $attempt = self::$loginAttempts[$ip];
-            if ($attempt['count'] >= self::MAX_LOGIN_ATTEMPTS && 
-                $now - $attempt['time'] < self::LOCKOUT_TIME) {
-                return false;
-            }
-            if ($now - $attempt['time'] >= self::LOCKOUT_TIME) {
-                unset(self::$loginAttempts[$ip]);
-            }
+
+        // Check if currently locked out
+        if ($cache->has($lockoutKey)) {
+             // Throw specific exception for lockout
+             throw new AuthenticationLockoutException("Too many login attempts for {$email} from {$ip}. Account locked.");
         }
 
-        $user = Model::table('users')->where('email', '=', $email)->first();
-        if ($user && password_verify($password, $user->password)) {
-            // Reset login attempts on successful login
-            unset(self::$loginAttempts[$ip]);
+        // Get current attempt count
+        $attempts = (int) $cache->get($attemptKey, 0);
+        // --- End Brute-Force Check ---
 
-            // Generate session token
-            $token = bin2hex(random_bytes(32));
-            $userData = $user->toArray();
-            $userData['session_token'] = $token;
+        // Find user by email
+        try {
+             $modelClass = self::getUserModelClass();
+             $user = $modelClass::query()->where('email', '=', $email)->first();
+        } catch (\Exception $e) {
+             error_log("Error fetching user during authentication: " . $e->getMessage());
+             // Re-throw as a runtime exception
+             throw new RuntimeException("Database error during authentication.", 0, $e);
+        }
 
-            // Set secure cookies using the updated Cookie::set signature
-            $days = $remember ? 30 : 0; // 30 days or session cookie
-            Cookie::set(
+
+        // Verify user exists and password is correct
+        if ($user instanceof AuthenticatableModel && password_verify($password, $user->getAuthPassword())) {
+            // --- Successful Login ---
+            // Clear attempts and lockout from cache on successful login
+            $cache->delete($attemptKey);
+            $cache->delete($lockoutKey);
+
+            // Store authenticated user statically for this request
+            self::$authenticatedUser = $user;
+
+            // Prepare data for cookie (exclude sensitive info like password)
+            $userData = ($user instanceof Model) ? $user->toArray() : [];
+            unset($userData['password']);
+
+            // Set secure cookies
+            $days = $remember ? 30 : 0;
+            $cookieSet = Cookie::set(
                 name: 'user',
                 value: $userData,
                 days: $days,
                 path: '/',
-                domain: '', // Set domain if needed
-                secure: true, // Always secure
-                httpOnly: true, // Always HttpOnly
-                sameSite: 'Strict' // Use Strict for auth cookies
+                domain: '',
+                secure: true,
+                httpOnly: true,
+                sameSite: 'Lax'
             );
 
+            if (!$cookieSet) {
+                 error_log("Authentication failed for {$email}: Could not set user cookie.");
+                 self::$authenticatedUser = null;
+                 return false;
+            }
+
             if ($remember) {
-                 // Remember cookie also needs secure flags
                  Cookie::set(
                      name: 'remember',
                      value: 'true',
-                     days: 30, // Remember for 30 days
+                     days: 30,
                      path: '/',
                      domain: '',
                      secure: true,
                      httpOnly: true,
-                     sameSite: 'Strict'
+                     sameSite: 'Lax'
                  );
+            } else {
+                 Cookie::delete('remember');
             }
 
             return true;
-        }
+            // --- End Successful Login ---
 
-        // Track failed login attempts
-        if (!isset(self::$loginAttempts[$ip])) {
-            self::$loginAttempts[$ip] = ['count' => 0, 'time' => $now];
-        }
-        self::$loginAttempts[$ip]['count']++;
-        self::$loginAttempts[$ip]['time'] = $now;
+        } else {
+            // --- Failed Login ---
+            error_log("Login attempt failed for {$email} from {$ip}: Invalid credentials.");
 
-        return false;
+            // Increment attempt count in cache
+            $attempts++;
+            $cache->set($attemptKey, $attempts, self::LOCKOUT_TIME + 60); // Use TTL slightly longer than lockout
+
+            // Check if lockout threshold is reached
+            if ($attempts >= self::MAX_LOGIN_ATTEMPTS) {
+                 error_log("Locking account for {$email} from {$ip} for " . self::LOCKOUT_TIME . " seconds.");
+                 // Set lockout key with TTL
+                 $cache->set($lockoutKey, $now, self::LOCKOUT_TIME);
+            }
+
+            return false;
+            // --- End Failed Login ---
+        }
     }
 
+
     /**
-     * Check if the user is authenticated and invalidate the session if user data has changed.
+     * Check if the user is currently authenticated based on the cookie.
+     * Verifies cookie data against the database.
      *
      * @return bool Returns true if the user is authenticated, false otherwise.
      */
-    public static function isAuthenticated()
+    public static function isAuthenticated(): bool
     {
-        if (Cookie::has('user')) {
-
-            $cookieUser = Cookie::get('user');
-            if ($cookieUser == null) {
-                return false;
-            }
-            $dbUser = Model::table('users')->where('id', '=', $cookieUser['id'])->first();
-            if ($dbUser !== null) {
-                if ($cookieUser != $dbUser->toArray()) {
-                    Cookie::delete('user');
-                    return false;
-                }
-            } else {
-
-                Cookie::delete('user');
-                return false;
-            }
-            if (Cookie::get('remember') == 'true') {
-
-                Cookie::set('user', $dbUser->toArray(), 30);
-            }
+        // If already checked and user is set in this request cycle, return true
+        if (self::$authenticatedUser !== null) {
             return true;
         }
 
+        if (!Cookie::has('user')) {
+            return false;
+        }
 
-        return false;
+        $cookieUserData = Cookie::get('user');
+        if (!is_array($cookieUserData)) {
+            Cookie::delete('user'); // Clean up invalid cookie
+            return false;
+        }
+
+        // Get the configured user model class
+        try {
+             $modelClass = self::getUserModelClass();
+             // Need an instance to get identifier name
+             $userModelInstance = new $modelClass();
+             if (!$userModelInstance instanceof AuthenticatableModel) { // Check against base model
+                  throw new \RuntimeException("Configured user model {$modelClass} does not extend AuthenticatableModel.");
+             }
+             $identifierName = $userModelInstance->getAuthIdentifierName();
+
+        } catch (\Exception $e) {
+             error_log("Error getting user model class or identifier name: " . $e->getMessage());
+             return false;
+        }
+
+        $identifierValue = $cookieUserData[$identifierName] ?? null;
+
+        if ($identifierValue === null) {
+            Cookie::delete('user');
+            return false;
+        }
+
+        // Fetch user from DB
+        try {
+             $dbUser = $modelClass::query()->where($identifierName, '=', $identifierValue)->first();
+        } catch (\Exception $e) {
+             error_log("Error fetching user during isAuthenticated check: " . $e->getMessage());
+             return false; // DB error
+        }
+
+
+        if ($dbUser instanceof AuthenticatableModel) { // Check against base model
+            // Optional: More robust check
+            // if ($cookieUserData['some_hash'] !== $dbUser->getValidationHash()) { ... }
+
+            // Simple check (less secure):
+            // if (($dbUser instanceof Model) && ($cookieUserData != $dbUser->toArray())) { ... }
+
+            // If checks pass, store the user and return true
+            self::$authenticatedUser = $dbUser;
+            return true;
+
+        } else {
+            // User not found in DB or invalid type
+            Cookie::delete('user');
+            return false;
+        }
     }
 
 
     /**
-     * Retrieves the user object if the user is authenticated.
+     * Retrieves the authenticated user instance.
      *
-     * @return User|bool The user object if authenticated, false otherwise.
+     * @return AuthenticatableModel|null The authenticated user object or null if not authenticated. // Updated return type
      */
-    public static function user()
+    public static function user(): ?AuthenticatableModel // Updated return type hint
     {
-        if (static::isAuthenticated()) {
-            $user = new Model();
-            $user->table('users');
-            $user->fill(Cookie::get('user'));
-            return $user;
+        // Attempt to authenticate if not already done in this request cycle
+        if (self::$authenticatedUser === null) {
+             static::isAuthenticated(); // This will populate self::$authenticatedUser if successful
         }
-        return false;
+        return self::$authenticatedUser;
     }
 
-    public static function isAdmin()
+    /**
+     * Checks if the authenticated user has the 'admin' role.
+     *
+     * @return bool
+     */
+    public static function isAdmin(): bool
     {
-        if (self::isAuthenticated() && self::user()->role == 'admin')
-            return true;
-        return false;
+        $user = self::user(); // Get the authenticated user instance (or null)
+        // Check if user exists and has the 'role' property/attribute set to 'admin'
+        // Accessing 'role' directly assumes it's a public property or uses __get magic method
+        return ($user && ($user->role ?? null) === 'admin');
+    }
+
+    /**
+     * Get the class name of the authenticatable model.
+     *
+     * TODO: Retrieve this from configuration or DI container.
+     *
+     * @return string
+     * @throws \RuntimeException If the model class is not configured or invalid.
+     */
+    protected static function getUserModelClass(): string
+    {
+        // For now, hardcode the default User model. Replace with config/DI later.
+        $modelClass = '\\App\\Models\\User'; // Default User model namespace
+
+        if (!class_exists($modelClass)) {
+            // Try finding User model within a potential framework structure if not in App\Models
+            // This fallback might be removed if App\Models\User is strictly required
+            $fallbackModelClass = '\\SwallowPHP\\Framework\\Auth\\AuthenticatableModel'; // Fallback to base abstract? Maybe not useful.
+             // Let's just throw the error if the primary one isn't found.
+            // if (class_exists($fallbackModelClass)) {
+            //      $modelClass = $fallbackModelClass;
+            // } else {
+                 throw new \RuntimeException("Authenticatable model class '{$modelClass}' not found. Please create this class or configure the correct one.");
+            // }
+        }
+
+        // Check if the class extends AuthenticatableModel
+        if ($modelClass !== AuthenticatableModel::class && !is_subclass_of($modelClass, AuthenticatableModel::class)) {
+             throw new \RuntimeException("Authenticatable model class '{$modelClass}' must extend AuthenticatableModel.");
+        }
+
+        return $modelClass;
     }
 }

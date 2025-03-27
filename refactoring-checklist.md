@@ -1,0 +1,29 @@
+# Refactoring Checklist
+
+- [x] Methods.php
+- [x] Auth/Auth.php
+- [ ] Cache/CacheManager.php
+- [ ] Cache/FileCache.php
+- [ ] Cache/SqliteCache.php
+- [ ] Contracts/CacheInterface.php
+- [ ] Database/Database.php
+- [ ] Database/Model.php
+- [ ] Exceptions/AuthorizationException.php
+- [ ] Exceptions/CsrfTokenMismatchException.php
+- [ ] Exceptions/EnvPropertyValueException.php
+- [ ] Exceptions/MethodNotAllowedException.php
+- [ ] Exceptions/MethodNotFoundException.php
+- [ ] Exceptions/RateLimitExceededException.php
+- [ ] Exceptions/RouteNotFoundException.php
+- [ ] Exceptions/ViewNotFoundException.php
+- [ ] Foundation/App.php
+- [ ] Foundation/Env.php
+- [ ] Foundation/ExceptionHandler.php
+- [ ] Http/Cookie.php
+- [ ] Http/Request.php
+- [ ] Http/Response.php
+- [ ] Http/Middleware/Middleware.php
+- [ ] Http/Middleware/RateLimiter.php
+- [ ] Http/Middleware/VerifyCsrfToken.php
+- [ ] Routing/Route.php
+- [ ] Routing/Router.php

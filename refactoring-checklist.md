@@ -28,4 +28,4 @@
 - [✅] Http/Middleware/RateLimiter.php
 - [✅] Http/Middleware/VerifyCsrfToken.php
 - [✅] Routing/Route.php
-- [ ] Routing/Router.php
+- [✅] Routing/Router.php

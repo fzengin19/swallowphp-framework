@@ -46,3 +46,49 @@ class AdminMiddleware extends Middleware
 **ExceptionHandler Tarafından İşlenmesi:**
 
 `ExceptionHandler`, bu exception'ı yakaladığında, exception'ın kodunu (varsayılan 401 veya belirtilmişse 403) ve mesajını kullanarak uygun bir HTTP yanıtı (genellikle JSON veya basit HTML hata sayfası) oluşturur.
+
+
+## `CsrfTokenMismatchException`
+
+**Namespace:** `SwallowPHP\Framework\Exceptions`
+
+Bu exception, gelen istekteki CSRF token'ının oturumdaki token ile eşleşmediği veya eksik olduğu durumlarda fırlatılır. Bu genellikle Cross-Site Request Forgery (CSRF) saldırılarını önlemek için kullanılır.
+
+-   **Varsayılan HTTP Durum Kodu:** 419 (Authentication Timeout) - Bu, Laravel tarafından popüler hale getirilen ve genellikle CSRF hataları için kullanılan standart olmayan bir koddur.
+-   **Varsayılan Mesaj:** 'CSRF token mismatch'
+
+**Ne Zaman Fırlatılır?**
+
+Genellikle `VerifyCsrfToken` middleware'i tarafından, `POST`, `PUT`, `PATCH`, `DELETE` gibi state değiştiren isteklerde CSRF token doğrulaması başarısız olduğunda fırlatılır.
+
+**Örnek (Framework İçinde - VerifyCsrfToken Middleware):**
+
+```php
+// VerifyCsrfToken.php içinde (basitleştirilmiş örnek)
+protected function tokensMatch($request)
+{
+    $sessionToken = $this->getTokenFromSession();
+    $requestToken = $request->get('_token') ?? $request->header('X-CSRF-TOKEN');
+
+    return is_string($sessionToken) &&
+           is_string($requestToken) &&
+           hash_equals($sessionToken, $requestToken);
+}
+
+public function handle($request, Closure $next)
+{
+    if (
+        $this->isReading($request) ||
+        $this->inExceptArray($request) ||
+        $this->tokensMatch($request)
+    ) {
+        return $next($request);
+    }
+
+    throw new CsrfTokenMismatchException(); // Token eşleşmezse fırlat
+}
+```
+
+**ExceptionHandler Tarafından İşlenmesi:**
+
+`ExceptionHandler`, bu exception'ı yakaladığında, 419 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Geliştirme sırasında bu genellikle bir hata sayfasıdır, production ortamında ise kullanıcı dostu bir mesaj veya önceki sayfaya yönlendirme daha uygun olabilir (ExceptionHandler'ın mantığına bağlıdır).

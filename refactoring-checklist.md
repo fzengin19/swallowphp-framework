@@ -11,7 +11,7 @@
 - [✅] Database/Database.php
 - [✅] Database/Model.php
 - [✅] Exceptions/AuthorizationException.php
-- [ ] Exceptions/CsrfTokenMismatchException.php
+- [✅] Exceptions/CsrfTokenMismatchException.php
 - [ ] Exceptions/EnvPropertyValueException.php
 - [ ] Exceptions/MethodNotAllowedException.php
 - [ ] Exceptions/MethodNotFoundException.php

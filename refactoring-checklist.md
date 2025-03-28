@@ -9,7 +9,7 @@
 - [✅] Cache/SqliteCache.php
 - [✅] Contracts/CacheInterface.php
 - [✅] Database/Database.php
-- [ ] Database/Model.php
+- [✅] Database/Model.php
 - [ ] Exceptions/AuthorizationException.php
 - [ ] Exceptions/CsrfTokenMismatchException.php
 - [ ] Exceptions/EnvPropertyValueException.php

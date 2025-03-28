@@ -199,3 +199,40 @@ return call_user_func_array([$controllerInstance, $method], $parameters);
 **ExceptionHandler Tarafından İşlenmesi:**
 
 `ExceptionHandler`, bu exception'ı yakaladığında, 404 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Bu genellikle standart bir "Not Found" hata sayfasıdır.
+
+
+## `RateLimitExceededException`
+
+**Namespace:** `SwallowPHP\Framework\Exceptions`
+
+Bu exception, bir kullanıcının belirli bir zaman aralığında izin verilen maksimum istek sayısını aştığı durumlarda fırlatılır. Bu, API'leri veya belirli kaynakları kötüye kullanımdan korumak için kullanılır.
+
+-   **Varsayılan HTTP Durum Kodu:** 429 (Too Many Requests)
+-   **Varsayılan Mesaj:** 'Too Many Requests'
+
+**Ne Zaman Fırlatılır?**
+
+Genellikle `RateLimiter` middleware'i (veya sınıfı) tarafından, bir rota için tanımlanan istek limiti aşıldığında fırlatılır.
+
+**Örnek (Framework İçinde - RateLimiter):**
+
+```php
+// RateLimiter::execute() içinde (basitleştirilmiş örnek)
+$rateLimit = $route->getRateLimit();
+$cacheKey = 'rate_limit:' . $routeName . ':' . $ipAddress;
+$cacheData = $cache->get($cacheKey);
+$requestCount = ($cacheData['count'] ?? 0) + 1;
+
+// ... cache'e yazma ...
+
+$limitExceeded = $requestCount > $rateLimit;
+
+if ($limitExceeded) {
+    // Limit aşıldı, exception fırlat
+    throw new RateLimitExceededException('Too many requests. Please try again later.');
+}
+```
+
+**ExceptionHandler Tarafından İşlenmesi:**
+
+`ExceptionHandler`, bu exception'ı yakaladığında, 429 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. `RateLimiter` ayrıca genellikle `Retry-After` başlığını da yanıta ekler, bu da istemciye bir sonraki isteği ne zaman gönderebileceğini bildirir.

@@ -8,7 +8,7 @@
 - [✅] Cache/FileCache.php
 - [✅] Cache/SqliteCache.php
 - [✅] Contracts/CacheInterface.php
-- [ ] Database/Database.php
+- [✅] Database/Database.php
 - [ ] Database/Model.php
 - [ ] Exceptions/AuthorizationException.php
 - [ ] Exceptions/CsrfTokenMismatchException.php

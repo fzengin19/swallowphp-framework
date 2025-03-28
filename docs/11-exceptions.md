@@ -158,3 +158,44 @@ if ($route === null) {
 **ExceptionHandler Tarafından İşlenmesi:**
 
 `ExceptionHandler`, bu exception'ı yakaladığında, 405 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Standartlara göre, 405 yanıtı genellikle `Allow` başlığı ile birlikte o URI için izin verilen metotları listelemelidir (bu özellik `ExceptionHandler`'a eklenebilir).
+
+
+## `MethodNotFoundException`
+
+**Namespace:** `SwallowPHP\Framework\Exceptions`
+
+Bu exception, bir rota tarafından çağrılmak istenen controller sınıfı bulunduğunda ancak o sınıf içinde belirtilen metodun (action) bulunamadığı durumlarda fırlatılır.
+
+-   **Varsayılan HTTP Durum Kodu:** 404 (Not Found) - Çünkü mantıksal olarak, istenen eylem mevcut değildir.
+-   **Varsayılan Mesaj:** 'Method Not Found'
+
+**Ne Zaman Fırlatılır?**
+
+Genellikle `Router` sınıfı tarafından, bir rota eşleşmesi bulunduktan sonra, ilgili controller sınıfı örneklendiğinde ancak rotada belirtilen metot o sınıfta tanımlı olmadığında fırlatılır.
+
+**Örnek (Framework İçinde - Router/Route):**
+
+```php
+// Route::execute() veya benzeri bir yerde (basitleştirilmiş örnek)
+$controllerClass = $this->controller; // Örn: 'App\Http\Controllers\UserController'
+$method = $this->action;       // Örn: 'showProfile'
+
+if (!class_exists($controllerClass)) {
+    // Controller sınıfı bulunamadı (başka bir hata)
+    throw new \Exception("Controller class {$controllerClass} not found.");
+}
+
+$controllerInstance = App::container()->get($controllerClass); // Controller'ı DI ile al
+
+if (!method_exists($controllerInstance, $method)) {
+    // Metot controller'da bulunamadı
+    throw new MethodNotFoundException("Method {$controllerClass}::{$method} does not exist.");
+}
+
+// ... Metot bulundu, çağır
+return call_user_func_array([$controllerInstance, $method], $parameters);
+```
+
+**ExceptionHandler Tarafından İşlenmesi:**
+
+`ExceptionHandler`, bu exception'ı yakaladığında, 404 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Bu genellikle standart bir "Not Found" hata sayfasıdır.

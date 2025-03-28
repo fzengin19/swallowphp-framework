@@ -139,7 +139,102 @@ $allHeaders = $request->headers();
 
 ## Yanıt (`Response`)
 
-(Bu bölüm daha sonra `Response.php` belgelendiğinde doldurulacak)
+**Namespace:** `SwallowPHP\Framework\Http`
+
+`Response` sınıfı, istemciye (genellikle tarayıcı) gönderilecek HTTP yanıtını temsil eder. Yanıtın içeriğini, durum kodunu ve başlıklarını (headers) yönetir.
+
+Controller action'ları veya middleware'ler genellikle bir `Response` nesnesi döndürmelidir. Eğer doğrudan bir string, array veya başka bir tür döndürülürse, framework bunu otomatik olarak uygun bir `Response` nesnesine (genellikle `Response::html()` veya `Response::json()`) dönüştürmeye çalışır.
+
+### Yanıt Oluşturma
+
+**Doğrudan Oluşturma:**
+
+```php
+use SwallowPHP\Framework\Http\Response;
+
+// Basit bir HTML yanıtı
+$response = new Response('<h1>Merhaba Dünya</h1>', 200, ['Content-Type' => 'text/html']);
+
+// JSON yanıtı
+$data = ['message' => 'Başarılı', 'user_id' => 123];
+$response = new Response($data, 201); // Content-Type otomatik olarak application/json ayarlanır
+
+// Özel başlıklarla
+$response = new Response('OK', 200, ['X-Custom-Header' => 'Değer']);
+```
+
+**Fabrika Metotları (Önerilen):**
+
+`Response` sınıfı, yaygın yanıt türlerini oluşturmak için kullanışlı statik fabrika metotları sunar:
+
+-   **`Response::html(string $content = '', int $status = 200, array $headers = []): Response`**
+    HTML içeriği ile bir yanıt oluşturur (`Content-Type: text/html`).
+
+    ```php
+    return Response::html('<h2>Profil Sayfası</h2>');
+    ```
+
+-   **`Response::json(mixed $data = [], int $status = 200, array $headers = []): Response`**
+    Verilen diziyi veya nesneyi JSON formatına dönüştürerek bir yanıt oluşturur (`Content-Type: application/json`).
+
+    ```php
+    $user = ['id' => 1, 'name' => 'John'];
+    return Response::json($user);
+
+    // Özel durum kodu ile
+    return Response::json(['error' => 'Kayıt bulunamadı'], 404);
+    ```
+
+-   **`Response::redirect(string $url, int $status = 302, array $headers = []): Response`**
+    Belirtilen URL'e yönlendirme yanıtı oluşturur (`Location` başlığı ayarlanır).
+
+    ```php
+    // Ana sayfaya yönlendir
+    return Response::redirect('/');
+
+    // Kalıcı yönlendirme (301)
+    return Response::redirect('/yeni-adres', 301);
+
+    // Rota helper'ı ile birlikte
+    return Response::redirect(route('user.profile', ['id' => 15]));
+    ```
+    **Not:** `redirect()` metodundan sonra genellikle script'in çalışmasını durdurmak için `exit;` çağırmanız önerilir, ancak `Response::redirect()` bunu otomatik yapmaz. Yönlendirmeyi yapan Controller metodu içinde `exit;` ekleyebilirsiniz veya `redirectToRoute()` helper'ını kullanabilirsiniz.
+
+### Yanıtı Değiştirme (Akıcı Arayüz)
+
+Oluşturulmuş bir `Response` nesnesini göndermeden önce değiştirebilirsiniz.
+
+```php
+$response = Response::html('<p>İçerik</p>');
+
+// Durum kodunu değiştir
+$response->setStatusCode(201); // -> $response
+
+// Başlık ekle/değiştir
+$response->header('Cache-Control', 'no-cache, private'); // -> $response
+$response->header('X-My-Header', 'MyValue');             // -> $response
+
+// İçeriği değiştir
+$response->setContent('Yeni içerik'); // -> $response
+
+// Zincirleme kullanım
+return Response::json(['data' => $value])
+            ->setStatusCode(202)
+            ->header('X-Request-ID', $requestId);
+```
+
+### Yanıtı Gönderme (`send`)
+
+`$response->send(): Response`
+
+Yanıtın başlıklarını ve içeriğini istemciye gönderir. Bu işlem genellikle framework tarafından `App::run()` içinde otomatik olarak yapılır. Manuel olarak çağırmanız genellikle gerekmez.
+
+### Diğer Metotlar
+
+-   `getContent(): mixed`: Yanıtın içeriğini alır.
+-   `getStatusCode(): int`: Yanıtın durum kodunu alır.
+-   `getHeaders(): array`: Tüm yanıt başlıklarını dizi olarak alır.
+-   `getHeader(string $key, mixed $default = null): ?string`: Belirli bir başlığın değerini alır.
 
 ## Çerezler (`Cookie`)
 

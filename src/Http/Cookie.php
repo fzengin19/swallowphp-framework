@@ -21,16 +21,16 @@ class Cookie
         string $name,
         mixed $value,
         int $days = 1,
-        string $path = '/',
-        string $domain = '',
+        ?string $path = null,     // Default from config
+        ?string $domain = null,   // Default from config
         ?bool $secure = null,
-        bool $httpOnly = true,
-        string $sameSite = 'Lax' // Default to Lax for better usability
+        ?bool $httpOnly = null,  // Default from config
+        ?string $sameSite = null // Default from config
     ): bool
     {
-        $key = env('APP_KEY');
+        $key = config('app.key'); // Get key from config
         if (empty($key)) {
-            error_log("Cookie setting failed: APP_KEY is not set in environment.");
+            error_log("Cookie setting failed: APP_KEY is not set in environment or config/app.php.");
             return false;
         }
         if (strlen($key) < 32) {
@@ -54,8 +54,16 @@ class Cookie
 
         // Determine secure flag based on environment if not explicitly set
         if (is_null($secure)) {
-            $secure = env('APP_ENV') === 'production';
+            // Get default from config, fallback to checking app env
+            $secure = config('session.secure', config('app.env') === 'production');
         }
+
+        // Get other defaults from config
+        $path = $path ?? config('session.path', '/');
+        $domain = $domain ?? config('session.domain', null); // Use null default from config
+        $httpOnly = $httpOnly ?? config('session.http_only', true);
+        $sameSite = $sameSite ?? config('session.same_site', 'Lax');
+
 
         // Validate SameSite attribute
         $sameSite = ucfirst(strtolower($sameSite));
@@ -75,7 +83,7 @@ class Cookie
         $options = [
             'expires' => $expires,
             'path' => $path,
-            'domain' => $domain ?: '', // Use empty string if not set
+            'domain' => $domain ?? '', // Use empty string if null
             'secure' => $secure,
             'httponly' => $httpOnly,
             'samesite' => $sameSite
@@ -93,9 +101,9 @@ class Cookie
      */
     public static function get(string $name, mixed $default = null): mixed
     {
-        $key = env('APP_KEY');
+        $key = config('app.key'); // Get key from config
         if (empty($key)) {
-            error_log("Cookie getting failed: APP_KEY is not set in environment.");
+            error_log("Cookie getting failed: APP_KEY is not set in environment or config/app.php.");
             return $default;
         }
 
@@ -130,9 +138,15 @@ class Cookie
      * @param string $domain The domain of the cookie.
      * @return bool Returns true if a deletion attempt was made for any version of the cookie.
      */
-    public static function delete(string $name, string $path = '/', string $domain = ''): bool
+    public static function delete(
+        string $name,
+        ?string $path = null,     // Default from config
+        ?string $domain = null    // Default from config
+    ): bool
     {
         // Try deleting both prefixed and non-prefixed versions
+        $path = $path ?? config('session.path', '/');
+        $domain = $domain ?? config('session.domain', null);
         $deleted = false;
         $cookieName = $name;
         $prefixedCookieName = '__Secure-' . $name;
@@ -140,12 +154,12 @@ class Cookie
         if (isset($_COOKIE[$cookieName])) {
             unset($_COOKIE[$cookieName]);
             // Set cookie with past expiration date
-            $deleted = setcookie($cookieName, '', time() - 3600, $path, $domain ?: '');
+            $deleted = setcookie($cookieName, '', time() - 3600, $path, $domain ?? '');
         }
         if (isset($_COOKIE[$prefixedCookieName])) {
              unset($_COOKIE[$prefixedCookieName]);
              // Set cookie with past expiration date
-             $deleted = setcookie($prefixedCookieName, '', time() - 3600, $path, $domain ?: '') || $deleted;
+             $deleted = setcookie($prefixedCookieName, '', time() - 3600, $path, $domain ?? '') || $deleted;
         }
 
         return $deleted; // Return true if any version was attempted to be deleted

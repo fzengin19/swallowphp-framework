@@ -154,7 +154,7 @@ class Router
                 $queryString = http_build_query($params);
 
                 // Use Env helper correctly (assuming it's loaded)
-                $url = Env::get('APP_URL') . $uriPattern;
+                $url = config('app.url', 'http://localhost') . $uriPattern;
 
                 return $queryString ? $url . '?' . $queryString : $url;
             }
@@ -177,7 +177,7 @@ class Router
         self::$request = $request;
         $requestUri = parse_url(self::$request->getUri(), PHP_URL_PATH);
         // Use Env helper correctly
-        $appPath = Env::get('APP_PATH');
+        $appPath = config('app.path', '');
         if ($appPath) {
              $requestUri = preg_replace('/^' . preg_quote($appPath, '/') . '/', '', $requestUri, 1);
         }

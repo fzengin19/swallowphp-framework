@@ -92,3 +92,34 @@ public function handle($request, Closure $next)
 **ExceptionHandler Tarafından İşlenmesi:**
 
 `ExceptionHandler`, bu exception'ı yakaladığında, 419 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Geliştirme sırasında bu genellikle bir hata sayfasıdır, production ortamında ise kullanıcı dostu bir mesaj veya önceki sayfaya yönlendirme daha uygun olabilir (ExceptionHandler'ın mantığına bağlıdır).
+
+
+## `EnvPropertyValueException`
+
+**Namespace:** `SwallowPHP\Framework\Exceptions`
+
+Bu exception, `.env` dosyasındaki bir değerle ilgili genel bir sorun olduğunda veya bir yapılandırma değeri bekleneni karşılamadığında fırlatılabilir. Örneğin, gerekli bir `.env` değişkeni eksikse veya geçersiz bir değere sahipse kullanılabilir.
+
+-   **Varsayılan HTTP Durum Kodu:** 500 (Internal Server Error) - Çünkü bu genellikle uygulamanın doğru çalışmasını engelleyen bir yapılandırma sorununu gösterir.
+-   **Varsayılan Mesaj:** 'Env Property Is Not Allowed' (Bu mesaj daha açıklayıcı olabilir, örn. 'Invalid or missing environment variable configuration.')
+
+**Ne Zaman Fırlatılır?**
+
+Framework'ün başlangıç aşamasında veya belirli servisler başlatılırken, `.env` dosyasından okunan değerler doğrulanırken veya işlenirken bir sorun tespit edildiğinde fırlatılabilir.
+
+**Örnek Kullanım (Varsayımsal):**
+
+```php
+// Örnek bir servis başlatma kodu içinde
+$apiKey = env('EXTERNAL_API_KEY');
+
+if (empty($apiKey)) {
+    throw new EnvPropertyValueException('Required environment variable EXTERNAL_API_KEY is missing.');
+}
+
+// ... servisi başlat
+```
+
+**ExceptionHandler Tarafından İşlenmesi:**
+
+`ExceptionHandler`, bu exception'ı yakaladığında, 500 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Debug modunda, exception mesajı gösterilebilir; production modunda ise genellikle genel bir 'Internal Server Error' mesajı gösterilir.

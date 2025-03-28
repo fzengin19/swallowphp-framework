@@ -91,4 +91,26 @@ Bazı middleware'ler (örneğin `VerifyCsrfToken`), her HTTP isteğinde çalış
 SwallowPHP, bazı yerleşik middleware'ler ile birlikte gelir:
 
 -   **`VerifyCsrfToken`:** CSRF saldırılarına karşı koruma sağlar. (Daha sonra belgelenecek)
--   **`RateLimiter`:** İstek sınırlaması uygular. (Daha sonra belgelenecek)
+-   **`RateLimiter`:** İstek sınırlaması uygular. Belirli bir zaman aralığında bir IP adresinden gelen istek sayısını sınırlar.
+    -   **Namespace:** `SwallowPHP\Framework\Http\Middleware`
+    -   **Kullanım:** Bu sınıf doğrudan bir middleware olarak değil, `Route` sınıfının `rateLimit()` metodu aracılığıyla kullanılır. `Router`, eşleşen rotanın rate limit ayarı varsa `RateLimiter::execute()` metodunu çağırır.
+    -   **Nasıl Çalışır:**
+        1.  Rota tanımından `rateLimit(int $limit, ?int $ttl = null)` ile belirtilen limiti (`$limit`) ve isteğe bağlı TTL'i (`$ttl`) alır. `$ttl` belirtilmezse `config('cache.ttl', 60)` kullanılır.
+        2.  İsteği yapanın IP adresini (`Request::getClientIp()`) ve rota adını/URI'ını kullanarak benzersiz bir cache anahtarı oluşturur (örn. `rate_limit:user.profile:192.168.1.10`).
+        3.  Cache'den bu anahtara ait veriyi okur (istek sayısı ve son istek zamanı).
+        4.  İstek sayısını bir artırır ve son istek zamanını günceller.
+        5.  Güncellenmiş veriyi, belirlenen `$ttl` süresiyle cache'e geri yazar.
+        6.  İstek sayısı (`$requestCount`), belirlenen limiti (`$rateLimit`) aşıyorsa, `RateLimitExceededException` fırlatır (HTTP 429).
+        7.  Ayrıca yanıta `X-RateLimit-Limit`, `X-RateLimit-Remaining` ve (limit aşıldıysa) `Retry-After` başlıklarını ekler.
+    -   **Örnek (Rota Tanımı):**
+        ```php
+        // routes/web.php
+
+        // /api/users rotasına dakikada 60 istek limiti uygula
+        Router::get('/api/users', 'ApiController@users')
+              ->rateLimit(60); // TTL varsayılan (config('cache.ttl')) kullanılır
+
+        // /login rotasına 5 dakikada 10 istek limiti uygula
+        Router::post('/login', 'AuthController@login')
+              ->rateLimit(10, 300); // Limit: 10, TTL: 300 saniye (5 dakika)
+        ```

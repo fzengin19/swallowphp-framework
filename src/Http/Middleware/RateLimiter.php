@@ -33,7 +33,7 @@ class RateLimiter
              return; // Rate limit explicitly disabled
         }
 
-        $cacheTTL = $route->getTimeToLive() ?? env('RATE_LIMIT_CACHE_TTL', 60); // Use TTL from route or default
+        $cacheTTL = $route->getTimeToLive() ?? config('cache.ttl', 60); // Use TTL from route or default
         $ipAddress = Request::getClientIp(); // Get client IP
         $routeName = $route->getName() ?? $route->getUri(); // Use name or URI for key
         $cacheKey = 'rate_limit:' . $routeName . ':' . $ipAddress;

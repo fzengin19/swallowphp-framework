@@ -22,7 +22,7 @@
 - [✅] Foundation/Env.php
 - [✅] Foundation/ExceptionHandler.php
 - [✅] Http/Cookie.php
-- [ ] Http/Request.php
+- [✅] Http/Request.php
 - [ ] Http/Response.php
 - [ ] Http/Middleware/Middleware.php
 - [ ] Http/Middleware/RateLimiter.php

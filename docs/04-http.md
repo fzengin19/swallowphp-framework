@@ -4,7 +4,138 @@ SwallowPHP, HTTP isteklerini ve yanıtlarını yönetmek için temel sınıflar 
 
 ## İstek (`Request`)
 
-(Bu bölüm daha sonra `Request.php` belgelendiğinde doldurulacak)
+**Namespace:** `SwallowPHP\Framework\Http`
+
+`Request` sınıfı, gelen HTTP isteğini temsil eder ve istek hakkındaki bilgilere (URI, metot, başlıklar, sorgu parametreleri, istek gövdesi vb.) erişmek için bir arayüz sağlar.
+
+Uygulama yaşam döngüsü sırasında, framework otomatik olarak `Request::createFromGlobals()` metodunu kullanarak global değişkenlerden (`$_SERVER`, `$_POST`, `php://input` vb.) bir `Request` nesnesi oluşturur ve bu nesneyi DI konteynerine kaydeder. Bu nesneye genellikle `request()` helper fonksiyonu veya Controller metotlarına tip ipucu (type-hinting) ile enjekte edilerek erişilir.
+
+### Temel Bilgilere Erişim
+
+```php
+// Controller metodu içinde Request nesnesini al
+public function show(Request $request, $id)
+{
+    // İstek URI'ını al (örn. /users/15?page=2)
+    $uri = $request->getUri();
+
+    // Sadece path kısmını al (örn. /users/15)
+    $path = $request->getPath();
+
+    // İstek metodunu al (GET, POST, PUT vb. - _method override dahil)
+    $method = $request->getMethod();
+
+    // İstek şemasını al (http veya https)
+    $scheme = $request->getScheme();
+
+    // Host adını al (örn. example.com)
+    $host = $request->getHost();
+
+    // Tam URL'i al
+    $fullUrl = $request->fullUrl();
+
+    // ...
+}
+```
+
+### İstek Girdilerine Erişim
+
+`Request` nesnesi, farklı kaynaklardan gelen girdilere erişmek için birleşik bir yol sunar.
+
+**Tüm Girdileri Alma (`all`):**
+
+Query string (`$_GET`) ve istek gövdesinden (`$_POST` veya JSON body) gelen tüm girdileri birleştirilmiş bir dizi olarak döndürür. İstek gövdesindeki değerler, aynı anahtara sahip query string değerlerinin üzerine yazar.
+
+```php
+$allInput = $request->all();
+```
+
+**Tek Bir Girdi Alma (`get`):**
+
+Belirli bir anahtara sahip girdiyi alır. Önce istek gövdesine, sonra query string'e bakar. Bulunamazsa varsayılan değeri döndürür.
+
+```php
+// 'name' girdisini al, yoksa 'Guest' kullan
+$name = $request->get('name', 'Guest');
+```
+
+**Sadece Query String'den Alma (`getQuery`):**
+
+Sadece URL'deki query string parametrelerinden (`$_GET`) bir değeri alır.
+
+```php
+// 'page' query parametresini al, yoksa 1 kullan
+$page = $request->getQuery('page', 1);
+```
+
+**Sadece İstek Gövdesinden Alma (`getRequestValue`):**
+
+Sadece istek gövdesinden (örn. `$_POST` veya JSON body) bir değeri alır.
+
+```php
+// Formdan gelen 'email' değerini al
+$email = $request->getRequestValue('email');
+```
+
+**Tüm Query Parametrelerini Alma (`query`):**
+
+Query string parametrelerinin tamamını bir dizi olarak döndürür.
+
+```php
+$queryParameters = $request->query();
+```
+
+**Tüm İstek Gövdesi Parametrelerini Alma (`request`):**
+
+İstek gövdesinden parse edilen parametrelerin tamamını bir dizi olarak döndürür.
+
+```php
+$requestBodyParameters = $request->request();
+```
+
+**Ham İstek Gövdesi (`rawInput`):**
+
+İsteğin ham (raw) gövde içeriğini string olarak döndürür. Özellikle JSON veya XML gibi yapıları manuel olarak işlemek için kullanışlıdır.
+
+```php
+$rawBody = $request->rawInput();
+```
+
+### Başlıklara (Headers) Erişim
+
+**Tek Bir Başlık Alma (`header`):**
+
+Belirtilen başlığın değerini alır (başlık adı case-insensitive'dir).
+
+```php
+// Content-Type başlığını al
+$contentType = $request->header('Content-Type');
+
+// Özel bir başlığı al, yoksa null döner
+$apiKey = $request->header('X-Api-Key');
+
+// Authorization başlığını al
+$authorization = $request->header('Authorization');
+```
+
+**Tüm Başlıkları Alma (`headers`):**
+
+Tüm istek başlıklarını içeren bir dizi döndürür (anahtarlar küçük harflidir).
+
+```php
+$allHeaders = $request->headers();
+```
+
+### Diğer Metotlar
+
+-   **`getMethod(): string`:** İstek metodunu döndürür (Method Spoofing destekler).
+-   **`getUri(): string`:** İstek URI'ını (path + query string) döndürür.
+-   **`getPath(): string`:** İstek URI'ının sadece path kısmını döndürür.
+-   **`getScheme(): string`:** İstek şemasını ('http' veya 'https') döndürür.
+-   **`getHost(): string`:** İstek host adını döndürür.
+-   **`fullUrl(): string`:** Tam istek URL'ini döndürür.
+-   **`getClientIp(): ?string`:** İstemcinin IP adresini (proxy'leri dikkate alarak) döndürmeye çalışır. (Statik metot, `request()->getClientIp()` olarak da kullanılabilir).
+-   **`server(string $key, mixed $default = null): mixed`:** `$_SERVER` dizisinden bir değer alır.
 
 ## Yanıt (`Response`)
 

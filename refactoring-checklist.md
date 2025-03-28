@@ -1,6 +1,7 @@
 # Refactoring Checklist
 
 - [x] Methods.php
+- [✅] Methods.php
 - [x] Auth/Auth.php
 - [x] Auth/AuthenticatableModel.php
 - [x] Auth/AuthenticatableTrait.php

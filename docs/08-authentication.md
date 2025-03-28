@@ -139,6 +139,17 @@ public function handle(Request $request, Closure $next)
 
 ## Authenticatable Model
 
+### `AuthenticatableTrait`
+
+`AuthenticatableModel` sınıfı, `SwallowPHP\Framework\Auth\AuthenticatableTrait`'i kullanarak `AuthenticatableInterface`'in gerektirdiği metotları (`getAuthIdentifierName`, `getAuthIdentifier`, `getAuthPassword`) varsayılan olarak implemente eder.
+
+-   `getAuthIdentifierName()`: Varsayılan olarak `'id'` döndürür.
+-   `getAuthIdentifier()`: Modelin `$id` özelliğinin değerini döndürür.
+-   `getAuthPassword()`: Modelin `$password` özelliğinin değerini döndürür.
+
+Eğer kullanıcı modeliniz farklı kolon isimleri kullanıyorsa (örn. `user_id`, `hashed_password`), bu metotları modeliniz içinde override ederek varsayılan davranışı değiştirebilirsiniz.
+
+
 Framework'ün `Auth` sistemi, kullanıcıları temsil eden modelin `SwallowPHP\Framework\Auth\AuthenticatableModel` abstract sınıfını genişletmesini bekler. Bu base class, kimlik doğrulama için gerekli temel metotları (`getAuthIdentifierName`, `getAuthIdentifier`, `getAuthPassword`) sağlar.
 
 Uygulamanızdaki `User` modelini (genellikle `App\Models\User`) bu sınıfı genişleterek oluşturmanız gerekir:

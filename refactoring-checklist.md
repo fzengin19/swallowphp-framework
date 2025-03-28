@@ -1,32 +1,31 @@
 # Refactoring Checklist
 
-- [x] Methods.php
-- [x] Auth/Auth.php
+- [✅] Methods.php
 - [✅] Auth/Auth.php
-- [x] Auth/AuthenticatableModel.php
-- [x] Auth/AuthenticatableTrait.php
-- [x] Cache/CacheManager.php
-- [x] Cache/FileCache.php
-- [x] Cache/SqliteCache.php
-- [x] Contracts/CacheInterface.php
-- [x] Database/Database.php
-- [x] Database/Model.php
-- [x] Exceptions/AuthorizationException.php
-- [x] Exceptions/CsrfTokenMismatchException.php
-- [x] Exceptions/EnvPropertyValueException.php
-- [x] Exceptions/MethodNotAllowedException.php
-- [x] Exceptions/MethodNotFoundException.php
-- [x] Exceptions/RateLimitExceededException.php
-- [x] Exceptions/RouteNotFoundException.php
-- [x] Exceptions/ViewNotFoundException.php
-- [x] Foundation/App.php
-- [x] Foundation/Env.php
-- [x] Foundation/ExceptionHandler.php
-- [x] Http/Cookie.php
-- [x] Http/Request.php
-- [x] Http/Response.php
-- [x] Http/Middleware/Middleware.php
-- [x] Http/Middleware/RateLimiter.php
-- [x] Http/Middleware/VerifyCsrfToken.php
-- [x] Routing/Route.php
-- [x] Routing/Router.php
+- [✅] Auth/AuthenticatableModel.php
+- [✅] Auth/AuthenticatableTrait.php
+- [ ] Cache/CacheManager.php
+- [ ] Cache/FileCache.php
+- [ ] Cache/SqliteCache.php
+- [ ] Contracts/CacheInterface.php
+- [ ] Database/Database.php
+- [ ] Database/Model.php
+- [ ] Exceptions/AuthorizationException.php
+- [ ] Exceptions/CsrfTokenMismatchException.php
+- [ ] Exceptions/EnvPropertyValueException.php
+- [ ] Exceptions/MethodNotAllowedException.php
+- [ ] Exceptions/MethodNotFoundException.php
+- [ ] Exceptions/RateLimitExceededException.php
+- [ ] Exceptions/RouteNotFoundException.php
+- [ ] Exceptions/ViewNotFoundException.php
+- [ ] Foundation/App.php
+- [ ] Foundation/Env.php
+- [ ] Foundation/ExceptionHandler.php
+- [ ] Http/Cookie.php
+- [ ] Http/Request.php
+- [ ] Http/Response.php
+- [ ] Http/Middleware/Middleware.php
+- [ ] Http/Middleware/RateLimiter.php
+- [ ] Http/Middleware/VerifyCsrfToken.php
+- [ ] Routing/Route.php
+- [ ] Routing/Router.php

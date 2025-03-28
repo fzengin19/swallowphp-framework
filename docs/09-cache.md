@@ -135,3 +135,29 @@ Tüm cache sürücüleri (`FileCache`, `SqliteCache`) `SwallowPHP\Framework\Cont
 -   `decrement(string $key, int $value = 1): int|false`: Cache'deki bir integer değeri belirtilen miktar kadar azaltır. Yeni değeri veya hata durumunda `false` döndürür.
 
 **Not:** `increment` ve `decrement` metotlarının atomik (yarış koşullarına karşı güvenli) olup olmadığı sürücüye bağlıdır. `FileCache` atomik değildir, `SqliteCache` daha güvenilir olabilir.
+
+
+### File Sürücüsü (`FileCache`)
+
+Bu sürücü, tüm cache verilerini tek bir JSON dosyasında saklar. Basit uygulamalar ve geliştirme ortamları için uygundur.
+
+-   **Yapılandırma (`config/cache.php`):**
+    ```php
+    'stores' => [
+        'file' => [
+            'driver' => 'file',
+            // Dosya yolu (storage dizini altında)
+            'path' => 'cache/data.json',
+            // Maksimum dosya boyutu (byte)
+            'max_size' => 52428800, // 50MB
+        ],
+        // ...
+    ],
+    ```
+-   **Özellikler:**
+    -   Tüm veriyi tek bir dosyada tutar.
+    -   Dosya okuma/yazma işlemleri yapar, bu nedenle yüksek trafikli uygulamalarda performans darboğazı olabilir.
+    -   Dosya kilitleme (locking) kullanarak eş zamanlı yazma problemlerini azaltmaya çalışır.
+    -   Yapılandırılan `max_size` aşıldığında, en eski cache girdilerini otomatik olarak siler (pruning).
+    -   `increment` ve `decrement` işlemleri atomik değildir (yarış koşullarına açıktır).
+-   **Gereksinimler:** Cache dosyasının bulunduğu dizinin (`storage/cache`) yazılabilir olması gerekir.

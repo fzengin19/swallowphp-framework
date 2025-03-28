@@ -1,0 +1,94 @@
+# Middleware
+
+Middleware, HTTP istekleri uygulamanıza girmeden önce veya yanıtlar tarayıcıya gönderilmeden hemen önce filtrelemek veya işlem yapmak için bir mekanizma sağlar. Örneğin, bir middleware kullanıcının kimliğinin doğrulanıp doğrulanmadığını kontrol edebilir, CSRF koruması uygulayabilir veya isteklere özel başlıklar ekleyebilir.
+
+## Middleware Tanımlama
+
+Her middleware sınıfı, `SwallowPHP\Framework\Http\Middleware\Middleware` abstract sınıfını genişletmeli ve bir `handle` metodu tanımlamalıdır.
+
+```php
+<?php
+
+namespace App\Http\Middleware; // Middleware'lerinizi genellikle App\Http\Middleware altında tutun
+
+use Closure;
+use SwallowPHP\Framework\Http\Middleware\Middleware;
+use SwallowPHP\Framework\Http\Request;
+use SwallowPHP\Framework\Http\Response; // Gerekirse Response sınıfını kullanın
+
+class ExampleMiddleware extends Middleware
+{
+    /**
+     * Gelen isteği işle.
+     *
+     * @param  \SwallowPHP\Framework\Http\Request  $request
+     * @param  \Closure  $next  // Bir sonraki middleware'i veya controller action'ını temsil eden Closure
+     * @return mixed // Genellikle bir Response nesnesi
+     */
+    public function handle(Request $request, Closure $next): mixed
+    {
+        // --- İstek Öncesi İşlemler ---
+        // Örneğin: Gelen isteği loglama
+        // Log::info('Gelen İstek: ' . $request->getUri());
+
+        // İsteği bir sonraki adıma (başka bir middleware veya controller) gönder
+        $response = $next($request);
+
+        // --- Yanıt Sonrası İşlemler ---
+        // Örneğin: Yanıta özel bir başlık ekleme
+        if ($response instanceof Response) {
+            $response->header('X-Processed-By', 'ExampleMiddleware');
+        }
+
+        // Son yanıtı döndür
+        return $response;
+    }
+}
+```
+
+-   **`handle(Request $request, Closure $next)`:** Bu metot iki parametre alır:
+    -   `$request`: Mevcut `Request` nesnesi.
+    -   `$next`: Pipeline'daki bir sonraki adımı temsil eden bir `Closure`. Bu closure'ı `$next($request)` şeklinde çağırmalısınız. Bu çağrı, ya bir sonraki middleware'in `handle` metodunu ya da (eğer son middleware ise) hedeflenen Controller action'ını çalıştırır ve genellikle bir `Response` nesnesi döndürür.
+-   **İstek Öncesi:** `$next($request)` çağrılmadan *önce* yapılan işlemlerdir.
+-   **Yanıt Sonrası:** `$next($request)` çağrıldıktan *sonra* yapılan işlemlerdir. Dönen `$response` üzerinde değişiklik yapabilirsiniz.
+
+## Middleware Kaydetme ve Kullanma
+
+Middleware'ler genellikle rotalara atanarak kullanılır. Rota tanımlarken `middleware()` metodunu kullanabilirsiniz.
+
+```php
+// routes/web.php
+
+use App\Http\Middleware\ExampleMiddleware;
+use App\Http\Middleware\AuthMiddleware; // Varsayımsal bir Auth middleware
+
+// Tek bir rotaya middleware atama
+Router::get('/profile', 'UserController@profile')
+      ->middleware(AuthMiddleware::class);
+
+// Birden fazla middleware atama (dizi içinde)
+Router::post('/settings', 'SettingsController@update')
+      ->middleware([
+          AuthMiddleware::class,
+          ExampleMiddleware::class
+      ]);
+
+// Rota grubuna middleware atama
+Router::group(['middleware' => [AuthMiddleware::class]], function () {
+    Router::get('/dashboard', 'DashboardController@index');
+    Router::get('/account', 'AccountController@show');
+});
+```
+
+Middleware'ler, rotada tanımlandıkları sırayla çalıştırılır.
+
+## Global Middleware
+
+Bazı middleware'ler (örneğin `VerifyCsrfToken`), her HTTP isteğinde çalıştırılmalıdır. Bu tür middleware'ler şu anda `App::run()` metodu içinde manuel olarak çağrılmaktadır. İleride, bu global middleware'leri yönetmek için `config/app.php` gibi bir yerde merkezi bir yapılandırma eklenebilir.
+
+## Framework Middleware'leri
+
+SwallowPHP, bazı yerleşik middleware'ler ile birlikte gelir:
+
+-   **`VerifyCsrfToken`:** CSRF saldırılarına karşı koruma sağlar. (Daha sonra belgelenecek)
+-   **`RateLimiter`:** İstek sınırlaması uygular. (Daha sonra belgelenecek)

@@ -24,7 +24,7 @@
 - [✅] Http/Cookie.php
 - [✅] Http/Request.php
 - [✅] Http/Response.php
-- [ ] Http/Middleware/Middleware.php
+- [✅] Http/Middleware/Middleware.php
 - [ ] Http/Middleware/RateLimiter.php
 - [ ] Http/Middleware/VerifyCsrfToken.php
 - [ ] Routing/Route.php

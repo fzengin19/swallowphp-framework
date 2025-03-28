@@ -272,3 +272,47 @@ if ($route === null) {
 **ExceptionHandler Tarafından İşlenmesi:**
 
 `ExceptionHandler`, bu exception'ı yakaladığında, 404 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Bu genellikle standart bir "Not Found" hata sayfasıdır.
+
+
+## `ViewNotFoundException`
+
+**Namespace:** `SwallowPHP\Framework\Exceptions`
+
+Bu exception, bir view dosyası (genellikle `.php` veya `.blade.php` uzantılı) belirtilen yolda bulunamadığında fırlatılır.
+
+-   **Varsayılan HTTP Durum Kodu:** 404 (Not Found) - Çünkü istenen kaynak (view dosyası) mevcut değildir.
+-   **Varsayılan Mesaj:** 'View not found'
+
+**Ne Zaman Fırlatılır?**
+
+Genellikle bir view render etme mekanizması (henüz framework'te tam olarak tanımlanmamış, ancak varsayımsal bir `view()` helper'ı veya `Response::view()` metodu olabilir) belirtilen view dosyasını bulamadığında fırlatılır.
+
+**Örnek Kullanım (Varsayımsal View Fonksiyonu):**
+
+```php
+function renderView(string $viewName, array $data = [])
+{
+    // View dosyasının yolunu belirle (örn. resources/views/ dizininde)
+    $viewPath = config('view.paths')[0] . '/' . str_replace('.', '/', $viewName) . '.php'; // Örnek yol
+
+    if (!file_exists($viewPath)) {
+        throw new ViewNotFoundException("View [{$viewName}] not found at path: {$viewPath}");
+    }
+
+    // ... view dosyasını render et ...
+}
+
+// Controller içinde kullanım:
+try {
+    return renderView('user.profile', ['user' => $user]);
+} catch (ViewNotFoundException $e) {
+    // View bulunamadı hatasını işle (belki 404 sayfası göster)
+    error_log($e->getMessage());
+    // ExceptionHandler'a bırakmak daha iyi olabilir
+    throw $e;
+}
+```
+
+**ExceptionHandler Tarafından İşlenmesi:**
+
+`ExceptionHandler`, bu exception'ı yakaladığında, 404 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Bu genellikle standart bir "Not Found" hata sayfasıdır.

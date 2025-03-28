@@ -27,5 +27,5 @@
 - [✅] Http/Middleware/Middleware.php
 - [✅] Http/Middleware/RateLimiter.php
 - [✅] Http/Middleware/VerifyCsrfToken.php
-- [ ] Routing/Route.php
+- [✅] Routing/Route.php
 - [ ] Routing/Router.php

@@ -90,7 +90,51 @@ Bazı middleware'ler (örneğin `VerifyCsrfToken`), her HTTP isteğinde çalış
 
 SwallowPHP, bazı yerleşik middleware'ler ile birlikte gelir:
 
--   **`VerifyCsrfToken`:** CSRF saldırılarına karşı koruma sağlar. (Daha sonra belgelenecek)
+-   **`VerifyCsrfToken`:** CSRF (Cross-Site Request Forgery) saldırılarına karşı koruma sağlar.
+    -   **Namespace:** `SwallowPHP\Framework\Http\Middleware`
+    -   **Kullanım:** Bu middleware genellikle global olarak uygulanır (`App::run()` içinde). `HEAD`, `GET`, `OPTIONS` gibi "okuma" isteklerini ve `$except` dizisinde belirtilen URI'ları otomatik olarak geçer. Diğer tüm isteklerde (POST, PUT, PATCH, DELETE) CSRF token doğrulaması yapar.
+    -   **Nasıl Çalışır:**
+        1.  Oturumda saklanan `_token` değerini alır (`VerifyCsrfToken::getToken()` ile oluşturulur/alınır).
+        2.  Gelen istekteki token'ı arar:
+            -   Önce `_token` isimli input alanına bakar (`$request->get('_token')`).
+            -   Bulamazsa `X-CSRF-TOKEN` başlığına bakar (`$request->header('X-CSRF-TOKEN')`).
+            -   Yine bulamazsa `X-XSRF-TOKEN` başlığına bakar (`$request->header('X-XSRF-TOKEN')`).
+        3.  Oturumdaki token ile istekteki token'ı `hash_equals()` kullanarak (zamanlama saldırılarına karşı güvenli) karşılaştırır.
+        4.  Eşleşme olmazsa veya token'lardan biri eksikse `CsrfTokenMismatchException` fırlatır (HTTP 419).
+    -   **Formlarda Kullanım:** State değiştiren (POST, PUT, PATCH, DELETE) tüm HTML formlarınıza `csrf_field()` helper fonksiyonunu eklemelisiniz. Bu, içinde geçerli CSRF token'ını barındıran gizli bir `_token` input alanı oluşturur.
+        ```html
+        <form method="POST" action="/profile">
+            <?php csrf_field(); ?>
+            <!-- Diğer form alanları -->
+            <button type="submit">Kaydet</button>
+        </form>
+        ```
+    -   **JavaScript İstekleri (AJAX):** AJAX istekleri yaparken (özellikle POST, PUT, DELETE vb.), CSRF token'ını `X-CSRF-TOKEN` başlığı ile göndermeniz gerekir. Genellikle bu token, sayfanın `<head>` kısmındaki bir meta etikette saklanır ve JavaScript ile okunarak her AJAX isteğine eklenir.
+        ```html
+        <!-- Layout dosyasında -->
+        <meta name="csrf-token" content="<?= htmlspecialchars(\SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::getToken(), ENT_QUOTES, 'UTF-8') ?>">
+
+        <!-- JavaScript (örnek - Axios ile) -->
+        <script>
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+            axios.post('/api/endpoint', { data: 'value' }, {
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken
+                }
+            })
+            .then(response => { /* ... */ })
+            .catch(error => { /* ... */ });
+        </script>
+        ```
+    -   **Doğrulamadan Muaf Tutma (`$except`):** Belirli URI'ları CSRF doğrulamasından muaf tutmak için `VerifyCsrfToken` sınıfı içindeki `$except` dizisine ekleyebilirsiniz. Bu genellikle harici servislerden gelen webhook'lar gibi durumlar için kullanılır. Wildcard (`*`) desteği basittir.
+        ```php
+        // src/Http/Middleware/VerifyCsrfToken.php
+        protected $except = [
+            'stripe/*', // Stripe webhook'ları
+            'api/v1/public-endpoint' // Belirli bir API endpoint'i
+        ];
+        ```
 -   **`RateLimiter`:** İstek sınırlaması uygular. Belirli bir zaman aralığında bir IP adresinden gelen istek sayısını sınırlar.
     -   **Namespace:** `SwallowPHP\Framework\Http\Middleware`
     -   **Kullanım:** Bu sınıf doğrudan bir middleware olarak değil, `Route` sınıfının `rateLimit()` metodu aracılığıyla kullanılır. `Router`, eşleşen rotanın rate limit ayarı varsa `RateLimiter::execute()` metodunu çağırır.

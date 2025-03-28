@@ -6,7 +6,7 @@
 - [✅] Auth/AuthenticatableTrait.php
 - [✅] Cache/CacheManager.php
 - [✅] Cache/FileCache.php
-- [ ] Cache/SqliteCache.php
+- [✅] Cache/SqliteCache.php
 - [ ] Contracts/CacheInterface.php
 - [ ] Database/Database.php
 - [ ] Database/Model.php

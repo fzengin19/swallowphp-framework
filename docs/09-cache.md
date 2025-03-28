@@ -161,3 +161,31 @@ Bu sürücü, tüm cache verilerini tek bir JSON dosyasında saklar. Basit uygul
     -   Yapılandırılan `max_size` aşıldığında, en eski cache girdilerini otomatik olarak siler (pruning).
     -   `increment` ve `decrement` işlemleri atomik değildir (yarış koşullarına açıktır).
 -   **Gereksinimler:** Cache dosyasının bulunduğu dizinin (`storage/cache`) yazılabilir olması gerekir.
+
+
+### SQLite Sürücüsü (`SqliteCache`)
+
+Bu sürücü, cache verilerini bir SQLite veritabanı dosyasında saklar. `FileCache`'e göre genellikle daha performanslıdır ve daha iyi eş zamanlılık yönetimi sunar (WAL modu sayesinde).
+
+-   **Yapılandırma (`config/cache.php`):**
+    ```php
+    'stores' => [
+        // ...
+        'sqlite' => [
+            'driver' => 'sqlite',
+            // Veritabanı dosyası yolu (storage dizini altında)
+            'path' => 'cache/database.sqlite',
+            // Kullanılacak tablo adı
+            'table' => 'cache',
+        ],
+    ],
+    ```
+-   **Özellikler:**
+    -   Verileri SQLite veritabanında (`key`, `value`, `expiration` kolonları) saklar.
+    -   `value` sütununda veriler JSON formatında saklanır.
+    -   `FileCache`'den daha iyi yazma performansı ve eş zamanlılık sunabilir (özellikle WAL modu aktifse).
+    -   Süresi dolan girdiler `get` veya `getMultiple` işlemleri sırasında otomatik olarak silinir.
+    -   `increment` ve `decrement` işlemleri veritabanı seviyesinde daha güvenilir olabilir (ancak tam atomiklik garanti edilmez, uygulama seviyesinde kilitleme gerekebilir).
+-   **Gereksinimler:**
+    -   PHP `pdo_sqlite` eklentisinin etkin olması gerekir.
+    -   Veritabanı dosyasının bulunduğu dizinin (`storage/cache`) yazılabilir olması gerekir.

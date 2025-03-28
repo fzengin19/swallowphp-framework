@@ -123,3 +123,38 @@ if (empty($apiKey)) {
 **ExceptionHandler Tarafından İşlenmesi:**
 
 `ExceptionHandler`, bu exception'ı yakaladığında, 500 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Debug modunda, exception mesajı gösterilebilir; production modunda ise genellikle genel bir 'Internal Server Error' mesajı gösterilir.
+
+
+## `MethodNotAllowedException`
+
+**Namespace:** `SwallowPHP\Framework\Exceptions`
+
+Bu exception, bir URI için bir rota tanımlı olduğunda ancak gelen isteğin HTTP metodu (örn. GET, POST, PUT) o rota için izin verilen metotlardan biri olmadığında fırlatılır.
+
+-   **Varsayılan HTTP Durum Kodu:** 405 (Method Not Allowed)
+-   **Varsayılan Mesaj:** 'Method Not Allowed'
+
+**Ne Zaman Fırlatılır?**
+
+Genellikle `Router` sınıfı tarafından, gelen isteğin URI'ı bir rotayla eşleştiğinde ancak HTTP metodu eşleşmediğinde fırlatılır.
+
+**Örnek (Framework İçinde - Router):**
+
+```php
+// Router::dispatch() içinde (basitleştirilmiş örnek)
+$route = $this->findRoute($request->getMethod(), $request->getPath());
+
+if ($route === null) {
+    // Rota bulundu ama metot eşleşmedi mi kontrol et
+    if ($this->findRouteForUri($request->getPath())) {
+         throw new MethodNotAllowedException(); // Metot eşleşmedi
+    } else {
+         throw new RouteNotFoundException(); // Rota hiç bulunamadı
+    }
+}
+// ... Rota bulundu ve metot eşleşti, devam et
+```
+
+**ExceptionHandler Tarafından İşlenmesi:**
+
+`ExceptionHandler`, bu exception'ı yakaladığında, 405 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Standartlara göre, 405 yanıtı genellikle `Allow` başlığı ile birlikte o URI için izin verilen metotları listelemelidir (bu özellik `ExceptionHandler`'a eklenebilir).

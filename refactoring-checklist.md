@@ -18,7 +18,7 @@
 - [✅] Exceptions/RateLimitExceededException.php
 - [✅] Exceptions/RouteNotFoundException.php
 - [✅] Exceptions/ViewNotFoundException.php
-- [ ] Foundation/App.php
+- [✅] Foundation/App.php
 - [ ] Foundation/Env.php
 - [ ] Foundation/ExceptionHandler.php
 - [ ] Http/Cookie.php

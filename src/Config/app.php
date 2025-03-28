@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Application Path (Subdirectory)
+    |--------------------------------------------------------------------------
+    |
+    | If your application is running in a subdirectory (e.g., http://localhost/myapp),
+    | set the subdirectory path here (e.g., '/myapp'). Leave empty if running in root.
+    | This is used by the router to correctly match URIs.
+    |
+    */
+    'path' => env('APP_PATH', ''),
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

@@ -29,7 +29,7 @@ class VerifyCsrfToken extends Middleware
      *
      * @throws \SwallowPHP\Framework\Exceptions\CsrfTokenMismatchException
      */
-    public function handle(Request $request, Closure $next)
+    public function handle(Request $request, Closure $next): mixed // Added return type hint
     {
         // Ensure session is started (might be redundant if App.php always starts it)
         if (session_status() == PHP_SESSION_NONE) {
@@ -80,7 +80,7 @@ class VerifyCsrfToken extends Middleware
     {
         // Simple check for now, can be enhanced
         $requestUri = trim(parse_url($request->getUri(), PHP_URL_PATH), '/');
-        $appPath = trim(env('APP_PATH', ''), '/');
+        $appPath = trim(config('app.path', ''), '/');
         if (!empty($appPath)) {
              // Ensure APP_PATH is correctly removed only from the beginning
              if (str_starts_with($requestUri, $appPath . '/')) {

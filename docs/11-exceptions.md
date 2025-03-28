@@ -2,6 +2,32 @@
 
 SwallowPHP, belirli hata durumlarını daha anlamlı bir şekilde temsil etmek için çeşitli özel exception sınıfları tanımlar. Bu exception'lar, `ExceptionHandler` tarafından yakalanarak uygun HTTP yanıtlarına dönüştürülür.
 
+## Hata Yönetimi (`ExceptionHandler`)
+
+**Namespace:** `SwallowPHP\Framework\Foundation`
+
+`ExceptionHandler` sınıfı, uygulama yaşam döngüsü sırasında fırlatılan ve yakalanmayan tüm `Throwable` (Exception ve Error) nesnelerini merkezi olarak ele alır. Amacı, bu hataları kullanıcıya anlamlı ve güvenli bir şekilde sunmaktır.
+
+**Nasıl Çalışır?**
+
+1.  `App::run()` metodu içindeki ana `try...catch` bloğu, herhangi bir `Throwable` yakaladığında `ExceptionHandler::handle()` statik metodunu çağırır.
+2.  `handle()` metodu, gelen `$exception` nesnesinin türünü kontrol eder (`instanceof` kullanarak).
+3.  Framework'ün özel exception sınıfları (`RouteNotFoundException`, `MethodNotAllowedException`, `AuthorizationException` vb.) için uygun HTTP durum kodunu (404, 405, 401/403 vb.) ve mesajı belirler.
+4.  Diğer genel `Exception` veya `Error` türleri için genellikle 500 (Internal Server Error) durum kodunu kullanır.
+5.  `config('app.debug')` ayarını kontrol eder:
+    *   **Debug Modu (`true`):** Yanıta exception sınıfı, mesajı, dosya adı, satır numarası ve stack trace gibi detaylı hata bilgilerini ekler. Bu, geliştirme sırasında hataları ayıklamak için kullanışlıdır.
+    *   **Production Modu (`false`):** Özellikle 500 seviyesindeki hatalar için genel ve kullanıcı dostu bir mesaj gösterir ('An error occurred while processing your request.'). Detaylı hata bilgileri ve stack trace kullanıcıya gösterilmez (güvenlik ve kullanıcı deneyimi için).
+6.  İsteğin `Accept` başlığına bakarak yanıt formatını belirlemeye çalışır (`application/json` isteniyorsa JSON, aksi takdirde HTML).
+7.  Belirlenen durum kodunu, mesajı ve (debug modundaysa) detayları içeren uygun formatta (JSON veya basit HTML) bir HTTP yanıtı oluşturur ve `echo` ile basar.
+8.  `exit;` çağırarak script'in çalışmasını sonlandırır.
+
+**Özelleştirme:**
+
+Şu anki `ExceptionHandler` oldukça basit bir yapıya sahiptir. Daha gelişmiş senaryolar için (örn. farklı hata türleri için özel view'lar gösterme, hataları harici servislere loglama) bu sınıfı genişletmek veya değiştirmek gerekebilir. İleride, exception'ları raporlama (`report`) ve render etme (`render`) sorumluluklarını ayıran bir yapıya geçilebilir.
+
+---
+
+
 ## `AuthorizationException`
 
 **Namespace:** `SwallowPHP\Framework\Exceptions`

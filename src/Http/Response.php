@@ -63,7 +63,22 @@ class Response
     {
         $this->setContent($content);
         $this->setStatusCode($status);
-        $this->headers = array_change_key_case($headers); // Normalize header keys to lower case
+
+        // Default security headers (can be overridden by $headers)
+        $defaultHeaders = [
+            'x-content-type-options' => 'nosniff',
+            'x-frame-options' => 'SAMEORIGIN', // SAMEORIGIN is often more flexible than DENY
+            'x-xss-protection' => '1; mode=block', // Deprecated but still provides fallback protection
+            'referrer-policy' => 'strict-origin-when-cross-origin',
+            // 'content-security-policy' => "default-src 'self'", // CSP is complex, better configured per-app
+            // 'strict-transport-security' => 'max-age=31536000; includeSubDomains', // Only if HTTPS is enforced
+        ];
+
+        // Merge defaults with provided headers, normalizing keys
+        $this->headers = array_merge(
+            $defaultHeaders,
+            array_change_key_case($headers) // Normalize provided header keys
+        );
 
         // Set default Content-Type based on initial content if not provided
         if (!isset($this->headers['content-type'])) {

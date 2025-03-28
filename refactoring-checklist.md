@@ -7,7 +7,7 @@
 - [✅] Cache/CacheManager.php
 - [✅] Cache/FileCache.php
 - [✅] Cache/SqliteCache.php
-- [ ] Contracts/CacheInterface.php
+- [✅] Contracts/CacheInterface.php
 - [ ] Database/Database.php
 - [ ] Database/Model.php
 - [ ] Exceptions/AuthorizationException.php

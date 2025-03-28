@@ -6,9 +6,15 @@ use SwallowPHP\Framework\Http\Request; // Import Request from Http namespace
 
 abstract class Middleware
 {
-    protected $next;
 
-    public function handle(Request $request, Closure $next)
+    /**
+     * Handle an incoming request.
+     *
+     * @param  Request  $request
+     * @param  Closure  $next
+     * @return mixed Typically a Response object or result from the next middleware.
+     */
+    public function handle(Request $request, Closure $next): mixed // Added return type hint
     {
         return $next($request);
     }

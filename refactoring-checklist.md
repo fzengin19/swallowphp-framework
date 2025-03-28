@@ -20,12 +20,12 @@
 - [x] Exceptions/ViewNotFoundException.php
 - [x] Foundation/App.php
 - [x] Foundation/Env.php
-- [ ] Foundation/ExceptionHandler.php
-- [ ] Http/Cookie.php
-- [ ] Http/Request.php
-- [ ] Http/Response.php
-- [ ] Http/Middleware/Middleware.php
-- [ ] Http/Middleware/RateLimiter.php
-- [ ] Http/Middleware/VerifyCsrfToken.php
-- [ ] Routing/Route.php
+- [x] Foundation/ExceptionHandler.php
+- [x] Http/Cookie.php
+- [x] Http/Request.php
+- [x] Http/Response.php
+- [x] Http/Middleware/Middleware.php
+- [x] Http/Middleware/RateLimiter.php
+- [x] Http/Middleware/VerifyCsrfToken.php
+- [x] Routing/Route.php
 - [ ] Routing/Router.php

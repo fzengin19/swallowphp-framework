@@ -4,7 +4,6 @@ namespace SwallowPHP\Framework\Routing;
 
 use Exception;
 use SwallowPHP\Framework\Exceptions\MethodNotFoundException;
-use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
 use SwallowPHP\Framework\Http\Middleware\Middleware;
 use SwallowPHP\Framework\Foundation\App; // Need access to the container
 use ReflectionMethod;
@@ -107,43 +106,6 @@ class Route
     return $this;
   }
 
-  /**
-   * Match the given request method and URI with this route.
-   *
-   * @param string $requestMethod The HTTP request method.
-   * @param string $requestUri The HTTP request URI.
-   * @return array|boolean Returns an array of route parameters if the route matches, 
-   *              or false if there is no match.
-   */
-  public function match($requestMethod, $requestUri)
-  {
-    if ($this->method !== $requestMethod) {
-      return false;
-    }
-
-    $routeUriParts = explode('/', $this->uri);
-    $requestUriParts = explode('/', $requestUri);
-
-    if (count($routeUriParts) !== count($requestUriParts)) {
-      return false;
-    }
-
-    $params = [];
-
-    for ($i = 0; $i < count($routeUriParts); $i++) {
-      if (strpos($routeUriParts[$i], '{') !== false) {
-        $paramName = trim($routeUriParts[$i], '{}');
-        $paramValue = $requestUriParts[$i];
-        $params[$paramName] = $paramValue;
-      } elseif ($routeUriParts[$i] !== $requestUriParts[$i]) {
-        return false;
-      }
-    }
-
-    return $params;
-  }
-
-
   protected function executeAction($request)
   {
     $container = App::container(); // Get the DI container
@@ -167,7 +129,8 @@ class Route
 
     if (!class_exists($controllerName)) {
       // TODO: Make controller namespace configurable?
-      $controllerName = '\\App\\Controllers\\' . $controllerName;
+      $configuredNamespace = config('app.controller_namespace', '\\App\\Controllers');
+      $controllerName = rtrim($configuredNamespace, '\\') . '\\' . $controllerName;
       if (!class_exists($controllerName))
         throw new Exception("Controller '$controllerName' not found", 404);
     }

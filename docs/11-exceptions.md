@@ -236,3 +236,39 @@ if ($limitExceeded) {
 **ExceptionHandler Tarafından İşlenmesi:**
 
 `ExceptionHandler`, bu exception'ı yakaladığında, 429 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. `RateLimiter` ayrıca genellikle `Retry-After` başlığını da yanıta ekler, bu da istemciye bir sonraki isteği ne zaman gönderebileceğini bildirir.
+
+
+## `RouteNotFoundException`
+
+**Namespace:** `SwallowPHP\Framework\Exceptions`
+
+Bu exception, gelen isteğin URI'ı ve HTTP metodu ile eşleşen hiçbir rota tanımlanmadığında fırlatılır.
+
+-   **Varsayılan HTTP Durum Kodu:** 404 (Not Found)
+-   **Varsayılan Mesaj:** 'Route Not Found'
+
+**Ne Zaman Fırlatılır?**
+
+Genellikle `Router` sınıfı tarafından, `findRoute` metodu gelen istek için uygun bir rota bulamadığında fırlatılır.
+
+**Örnek (Framework İçinde - Router):**
+
+```php
+// Router::dispatch() içinde (basitleştirilmiş örnek)
+$route = $this->findRoute($request->getMethod(), $request->getPath());
+
+if ($route === null) {
+    // Rota bulundu ama metot eşleşmedi mi kontrol et
+    if ($this->findRouteForUri($request->getPath())) {
+         throw new MethodNotAllowedException();
+    } else {
+         // URI ile eşleşen hiçbir rota bulunamadı
+         throw new RouteNotFoundException("Route not found for URI: " . $request->getPath());
+    }
+}
+// ... Rota bulundu, devam et
+```
+
+**ExceptionHandler Tarafından İşlenmesi:**
+
+`ExceptionHandler`, bu exception'ı yakaladığında, 404 durum kodunu ve ilgili mesajı içeren bir yanıt oluşturur. Bu genellikle standart bir "Not Found" hata sayfasıdır.

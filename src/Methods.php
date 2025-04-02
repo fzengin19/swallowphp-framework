@@ -186,14 +186,22 @@ if (!function_exists('request')) {
 }
 
 if (!function_exists('formatDateForHumans')) {
-    function formatDateForHumans($datetimeString)
+    /**
+     * Formats a datetime string or object into a human-readable relative time difference.
+     *
+     * @param string|\DateTime|null $datetimeInput The datetime string or DateTime object.
+     * @return string The formatted string or the original input on error.
+     */
+    function formatDateForHumans(string|\DateTime|null $datetimeInput): string
     {
+        if (!$datetimeInput) return ''; // Handle null or empty input gracefully
+
         $now = time();
         try {
-            $then = new \DateTime($datetimeString);
+            $then = ($datetimeInput instanceof \DateTime) ? $datetimeInput : new \DateTime($datetimeInput);
         } catch (\Exception $e) {
             // Handle invalid datetime string
-            return $datetimeString; // Return original string on error
+            return is_string($datetimeInput) ? $datetimeInput : ''; // Return original string or empty on error
         }
         $thenTimestamp = $then->getTimestamp();
         $diff = $now - $thenTimestamp;

@@ -80,10 +80,15 @@ class App
 
             // Cache Service (Shared Singleton)
             // Resolves the appropriate cache driver via CacheManager
-            self::$container->addShared(CacheInterface::class, function () {
+            self::$container->addShared(CacheInterface::class, function () { // Removed 'use ($container)'
                 try {
-                    // Pass container to CacheManager if it needs config service later
-                    return CacheManager::driver(); 
+                    // Get config service first using the static accessor
+                    // This is safe because Config service is defined before this closure
+                    $config = self::container()->get(Config::class);
+                    // Get the default driver name from the resolved config
+                    $driverName = $config->get('cache.default', 'file');
+                    // Pass the specific driver name to the manager
+                    return CacheManager::driver($driverName); 
                 } catch (\Exception $e) {
                     // Log the error and potentially throw a more specific framework exception
                     error_log("Cache service initialization failed: " . $e->getMessage());
@@ -100,9 +105,9 @@ class App
 
             // Database Service (Shared Singleton)
             // Assumes Database constructor handles connection
-            self::$container->addShared(Database::class, function() {
+            self::$container->addShared(Database::class, function() { // Removed 'use ($container)'
                  // Get config service from container
-                 $config = self::container()->get(Config::class);
+                 $config = self::container()->get(Config::class); // Use static accessor
                  // Get default connection name
                  $connectionName = $config->get('database.default', 'mysql');
                  // Get connection specific config

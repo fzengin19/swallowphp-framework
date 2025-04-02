@@ -153,9 +153,12 @@ class Router
                 // Kalan parametreler query string olarak eklenir
                 $queryString = http_build_query($params);
 
-                // Use Env helper correctly (assuming it's loaded)
-                $url = config('app.url', 'http://localhost') . $uriPattern;
+                // Get base URL from config, ensure no trailing slash
+                $baseUrl = rtrim(config('app.url', 'http://localhost'), '/');
+                 // Ensure the URI pattern starts with a slash
+                 $routePath = '/' . ltrim($uriPattern, '/');
 
+                 $url = $baseUrl . $routePath;
                 return $queryString ? $url . '?' . $queryString : $url;
             }
         }

@@ -14,14 +14,16 @@ return [
     |
     */
 
-    'model' => env('AUTH_MODEL'), // Rely solely on the environment variable
+// Framework default - This should ideally be null or a very basic placeholder.
+// The actual model MUST be defined in the application's config/auth.php or .env file.
+'model' => null, // Do NOT call env() here during framework's internal config load.    
 
     /*
     |--------------------------------------------------------------------------
     | Login Throttling / Lockout
     |--------------------------------------------------------------------------
     */
-    'max_attempts' => (int) env('AUTH_MAX_ATTEMPTS', 5), // Max attempts before lockout
-    'lockout_time' => (int) env('AUTH_LOCKOUT_TIME', 900), // Lockout time in seconds (15 minutes)
+    'max_attempts' => 5, // Default value
+'lockout_time' => 900, // Default value
 
 ];

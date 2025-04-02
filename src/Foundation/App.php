@@ -118,6 +118,11 @@ class App
                 return self::$router;
             });
 
+            // CSRF Token Middleware (Shared Singleton)
+            self::$container->addShared(VerifyCsrfToken::class, function () {
+                return new VerifyCsrfToken(); // Assuming no constructor dependencies
+            });
+
             // Add other core services...
 
         }

@@ -22,11 +22,8 @@ class ExceptionHandler
      */
     public static function handle(Throwable $exception): void
     {
-        // --- DEBUGGING START ---
-        echo "HANDLER REACHED: " . htmlspecialchars($exception->getMessage(), ENT_QUOTES, 'UTF-8') . " in " . htmlspecialchars($exception->getFile(), ENT_QUOTES, 'UTF-8') . ":" . $exception->getLine(); exit;
-        // --- DEBUGGING END ---
 
-        // Default status code
+        // Default status code (This code below will not run due to exit above)
         $statusCode = 500;
         $message = 'Internal Server Error'; // Default message
 
@@ -58,7 +55,15 @@ class ExceptionHandler
         }
 
         // Determine if debug mode is enabled (use global helper)
-        $debug = config('app.debug', false) === true;
+        // Note: config() or request() might fail if the error happened early
+        $debug = false; // Re-enable config check
+        try {
+             $debug = config('app.debug', false) === true;
+        } catch (\Throwable $configError) {
+             error_log("Error accessing config in ExceptionHandler: " . $configError->getMessage());
+        }
+        // $debug = true; // Remove forced debug mode
+        
 
         // Prepare response body details
         $responseBody = ['message' => $message];
@@ -75,13 +80,19 @@ class ExceptionHandler
         }
 
         // Determine response format (simple check for JSON)
-        $acceptHeader = request()->header('Accept', '');
-        $wantsJson = str_contains($acceptHeader, 'application/json');
+        $wantsJson = false;
+         try {
+             $acceptHeader = request()->header('Accept', '');
+             $wantsJson = str_contains($acceptHeader, 'application/json');
+         } catch (\Throwable $requestError) {
+              error_log("Error accessing request in ExceptionHandler: " . $requestError->getMessage());
+         }
 
-        // Ensure output buffer is clean before sending output
-        if (ob_get_level() > 0) {
-            ob_end_clean();
-        }
+
+        // Ensure output buffer is clean before sending output (already attempted at top)
+        // if (ob_get_level() > 0) {
+        //     ob_end_clean();
+        // }
 
         // Set status code if headers not already sent
         if (!headers_sent()) {
@@ -119,6 +130,6 @@ class ExceptionHandler
             }
             echo "</body></html>";
         }
-        exit; // Stop execution after handling the error
+        exit; // Stop execution after handling the error (Redundant due to exit at top)
     }
 }

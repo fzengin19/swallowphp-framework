@@ -4,6 +4,7 @@ namespace SwallowPHP\Framework\Foundation;
 
 
 use League\Container\Container;
+use League\Container\ReflectionContainer; // Import ReflectionContainer
 use SwallowPHP\Framework\Contracts\CacheInterface;
 use SwallowPHP\Framework\Cache\CacheManager;
 use SwallowPHP\Framework\Database\Database;
@@ -14,8 +15,10 @@ use SwallowPHP\Framework\Routing\Router;
 use SwallowPHP\Framework\Foundation\Config; // Config is back in Foundation
 
 // Set timezone from config
-date_default_timezone_set(config('app.timezone', 'Europe/Istanbul'));
-setlocale(LC_TIME, config('app.locale', 'tr') . '.UTF-8'); // Ensure locale includes encoding
+// Note: config() might not be available *yet* when this file is first parsed.
+// Consider moving this logic inside run() or after container initialization.
+// date_default_timezone_set(config('app.timezone', 'Europe/Istanbul'));
+// setlocale(LC_TIME, config('app.locale', 'tr') . '.UTF-8'); // Ensure locale includes encoding
 
 class App
 {
@@ -33,10 +36,14 @@ class App
         // Initialize container first
         self::container();
 
-        // TODO: View directory path should be more robust (e.g., relative to project root)
+        // Set timezone and locale after container and config are ready
+        date_default_timezone_set(config('app.timezone', 'Europe/Istanbul'));
+        setlocale(LC_TIME, config('app.locale', 'tr') . '.UTF-8');
+
         // Use config for view path, assuming it's relative to project root
         self::$viewDirectory = config('app.view_path', dirname(__DIR__, 2) . '/resources/views');
-        self::$router = new Router(); // Router could also be managed by container later
+        // Get Router from container now
+        self::$router = self::container()->get(Router::class); 
 
         // Assign the App instance itself to the container? Optional.
         // self::$container->addShared(App::class, $this);
@@ -52,6 +59,9 @@ class App
     {
         if (is_null(self::$container)) {
             self::$container = new Container();
+            // Enable auto-wiring via ReflectionContainer delegate
+            // The 'true' argument allows attempting to resolve even unresolvable parameters (e.g., using default values)
+            self::$container->delegate(new ReflectionContainer(true)); 
 
 
             // --- Configuration Service ---
@@ -59,6 +69,10 @@ class App
             self::$container->addShared(Config::class, function () {
                  // Assumes config files are in project_root/config
                  $configPath = dirname(__DIR__, 2) . '/src/Config'; // Correct path to src/Config
+                 // TODO: Allow overriding with application's config path?
+                 // $appConfigPath = dirname(__DIR__, 3) . '/config'; // Example app path
+                 // $config = new Config($appConfigPath); // Load app config first
+                 // $config->loadFromDirectory($frameworkConfigPath); // Then load framework config (or merge)
                  return new Config($configPath);
             });
 
@@ -68,7 +82,8 @@ class App
             // Resolves the appropriate cache driver via CacheManager
             self::$container->addShared(CacheInterface::class, function () {
                 try {
-                    return CacheManager::driver();
+                    // Pass container to CacheManager if it needs config service later
+                    return CacheManager::driver(); 
                 } catch (\Exception $e) {
                     // Log the error and potentially throw a more specific framework exception
                     error_log("Cache service initialization failed: " . $e->getMessage());
@@ -101,21 +116,9 @@ class App
              });
 
             // Router Service (Shared Singleton)
-            // TODO: Update Database constructor to accept config array
-            // $config = self::container()->get(Config::class);
-            // $connectionName = $config->get('database.default');
-            // $connectionConfig = $config->get("database.connections.{$connectionName}");
-            // return new Database($connectionConfig);
-
-            // Using the instance created in App's constructor for now
             self::$container->addShared(Router::class, function () {
-                // Ensure router is initialized if getInstance wasn't called first
-                // This might need adjustment depending on how App lifecycle is managed
-                if (!isset(self::$router)) {
- // Keep simple instantiation for now
-                    self::$router = new Router();
-                }
-                return self::$router;
+                // Keep simple instantiation for now, can be enhanced later
+                return new Router(); 
             });
 
             // CSRF Token Middleware (Shared Singleton)
@@ -137,6 +140,7 @@ class App
     public static function getViewDirectory(): ?string
     {
         // Ensure instance exists if called statically before run()
+        // self::getInstance(); // This might cause issues if called too early
         return self::$viewDirectory;
     }
 
@@ -155,34 +159,29 @@ class App
 
     /**
      * Returns the router instance.
-     * Consider getting this from the container in the future.
      *
      * @return Router The router instance.
      */
     public static function getRouter(): Router
     {
-        // Ensure instance/router exists
-        // self::getInstance(); // Might cause issues
-        if (!isset(self::$router)) {
-            // Potentially get from container if registered there
-            return self::container()->get(Router::class);
-        }
-        return self::$router;
+        // Get router from container
+        return self::container()->get(Router::class);
     }
 
     /**
      * Sets the router object to be used by the class.
-     * Note: Directly setting might bypass container management if router is registered there.
+     * Note: This is generally discouraged; router should be managed by the container.
+     * Kept for potential backward compatibility or specific use cases.
      *
      * @param Router $router The router object to be used.
      * @return void
      */
-    public static function setRouter(Router $router): void
-    {
-        self::$router = $router;
-        // Optionally update container if router is managed there
-        // self::container()->extend(Router::class)->setConcrete($router);
-    }
+    // public static function setRouter(Router $router): void
+    // {
+    //     self::$router = $router;
+    //     // Optionally update container if router is managed there
+    //     // self::container()->extend(Router::class)->setConcrete($router);
+    // }
 
     /**
      * Handles a request by dispatching it to the router.
@@ -192,7 +191,7 @@ class App
      */
     public static function handleRequest(Request $request): mixed
     {
-        // Use the router instance (potentially from container in future)
+        // Use the router instance obtained from the container
         return self::getRouter()->dispatch($request);
     }
 
@@ -205,15 +204,16 @@ class App
      */
     public static function run(): void
     {
+        // Load environment variables FIRST!
+        // This ensures $_ENV is populated before container/config is initialized.
+        Env::load(); 
+
         try {
             // Ensure the App instance and container are created
-            $app = self::getInstance();
+            $app = self::getInstance(); // This also initializes the container via __construct -> container()
             $container = self::container(); // Get initialized container
 
-            // Load environment variables early
-            Env::load();
-
-            // Basic environment setup
+            // Basic environment setup using config (now available)
             set_time_limit((int)config('app.max_execution_time', 30));
             if (config('app.ssl_redirect', false) === true && empty($_SERVER['HTTPS'])) {
                 header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
@@ -222,19 +222,22 @@ class App
             // Use debug config for error reporting
             if (config('app.debug', false) !== true) {
                 error_reporting(0);
+            } else {
+                 // Optionally set higher error reporting for debug mode
+                 error_reporting(E_ALL);
+                 ini_set('display_errors', 1); // Ensure errors are displayed if debug is true
             }
 
-            // Create Request instance
-            // TODO: Consider making Request creation managed by the container
-            $request = $container->get(Request::class); // Get shared request instance
-            // $container->share(Request::class, $request); // Add instance to container?
+            // Get Request instance from container
+            $request = $container->get(Request::class); 
 
             // Setup encoding and session
             mb_internal_encoding('UTF-8');
             if (session_status() == PHP_SESSION_NONE) {
                 // Ensure headers aren't already sent before starting session
                 if (!headers_sent()) {
-                    session_start();
+                    // TODO: Use session config from config/session.php if available
+                    session_start(); 
                 } else {
                     // Log error if session cannot be started
                     error_log("App::run() - Session could not be started: Headers already sent.");
@@ -244,7 +247,6 @@ class App
             // Output buffering and Gzip
             if (config('app.gzip_compression', true) === true && isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
                 ini_set('zlib.output_compression', '1');
-                // ob_start('ob_gzhandler'); // ob_gzhandler can conflict with zlib.output_compression
                 header('Content-Encoding: gzip');
             } else {
                 ini_set('zlib.output_compression', '0');
@@ -252,29 +254,27 @@ class App
             ob_start(); // Always start output buffering
 
             // Apply global middleware (e.g., CSRF protection)
-            // TODO: Manage middleware pipeline via container or dedicated class
             $csrfMiddleware = $container->get(VerifyCsrfToken::class);
-            // $csrfMiddleware = $container->get(VerifyCsrfToken::class); // Future goal
 
             $response = $csrfMiddleware->handle($request, function ($request) use ($app) {
                 // Pass request through router
-                return $app->handleRequest($request); // Use instance method? Or keep static?
-                // Ensure handleRequest always returns a Response object
-                $routeResponse = $app->handleRequest($request);
+                // Ensure handleRequest always returns a Response object or convertible value
+                $routeResponse = $app->handleRequest($request); // Calls Router::dispatch
+
+                // Handle non-Response return types from controllers/closures
                 if (!$routeResponse instanceof \SwallowPHP\Framework\Http\Response) {
-                     // Attempt to create a response based on the returned content
                      if (is_array($routeResponse) || is_object($routeResponse)) {
                          return \SwallowPHP\Framework\Http\Response::json($routeResponse);
-                     } else {
+                     } elseif (is_scalar($routeResponse) || is_null($routeResponse) || (is_object($routeResponse) && method_exists($routeResponse, '__toString'))) {
                          return \SwallowPHP\Framework\Http\Response::html((string) $routeResponse);
+                     } else {
+                          // Log error for unhandled return type
+                          error_log("Route action returned an unconvertible type: " . gettype($routeResponse));
+                          return \SwallowPHP\Framework\Http\Response::html('Internal Server Error: Invalid response type from route.', 500);
                      }
                 }
-                return $routeResponse;
+                return $routeResponse; // Return original Response object
             });
-
-            // Determine output format based on Accept header
-            // $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? ''; // No longer needed here
-            // $format = self::getPreferredFormat($acceptHeader); // No longer needed here
 
             // Send the response
             // Ensure $response is a Response object before sending

@@ -13,7 +13,7 @@ Projenizin kök dizininde bulunan `.env` dosyası, ortama göre değişen veya h
 
 APP_NAME="SwallowPHP Framework"
 APP_ENV=local # local, development, production vb.
-APP_KEY=base64:YourApplicationKeyMustBe32BytesLong= # php artisan key:generate ile oluşturulur
+APP_KEY=base64:YourApplicationKeyMustBe32BytesLong= # php -r 'echo "base64:".base64_encode(random_bytes(32));' komutuyla oluşturulabilir
 APP_DEBUG=true
 APP_URL=http://localhost:8000
 APP_TIMEZONE=Europe/Istanbul

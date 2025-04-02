@@ -8,7 +8,15 @@
     "autoload": {
         "psr-4": {
             "SwallowPHP\\Framework\\": "src/",
-            "SwallowPHP\\Framework\\Foundation\\": "src/Foundation/"
+            "SwallowPHP\\Framework\\Auth\\": "src/Auth/",
+            "SwallowPHP\\Framework\\Cache\\": "src/Cache/",
+            "SwallowPHP\\Framework\\Config\\": "src/Config/",
+            "SwallowPHP\\Framework\\Contracts\\": "src/Contracts/",
+            "SwallowPHP\\Framework\\Database\\": "src/Database/",
+            "SwallowPHP\\Framework\\Exceptions\\": "src/Exceptions/",
+            "SwallowPHP\\Framework\\Foundation\\": "src/Foundation/",
+            "SwallowPHP\\Framework\\Http\\": "src/Http/",
+            "SwallowPHP\\Framework\\Routing\\": "src/Routing/"
         },
         "files": ["src/Methods.php"]
     },

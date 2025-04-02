@@ -16,14 +16,56 @@ class ExceptionHandler
 {
     /**
      * Handle exceptions and generate an appropriate response.
+     * Also logs the exception to a configured file.
      *
      * @param Throwable $exception The exception to handle.
      * @return void Outputs the response directly.
      */
     public static function handle(Throwable $exception): void
     {
+        // --- Log the exception details to configured file ---
+        try {
+            $logPath = config('app.log_path'); // Get log path from config
+            if ($logPath) {
+                $logDir = dirname($logPath);
+                // Ensure log directory exists and is writable
+                if (!is_dir($logDir)) {
+                    // Attempt to create directory recursively
+                    if (!@mkdir($logDir, 0755, true) && !is_dir($logDir)) { // Check is_dir again after mkdir
+                         throw new \RuntimeException("Log directory does not exist and could not be created: {$logDir}");
+                    }
+                }
+                 if (!is_writable($logDir)) {
+                      throw new \RuntimeException("Log directory is not writable: {$logDir}");
+                 }
 
-        // Default status code (This code below will not run due to exit above)
+                $logMessage = sprintf(
+                    "[%s] %s: %s in %s:%d\nStack trace:\n%s\n---\n", // Added separator
+                    date('Y-m-d H:i:s'),
+                    get_class($exception),
+                    $exception->getMessage(),
+                    $exception->getFile(),
+                    $exception->getLine(),
+                    $exception->getTraceAsString()
+                );
+                // Use error_log with type 3 to append to the specified file
+                if (!error_log($logMessage, 3, $logPath)) {
+                     // Fallback to default log if writing to custom file fails
+                     error_log("!!! FAILED TO WRITE TO CUSTOM LOG FILE: {$logPath} !!!\n" . $logMessage);
+                }
+            } else {
+                 // Log to default PHP log if log_path is not configured
+                 error_log("Exception caught by Handler (log_path not configured): " . $exception->getMessage() . " in " . $exception->getFile() . ":" . $exception->getLine());
+            }
+        } catch (\Throwable $logError) {
+            // Log logging error itself to PHP's default error log if possible
+            // Avoid infinite loops if error_log itself fails
+            @error_log("!!! FATAL: FAILED TO WRITE TO ANY LOG FILE: " . $logError->getMessage());
+            @error_log("Original Exception: " . $exception->getMessage() . " in " . $exception->getFile() . ":" . $exception->getLine());
+        }
+        // --- End Logging ---
+
+        // Default status code
         $statusCode = 500;
         $message = 'Internal Server Error'; // Default message
 
@@ -51,20 +93,19 @@ class ExceptionHandler
             $message = $exception->getMessage();
         } else {
             // Keep default 500 for other Throwables
-            $message = $exception->getMessage(); // Use actual message for generic errors too
+            // Use actual message for generic errors too, unless debug is off AND status >= 500
+            $message = $exception->getMessage(); 
         }
 
         // Determine if debug mode is enabled (use global helper)
         // Note: config() or request() might fail if the error happened early
-        $debug = false; // Re-enable config check
+        $debug = false; 
         try {
              $debug = config('app.debug', false) === true;
         } catch (\Throwable $configError) {
-             error_log("Error accessing config in ExceptionHandler: " . $configError->getMessage());
+             // Logging already attempted above
         }
-        // $debug = true; // Remove forced debug mode
         
-
         // Prepare response body details
         $responseBody = ['message' => $message];
         if ($debug) {
@@ -85,20 +126,20 @@ class ExceptionHandler
              $acceptHeader = request()->header('Accept', '');
              $wantsJson = str_contains($acceptHeader, 'application/json');
          } catch (\Throwable $requestError) {
-              error_log("Error accessing request in ExceptionHandler: " . $requestError->getMessage());
+              // Logging already attempted above
          }
 
-
-        // Ensure output buffer is clean before sending output (already attempted at top)
-        // if (ob_get_level() > 0) {
-        //     ob_end_clean();
-        // }
+        // Ensure output buffer is clean before sending output
+        while (ob_get_level() > 0) {
+            @ob_end_clean(); // Clean buffer robustly
+        }
 
         // Set status code if headers not already sent
         if (!headers_sent()) {
              http_response_code($statusCode);
         } else {
-             error_log("ExceptionHandler::handle - Cannot set status code {$statusCode}, headers already sent.");
+             // Logging already attempted above
+             // error_log("ExceptionHandler::handle - Cannot set status code {$statusCode}, headers already sent.");
         }
 
         // Output response
@@ -130,6 +171,6 @@ class ExceptionHandler
             }
             echo "</body></html>";
         }
-        exit; // Stop execution after handling the error (Redundant due to exit at top)
+        exit; // Stop execution after handling the error
     }
 }

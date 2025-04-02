@@ -102,4 +102,11 @@ return [
     */
     'gzip_compression' => (bool) env('GZIP_COMPRESSION', true),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Logging Configuration
+    |--------------------------------------------------------------------------
+    */
+    'log_path' => env('LOG_PATH', config('app.storage_path') . '/logs/swallow.log'), // Default log file path
+
 ];

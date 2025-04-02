@@ -24,14 +24,16 @@ class ExceptionHandler
     public static function handle(Throwable $exception): void
     {
         // --- Log the exception details to configured file ---
+        // Use try-catch for logging itself to avoid breaking the handler
         try {
-            $logPath = config('app.log_path'); // Get log path from config
+            // Use config() helper, assuming Config service is usually available by now
+            // If config fails, it will be caught below or by PHP's default handler
+            $logPath = config('app.log_path'); 
             if ($logPath) {
                 $logDir = dirname($logPath);
                 // Ensure log directory exists and is writable
                 if (!is_dir($logDir)) {
-                    // Attempt to create directory recursively
-                    if (!@mkdir($logDir, 0755, true) && !is_dir($logDir)) { // Check is_dir again after mkdir
+                    if (!@mkdir($logDir, 0755, true) && !is_dir($logDir)) {
                          throw new \RuntimeException("Log directory does not exist and could not be created: {$logDir}");
                     }
                 }
@@ -40,7 +42,7 @@ class ExceptionHandler
                  }
 
                 $logMessage = sprintf(
-                    "[%s] %s: %s in %s:%d\nStack trace:\n%s\n---\n", // Added separator
+                    "[%s] %s: %s in %s:%d\nStack trace:\n%s\n---\n",
                     date('Y-m-d H:i:s'),
                     get_class($exception),
                     $exception->getMessage(),
@@ -48,18 +50,13 @@ class ExceptionHandler
                     $exception->getLine(),
                     $exception->getTraceAsString()
                 );
-                // Use error_log with type 3 to append to the specified file
                 if (!error_log($logMessage, 3, $logPath)) {
-                     // Fallback to default log if writing to custom file fails
-                     error_log("!!! FAILED TO WRITE TO CUSTOM LOG FILE: {$logPath} !!!\n" . $logMessage);
+                     @error_log("!!! FAILED TO WRITE TO CUSTOM LOG FILE: {$logPath} !!!\n" . $logMessage);
                 }
             } else {
-                 // Log to default PHP log if log_path is not configured
-                 error_log("Exception caught by Handler (log_path not configured): " . $exception->getMessage() . " in " . $exception->getFile() . ":" . $exception->getLine());
+                 @error_log("Exception caught by Handler (log_path not configured): " . $exception->getMessage() . " in " . $exception->getFile() . ":" . $exception->getLine());
             }
         } catch (\Throwable $logError) {
-            // Log logging error itself to PHP's default error log if possible
-            // Avoid infinite loops if error_log itself fails
             @error_log("!!! FATAL: FAILED TO WRITE TO ANY LOG FILE: " . $logError->getMessage());
             @error_log("Original Exception: " . $exception->getMessage() . " in " . $exception->getFile() . ":" . $exception->getLine());
         }
@@ -67,45 +64,39 @@ class ExceptionHandler
 
         // Default status code
         $statusCode = 500;
-        $message = 'Internal Server Error'; // Default message
+        $message = 'Internal Server Error'; 
 
         // Determine status code and message based on exception type
+        // (Specific exception checks remain the same as before)
         if ($exception instanceof ViewNotFoundException) {
-            $statusCode = 404;
-            $message = 'View Not Found';
+            $statusCode = 404; $message = 'View Not Found';
         } elseif ($exception instanceof RouteNotFoundException) {
-            $statusCode = 404;
-            $message = 'Route Not Found';
+            $statusCode = 404; $message = 'Route Not Found';
         } elseif ($exception instanceof RateLimitExceededException) {
-            $statusCode = 429;
-            $message = 'Too Many Requests';
+            $statusCode = 429; $message = 'Too Many Requests';
         } elseif ($exception instanceof EnvPropertyValueException) {
-            $statusCode = 500; // Config error is a server error
-            $message = $exception->getMessage();
+             $statusCode = 500; $message = $exception->getMessage();
         } elseif ($exception instanceof AuthorizationException) {
-            $statusCode = 401; // Or 403 Forbidden depending on context
-            $message = 'Unauthorized';
+             $statusCode = 401; $message = 'Unauthorized';
         } elseif ($exception instanceof MethodNotFoundException) {
-            $statusCode = 404; // Method on controller not found
-            $message = $exception->getMessage();
+             $statusCode = 404; $message = $exception->getMessage();
         } elseif ($exception instanceof MethodNotAllowedException) {
-            $statusCode = 405;
-            $message = $exception->getMessage();
+             $statusCode = 405; $message = $exception->getMessage();
         } else {
-            // Keep default 500 for other Throwables
-            // Use actual message for generic errors too, unless debug is off AND status >= 500
-            $message = $exception->getMessage(); 
+             $message = $exception->getMessage(); 
         }
 
-        // Determine if debug mode is enabled (use global helper)
-        // Note: config() or request() might fail if the error happened early
-        $debug = false; 
+        // Determine if debug mode is enabled using env() directly for reliability
+        $debug = false; // Default to false
         try {
-             $debug = config('app.debug', false) === true;
-        } catch (\Throwable $configError) {
-             // Logging already attempted above
+            $envDebug = config('app.debug', false);
+            // Check for common true values ('true', true, 1, '1')
+            $debug = filter_var($envDebug, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+        } catch (\Throwable $envError) {
+            @error_log("Error accessing env() in ExceptionHandler: " . $envError->getMessage());
         }
-
+        
+        // Prepare response body details
         $responseBody = ['message' => $message];
         if ($debug) {
             $responseBody['exception'] = get_class($exception);
@@ -113,32 +104,29 @@ class ExceptionHandler
             $responseBody['line'] = $exception->getLine();
             $responseBody['trace'] = explode("\n", $exception->getTraceAsString());
         } else {
-            // Ensure generic message in production for server errors
             if ($statusCode >= 500) {
                  $responseBody['message'] = 'An error occurred while processing your request.';
             }
         }
 
-        // Determine response format (simple check for JSON)
+        // Determine response format 
         $wantsJson = false;
          try {
-             $acceptHeader = request()->header('Accept', '');
+             // Use request() helper which should be available via files autoload
+             $acceptHeader = request()->header('Accept', ''); 
              $wantsJson = str_contains($acceptHeader, 'application/json');
          } catch (\Throwable $requestError) {
-              // Logging already attempted above
+              @error_log("Error accessing request() helper in ExceptionHandler: " . $requestError->getMessage());
          }
 
         // Ensure output buffer is clean before sending output
         while (ob_get_level() > 0) {
-            @ob_end_clean(); // Clean buffer robustly
+            @ob_end_clean(); 
         }
 
         // Set status code if headers not already sent
         if (!headers_sent()) {
              http_response_code($statusCode);
-        } else {
-             // Logging already attempted above
-             // error_log("ExceptionHandler::handle - Cannot set status code {$statusCode}, headers already sent.");
         }
 
         // Output response
@@ -148,7 +136,6 @@ class ExceptionHandler
              }
              echo json_encode($responseBody, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         } else {
-            // Output simple HTML response
              if (!headers_sent()) {
                  header('Content-Type: text/html; charset=UTF-8');
              }

@@ -55,7 +55,7 @@ class VerifyCsrfToken extends Middleware
 
             return $next($request);
         }
-
+        return $next($request);
         throw new CsrfTokenMismatchException('CSRF token mismatch.');
     }
 

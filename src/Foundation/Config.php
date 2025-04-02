@@ -14,21 +14,30 @@ class Config
     protected array $items = [];
 
     /**
-     * The base path of the configuration files.
+     * The base path of the framework configuration files.
      *
      * @var string
      */
-    protected string $configPath;
+    protected string $frameworkConfigPath;
+
+    /**
+     * The base path of the application configuration files.
+     *
+     * @var string|null
+     */
+    protected ?string $appConfigPath;
 
     /**
      * Create a new configuration repository.
      *
-     * @param string|null $configPath Path to the configuration directory.
+     * @param string|null $frameworkConfigPath Path to the framework configuration directory.
+     * @param string|null $appConfigPath Path to the application configuration directory.
      */
-    public function __construct(?string $configPath = null)
+    public function __construct(?string $frameworkConfigPath = null, ?string $appConfigPath = null) // Pass both paths
     {
-        $this->configPath = $configPath ?: $this->getDefaultConfigPath();
-        $this->loadConfigurationFiles();
+        $this->frameworkConfigPath = $frameworkConfigPath ?: $this->getDefaultFrameworkConfigPath(); // Set framework path
+        $this->appConfigPath = $appConfigPath; // Set app path (can be null)
+        $this->loadConfigurationFiles(); // Load and merge configs
     }
 
     /**
@@ -36,32 +45,51 @@ class Config
      *
      * @return string
      */
-    protected function getDefaultConfigPath(): string
+    protected function getDefaultFrameworkConfigPath(): string
     {
         // Assumes this class is in src/Foundation, so go up 2 levels for project root
-        $basePath = dirname(__DIR__, 2);
-        return $basePath . '/src/Config'; // Point to src/Config
+        $frameworkBasePath = dirname(__DIR__, 2);
+        return $frameworkBasePath . '/src/Config'; // Point to framework's src/Config
     }
 
     /**
-     * Load the configuration items from all of the files.
+     * Load and merge configuration items from framework and application paths.
+     * Application config overrides framework config.
      *
      * @return void
      */
     protected function loadConfigurationFiles(): void
     {
-        if (!is_dir($this->configPath)) {
-             // Optionally log a warning if config path doesn't exist
-             // error_log("Configuration directory not found: {$this->configPath}");
-             return; // No config files to load
+        // Load framework config first
+        $frameworkItems = $this->loadFromPath($this->frameworkConfigPath);
+        // Load app config if path is provided
+        $appItems = $this->appConfigPath ? $this->loadFromPath($this->appConfigPath) : [];
+
+        // Merge framework and application configs, app overrides framework
+        // Use array_replace_recursive to merge nested arrays correctly
+        $this->items = array_replace_recursive($frameworkItems, $appItems);
+    }
+
+    /**
+     * Load configuration items from a given directory path.
+     *
+     * @param string $configPath
+     * @return array The loaded configuration items.
+     */
+    protected function loadFromPath(string $configPath): array
+    {
+        $items = [];
+        if (!is_dir($configPath)) {
+             error_log("Configuration directory not found or not readable: {$configPath}");
+             return []; // Return empty array if path is invalid
         }
 
-        foreach (glob($this->configPath . '/*.php') as $file) {
+        foreach (glob($configPath . '/*.php') as $file) {
             $key = basename($file, '.php');
             try {
                 $configData = require $file;
                 if (is_array($configData)) {
-                    $this->items[$key] = $configData;
+                    $items[$key] = $configData; // Add to items array for this path
                 } else {
                      error_log("Config file did not return an array: {$file}");
                 }
@@ -69,6 +97,8 @@ class Config
                  error_log("Error loading config file {$file}: " . $e->getMessage());
             }
         }
+
+        return $items; // Return the items loaded from this specific path
     }
 
     /**

@@ -67,13 +67,13 @@ class App
             // --- Configuration Service ---
             // Load configuration early and share the instance
             self::$container->addShared(Config::class, function () {
-                 // Assumes config files are in project_root/config
                  $configPath = dirname(__DIR__, 2) . '/src/Config'; // Correct path to src/Config
-                 // TODO: Allow overriding with application's config path?
-                 // $appConfigPath = dirname(__DIR__, 3) . '/config'; // Example app path
-                 // $config = new Config($appConfigPath); // Load app config first
-                 // $config->loadFromDirectory($frameworkConfigPath); // Then load framework config (or merge)
-                 return new Config($configPath);
+                 // Try to determine the application's base path assuming vendor is one level down
+                 // This might need adjustment based on the actual project structure
+                 // Using a defined constant like BASE_PATH (defined in index.php) would be safer
+                 $appBasePath = dirname(__DIR__, 3); // Go up from src/Foundation -> src -> framework_root -> project_root
+                 $appConfigPath = defined('BASE_PATH') ? BASE_PATH . '/config' : $appBasePath . '/config'; // Use defined BASE_PATH if available
+                 return new Config($configPath, $appConfigPath); // Pass both framework and app paths
             });
 
             // --- Service Definitions ---

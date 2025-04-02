@@ -382,9 +382,6 @@ if (!function_exists('view')) {
         // Convert dot notation to directory separator
         $viewFile = $viewPath . '/' . str_replace('.', '/', $view) . '.php';
 
-        // --- DEBUGGING: Log the path being checked ---
-        error_log("SwallowPHP View Check: Attempting to find view at path: " . $viewFile);
-        // --- END DEBUGGING ---
         if (!file_exists($viewFile)) {
             throw new ViewNotFoundException("View file not found: {$viewFile}");
         }

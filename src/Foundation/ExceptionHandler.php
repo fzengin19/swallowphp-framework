@@ -105,8 +105,7 @@ class ExceptionHandler
         } catch (\Throwable $configError) {
              // Logging already attempted above
         }
-        
-        // Prepare response body details
+
         $responseBody = ['message' => $message];
         if ($debug) {
             $responseBody['exception'] = get_class($exception);

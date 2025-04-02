@@ -11,7 +11,7 @@ SwallowPHP ile yeni bir projeye başlamak için aşağıdaki adımları izleyin:
 *   Framework iskeletini projeniz için yeni bir dizine kopyalayın veya klonlayın.
     ```bash
     # Örnek: Git ile klonlama
-    git clone <repository_url> <yeni_proje_dizini>
+    git clone https://github.com/fzengin19/swallowphp-framework.git <yeni_proje_dizini>
     cd <yeni_proje_dizini>
     ```
 

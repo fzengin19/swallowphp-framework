@@ -382,6 +382,9 @@ if (!function_exists('view')) {
         // Convert dot notation to directory separator
         $viewFile = $viewPath . '/' . str_replace('.', '/', $view) . '.php';
 
+        // --- DEBUGGING START ---
+        // echo "Checking view file: " . htmlspecialchars($viewFile, ENT_QUOTES, 'UTF-8') . "<br>\n";
+        // --- DEBUGGING END ---
         if (!file_exists($viewFile)) {
             throw new ViewNotFoundException("View file not found: {$viewFile}");
         }

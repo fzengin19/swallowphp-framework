@@ -91,37 +91,37 @@ class Model
     }
 
     /**
-     * Set table name
+     * Set table name (Static context - returns a new query builder)
      *
      * @param string $table Table name
-     * @return self Model instance
+     * @return \SwallowPHP\Framework\Database Query builder instance
      */
-    public static function table(string $table): self
+    public static function table(string $table): Database // Changed return type
     {
-        static::$table = $table;
-        return new static();
+        // This method doesn't fit well in the Model context anymore with the new query() approach.
+        // It's better to rely on $table property or getTable() within query().
+        // Keeping it for potential backward compatibility, but it returns a builder now.
+        return static::query()->table($table);
     }
 
     /**
      * Create a new record
      *
      * @param array $data Record data
-     * @return self Created model instance or false on failure
+     * @return self|false Created model instance or false on failure
      */
     public static function create(array $data): self|false
     {
         static::fireEvent('creating', $data);
 
-        // Ensure created_at is set if not provided
-        $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
-        // Ensure updated_at is set if not provided (important for insert via attributes)
-        $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
+        // Timestamps are handled by save() method now
+        // $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
+        // $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
 
         $model = static::createModelInstance();
         $model->fill($data); // Uses fillable
 
-        if ($model->save() !== false) { // save() returns insert ID or false
-            // Event is fired within save()
+        if ($model->save() !== false) { // save() handles insert/update & events
             return $model;
         }
         return false; // Indicate failure
@@ -182,24 +182,30 @@ class Model
         return static::query()->offset($offset);
     }
 
+    /**
+     * Get all records matching the query.
+     * Returns an array of model instances.
+     * @return array<int, static>
+     */
     public static function get(): array
     {
-        $result = static::query()->get(); // Start query and execute get
-        return static::hydrateModels($result);
+        // Database::get() now handles hydration because query() sets the model
+        return static::query()->get();
     }
 
+    /**
+     * Get the first record matching the query.
+     * Returns a single model instance or null.
+     * @return static|null
+     */
     public static function first(): ?self
     {
-        $result = static::query()->first(); // Start query and execute first
-        return $result ? static::hydrateModel($result) : null;
+         // Database::first() now handles hydration
+         return static::query()->first();
     }
 
-    public function addCreatedAt(): void
-    {
-        if (!isset($this->attributes['created_at'])) {
-            $this->attributes['created_at'] = date('Y-m-d H:i:s');
-        }
-    }
+    // addCreatedAt is now handled within save() logic for inserts
+    // public function addCreatedAt(): void { ... }
 
     /**
      * Convert model data to array
@@ -208,10 +214,11 @@ class Model
      */
     public function toArray(): array
     {
-        $array = $this->attributes;
-
-        foreach ($this->attributes as $key => $attribute) {
-            $array[$key] = $this->castAttribute($key, $attribute);
+        $array = []; // Start with empty array
+        // Iterate over attributes to apply casts correctly
+        foreach ($this->attributes as $key => $value) {
+            // Apply casting logic from __get effectively
+            $array[$key] = $this->__get($key); // Use magic getter to get casted value
         }
 
         // Remove hidden attributes after casting
@@ -223,7 +230,7 @@ class Model
     }
 
     /**
-     * Save model data
+     * Save model data (insert or update)
      *
      * @return int|bool Number of affected rows on update, insert ID on create, or false on failure
      */
@@ -233,43 +240,44 @@ class Model
 
         static::fireEvent('saving', $this);
 
-        $result = false; // Initialize result
+        $result = false;
 
-        // Check if ID exists and is not empty/null/zero etc.
-        if (!empty($this->attributes['id'])) {
+        if (!empty($this->attributes['id'])) { // Existing model (UPDATE)
             static::fireEvent('updating', $this);
             $dirtyData = $this->getDirty();
-            if (!empty($dirtyData)) { // Only update if there are changes
-                // Use the query builder to update the specific record
+            if (!empty($dirtyData)) {
+                // Include updated_at in dirty data for update
+                $dirtyData['updated_at'] = $this->attributes['updated_at'];
                 $result = static::query()
                                 ->where('id', '=', $this->attributes['id'])
-                                ->update($dirtyData); // update() returns affected rows count (int)
+                                ->update($dirtyData);
             } else {
-                $result = 0; // No changes, affected rows is 0
+                $result = 0; // No changes
             }
-            static::fireEvent('updated', $this);
-        } else {
-            $this->addCreatedAt();
+            if ($result !== false) { // Check if update didn't fail (rowCount can be 0)
+                static::fireEvent('updated', $this);
+            }
+        } else { // New model (INSERT)
+            $this->attributes['created_at'] = $this->attributes['created_at'] ?? date('Y-m-d H:i:s');
             static::fireEvent('creating', $this);
-            // Use raw attributes for insert, ensuring timestamps are included
+            // Use raw attributes for insert
             $insertId = static::query()->insert($this->attributes);
-            // insert() returns the last insert ID (int) or false on failure
             if ($insertId !== false && $insertId > 0) {
-                $this->id = (int) $insertId; // Assign the insert ID back to the model
-                $this->attributes['id'] = $this->id; // Also update attributes array
-                $result = $this->id; // Return the new ID on successful insert
+                $this->id = (int) $insertId;
+                $this->attributes['id'] = $this->id; // Ensure ID is in attributes
+                $result = $this->id;
                 static::fireEvent('created', $this);
             } else {
-                $result = false; // Indicate failure
+                $result = false;
             }
         }
 
-        if ($result !== false) { // Only sync if save was potentially successful
+        if ($result !== false) {
             $this->syncOriginal();
             static::fireEvent('saved', $this);
         }
 
-        return $result; // Return insert ID, affected rows count, or false
+        return $result;
     }
 
 
@@ -292,56 +300,58 @@ class Model
     public function fill(array $data): void
     {
         foreach ($data as $key => $value) {
-            // Check fillable OR if fillable is empty (allowing all non-guarded)
-            // AND check not guarded
             if ((in_array($key, $this->fillable) || empty($this->fillable)) && !in_array($key, $this->guarded)) {
-                 // Do not cast here, cast when getting or saving if necessary
-                 $this->attributes[$key] = $value;
+                 $this->attributes[$key] = $value; // Set raw value, casting happens on get/save
             }
         }
     }
 
 
+    /**
+     * Static insert - bypasses events and fillable/guarded checks. Use with caution.
+     * @return int|false Insert ID or false
+     */
     public static function insert(array $data): int|false
     {
-        // Note: This static insert bypasses fillable/guarded checks and events. Use with caution.
-        return static::query()->insert($data); // insert() returns insert ID or false
+        // Add timestamps if not present
+        $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
+        $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
+        return static::query()->insert($data);
     }
 
+    /** Static update is disallowed. */
     public static function update(array $data): int
     {
         throw new \LogicException("Static update without conditions is not supported. Use query()->where(...)->update(...) instead.");
     }
 
+    /** Refresh model attributes from database. */
     public function refresh(): self
     {
-        if (!isset($this->attributes['id'])) {
+        if (empty($this->attributes['id'])) {
             throw new InvalidArgumentException('Model must have an ID to refresh');
         }
-        $result = static::query()->where('id', '=', $this->attributes['id'])->first();
-        if (!$result) {
+        // Use query builder associated with this model instance's class
+        $freshModel = static::query()->where('id', '=', $this->attributes['id'])->first();
+        if (!$freshModel instanceof static) { // Check if a model was returned
             throw new InvalidArgumentException('Model not found in database with ID: ' . $this->attributes['id']);
         }
-        $this->attributes = $result; // Overwrite attributes with fresh data
+        $this->attributes = $freshModel->attributes; // Overwrite attributes
         $this->syncOriginal();
         return $this;
     }
 
-    /**
-     * Delete record(s)
-     *
-     * @return int Number of affected rows
-     */
+    /** Static delete is disallowed. */
     public static function delete(): int
     {
         throw new \LogicException("Static delete without conditions is not supported. Use query()->where(...)->delete() instead.");
     }
 
+    /** Paginate results. Returns hydrated models. */
     public static function paginate(int $perPage, int $page = 1): array
     {
-        $paginatorData = static::query()->paginate($perPage, $page);
-        $paginatorData['data'] = static::hydrateModels($paginatorData['data']);
-        return $paginatorData;
+        // Database::paginate() now handles hydration via Database::get()
+        return static::query()->paginate($perPage, $page);
     }
 
     public static function whereRaw(string $query, array $bindings = []): Database
@@ -349,11 +359,11 @@ class Model
         return static::query()->whereRaw($query, $bindings);
     }
 
+    /** Paginate using cursor. Returns hydrated models. */
     public static function cursorPaginate(int $perPage, ?string $cursor = null): array
     {
-        $paginatorData = static::query()->cursorPaginate($perPage, $cursor);
-        $paginatorData['data'] = static::hydrateModels($paginatorData['data']);
-        return $paginatorData;
+        // Database::cursorPaginate() now handles hydration via Database::get()
+        return static::query()->cursorPaginate($perPage, $cursor);
     }
 
     /**
@@ -367,27 +377,34 @@ class Model
     {
         $castType = $this->casts[$key] ?? null;
 
-        // Skip casting if value is null and the cast type isn't explicitly handling nulls
         if (is_null($value) && !in_array($castType, ['date', 'datetime', 'array', 'object'])) {
              return null;
         }
-
         if (!$castType) {
-            return $value;
+            // Check if attribute should be a date based on $dates array
+            if (in_array($key, $this->dates)) {
+                 $castType = 'datetime';
+            } else {
+                 return $value; // No cast needed
+            }
         }
 
         switch ($castType) {
             case 'int':
             case 'integer':
-                return (int) $value;
+                return is_numeric($value) ? (int) $value : null;
             case 'real':
             case 'float':
             case 'double':
-                return (float) $value;
+                return is_numeric($value) ? (float) $value : null;
             case 'string':
                 return (string) $value;
             case 'bool':
             case 'boolean':
+                // Handle common boolean string/int representations
+                if (is_string($value)) {
+                     return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+                }
                 return (bool) $value;
             case 'array':
                 return is_array($value) ? $value : json_decode($value, true);
@@ -396,6 +413,7 @@ class Model
             case 'date':
             case 'datetime':
                  if ($value instanceof DateTime) return $value;
+                 if (empty($value)) return null;
                  try { return new DateTime($value); } catch (\Exception $e) { return null; }
             default:
                 return $value;
@@ -403,16 +421,16 @@ class Model
     }
 
     /**
-     * Hydrate multiple models
+     * Hydrate multiple models (Static helper for Database class)
      *
-     * @param array $data Raw data
+     * @param array $data Raw data rows
      * @return array Hydrated models
      */
-    protected static function hydrateModels(array $data): array
+    public static function hydrateModels(array $data): array // Changed visibility to public static
     {
         $models = [];
         foreach ($data as $item) {
-            if (is_array($item)) { // Ensure item is an array
+            if (is_array($item)) {
                  $models[] = static::hydrateModel($item);
             }
         }
@@ -420,12 +438,12 @@ class Model
     }
 
     /**
-     * Hydrate a single model
+     * Hydrate a single model (Static helper for Database class)
      *
-     * @param array $data Raw data
+     * @param array $data Raw data row
      * @return self Hydrated model
      */
-    protected static function hydrateModel(array $data): self
+    protected static function hydrateModel(array $data): self // Kept protected static
     {
         $model = static::createModelInstance();
         $model->attributes = $data; // Directly set attributes
@@ -433,111 +451,77 @@ class Model
         return $model;
     }
 
-    /**
-     * Sync original data
-     */
+    /** Sync original data */
     protected function syncOriginal(): void
     {
         $this->original = $this->attributes;
     }
 
-    /**
-     * Get changed attributes
-     *
-     * @return array Changed attributes
-     */
+    /** Get changed attributes */
     protected function getDirty(): array
     {
         $dirty = [];
         foreach ($this->attributes as $key => $value) {
+            // Check if key exists in original and if values are different (strict check)
             if (!array_key_exists($key, $this->original) || $this->original[$key] !== $value) {
-                 $dirty[$key] = $value;
+                 $dirty[$key] = $value; // Use raw value for update
             }
         }
         return $dirty;
     }
 
 
-    /**
-     * Add event listener
-     *
-     * @param string $event Event name
-     * @param callable $callback Callback function
-     */
+    /** Add event listener */
     public static function on(string $event, callable $callback): void
     {
-        $class = get_called_class(); // Store events per class
-        if (!isset(static::$eventCallbacks[$class][$event])) {
-            static::$eventCallbacks[$class][$event] = [];
-        }
+        $class = get_called_class();
         static::$eventCallbacks[$class][$event][] = $callback;
     }
 
-    /**
-     * Fire an event
-     *
-     * @param string $event Event name
-     * @param mixed $payload Event data
-     */
+    /** Fire an event */
     protected static function fireEvent(string $event, $payload): void
     {
         $class = get_called_class();
         if (isset(static::$eventCallbacks[$class][$event])) {
              foreach (static::$eventCallbacks[$class][$event] as $callback) {
                  if (call_user_func($callback, $payload) === false) {
-                    // Optionally allow listeners to stop propagation
-                    // break;
+                    // break; // Allow stopping propagation?
                  }
              }
         }
     }
 
 
-    /**
-     * Define a one-to-many relationship
-     *
-     * @param string $relatedModel Related model class
-     * @param string $foreignKey Foreign key on the related model table
-     * @param string $localKey Local key on the current model table (usually 'id')
-     * @return array Related models
-     */
+    /** Define a one-to-many relationship */
     public function hasMany(string $relatedModel, string $foreignKey, string $localKey = 'id'): array
     {
         if (!class_exists($relatedModel)) {
             throw new \RuntimeException("Related model not found: {$relatedModel}");
         }
-        if (!isset($this->attributes[$localKey])) {
-             throw new \RuntimeException("Local key '{$localKey}' not found on model " . get_class($this));
+        $localValue = $this->attributes[$localKey] ?? null;
+        if ($localValue === null) {
+             return []; // Cannot fetch related models if local key is null
         }
-        return $relatedModel::query()->where($foreignKey, '=', $this->attributes[$localKey])->get();
+        // Use static query method on the related model class, which returns hydrated models
+        return $relatedModel::query()->where($foreignKey, '=', $localValue)->get();
     }
 
-    /**
-     * Define a belongs-to relationship
-     *
-     * @param string $relatedModel Related model class
-     * @param string $foreignKey Foreign key on the current model table
-     * @param string $ownerKey Owner key on the related model table (usually 'id')
-     * @return Model|null Related model
-     */
+    /** Define a belongs-to relationship */
     public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): ?Model
     {
          if (!class_exists($relatedModel)) {
              throw new \RuntimeException("Related model not found: {$relatedModel}");
          }
-         if (!isset($this->attributes[$foreignKey])) {
-              return null;
+         $foreignValue = $this->attributes[$foreignKey] ?? null;
+         if ($foreignValue === null) {
+              return null; // Cannot fetch related model if foreign key is null
          }
-        return $relatedModel::query()->where($ownerKey, '=', $this->attributes[$foreignKey])->first();
+        // Use static query method on the related model class, which returns a hydrated model or null
+        return $relatedModel::query()->where($ownerKey, '=', $foreignValue)->first();
     }
 
 
-    /**
-     * Get the table associated with the model.
-     * Allows overriding in subclasses.
-     *
-     * @return string
-     */
+    /** Get the table associated with the model. */
     protected static function getTable(): string
     {
         if (empty(static::$table)) {
@@ -556,18 +540,19 @@ class Model
 
     /**
      * Begin querying the model.
-     * Returns a new query builder instance for the model's table.
-     *
-     * @return \SwallowPHP\Framework\Database An instance of the query builder.
+     * Returns a query builder instance associated with this model class.
+     * @return \SwallowPHP\Framework\Database
      */
     public static function query(): Database
     {
         if (!class_exists(Database::class)) {
              throw new \RuntimeException("Database class not found.");
         }
+        // Get Database instance from container
         $builder = \SwallowPHP\Framework\Foundation\App::container()->get(Database::class);
-        $builder->reset(); // Reset query state
+        $builder->reset(); // Reset state from previous query
         $builder->table(static::getTable()); // Set table
+        $builder->setModel(static::class); // Associate builder with this model class <<<--- YENİ EKLENEN SATIR
         return $builder;
     }
 }

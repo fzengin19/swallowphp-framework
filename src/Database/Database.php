@@ -7,110 +7,62 @@ use PDOException;
 use InvalidArgumentException;
 use Exception;
 use SwallowPHP\Framework\Foundation\Config; // Use Config (via helper)
+use SwallowPHP\Framework\Http\Request; // Needed for request() helper in pagination
 
 /**
  * Database class for handling database operations using PDO.
  */
 class Database
 {
-    /**
-     * PDO connection instance.
-     *
-     * @var PDO|null
-     */
+    /** @var PDO|null PDO connection instance. */
     protected ?PDO $connection = null;
 
-    /**
-     * Flag to indicate if the connection was successful.
-     *
-     * @var bool
-     */
+    /** @var bool Flag to indicate if the connection was successful. */
     protected bool $connectedSuccessfully = false;
 
-    /**
-     * The name of the table to perform operations on.
-     *
-     * @var string
-     */
+    /** @var string The name of the table to perform operations on. */
     public string $table = '';
 
-    /**
-     * The columns to select in the query.
-     *
-     * @var string
-     */
+    /** @var string The columns to select in the query. */
     protected string $select = '*';
 
-    /**
-     * Array of where conditions.
-     *
-     * @var array
-     */
+    /** @var array Array of where conditions. */
     protected array $where = [];
 
-    /**
-     * Array of raw where conditions.
-     *
-     * @var array
-     */
+    /** @var array Array of raw where conditions. */
     protected array $whereRaw = [];
 
-    /**
-     * Array of where in conditions.
-     *
-     * @var array
-     */
+    /** @var array Array of where in conditions. */
     protected array $whereIn = [];
 
-    /**
-     * Array of where between conditions.
-     *
-     * @var array
-     */
+    /** @var array Array of where between conditions. */
     protected array $whereBetween = [];
 
-    /**
-     * Array of order by clauses.
-     *
-     * @var array
-     */
+    /** @var array Array of order by clauses. */
     protected array $orderBy = [];
 
-    /**
-     * The limit for the query.
-     *
-     * @var int|null
-     */
+    /** @var int|null The limit for the query. */
     protected ?int $limit = null;
 
-    /**
-     * The offset for the query.
-     *
-     * @var int|null
-     */
+    /** @var int|null The offset for the query. */
     protected ?int $offset = null;
 
-    /**
-     * Array of or where conditions.
-     *
-     * @var array
-     */
+    /** @var array Array of or where conditions. */
     protected array $orWhere = [];
 
-    /**
-     * Array of raw where conditions with bindings.
-     *
-     * @var array
-     */
+    /** @var array Array of raw where conditions with bindings. */
     protected array $whereRawBindings = [];
 
     /** @var array The database connection configuration. */
     protected array $config = [];
 
+    /** @var string|null The model class associated with this query builder instance. */
+    protected ?string $modelClass = null;
+
     /**
      * Database constructor. Initializes the connection.
      */
-    public function __construct(?array $config = null) // Accept optional config array
+    public function __construct(?array $config = null)
     {
         if ($config) {
             $this->config = $config;
@@ -120,8 +72,6 @@ class Database
 
     /**
      * Initialize the database connection.
-     *
-     * @return void
      * @throws Exception If the connection fails.
      */
     public function initialize(): void
@@ -129,32 +79,78 @@ class Database
         if ($this->connection && $this->connectedSuccessfully) {
             return;
         }
-
-        // Get config, falling back to env/defaults if config not passed to constructor
+        // Get config, falling back to framework defaults ONLY if app config not passed via DI
         $config = $this->config ?: config('database.connections.' . config('database.default', 'mysql'), []);
-
-        $driver = $config['driver'] ?? 'mysql'; // Needed for DSN construction if supporting multiple drivers
-        $host = $config['host'] ?? env('DB_HOST', '127.0.0.1');
+        $driver = $config['driver'] ?? 'mysql';
+        $host = $config['host'] ?? env('DB_HOST', '127.0.0.1'); // Rely on app config or .env
         $port = $config['port'] ?? env('DB_PORT', '3306');
         $database = $config['database'] ?? env('DB_DATABASE', 'swallowphp');
         $username = $config['username'] ?? env('DB_USERNAME', 'root');
         $password = $config['password'] ?? env('DB_PASSWORD', '');
         $charset = $config['charset'] ?? env('DB_CHARSET', 'utf8mb4');
-        $options = $config['options'] ?? []; // Get PDO options from config if set
+        $options = $config['options'] ?? [];
 
         try {
-            // TODO: Build DSN based on driver (mysql, sqlite, pgsql etc.)
-            $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
+            // Build DSN based on driver more robustly
+            if ($driver === 'sqlite') {
+                 // Get storage path from app config (should be absolute)
+                 $storagePath = config('app.storage_path');
+                 if (!$storagePath || !is_dir(dirname($storagePath))) { // Check if parent dir exists for storage_path itself
+                     // If config() fails or returns invalid path, try a reasonable default relative to where vendor is likely installed
+                     // This is a fallback, ideally app.storage_path is configured correctly.
+                     $potentialBasePath = dirname(__DIR__, 3); // Assumes vendor/swallowphp/framework/src structure
+                     $storagePath = $potentialBasePath . '/storage';
+                     // Log a warning that fallback path is used
+                     error_log("Warning: 'app.storage_path' not configured or invalid, using fallback: " . $storagePath);
+                     // Ensure this fallback path exists
+                     if (!is_dir($storagePath)) {
+                          if (!@mkdir($storagePath, 0755, true) && !is_dir($storagePath)) {
+                              throw new InvalidArgumentException("Fallback storage path could not be created: {$storagePath}");
+                          }
+                     }
+                 }
+
+                 // $database holds the relative path like 'database/database.sqlite' from config/database.php
+                 $dbPath = $storagePath . '/' . ltrim($database, '/');
+
+                 // Ensure the directory for the SQLite file exists
+                 $dbDir = dirname($dbPath);
+                 if (!is_dir($dbDir)) {
+                      if (!@mkdir($dbDir, 0755, true) && !is_dir($dbDir)) {
+                           throw new InvalidArgumentException("Could not create directory for SQLite database: {$dbDir}");
+                      }
+                 }
+
+                 $dsn = "sqlite:" . $dbPath;
+            } elseif ($driver === 'pgsql') {
+                $dsn = "pgsql:host=$host;port=$port;dbname=$database";
+                 // Add user/password to DSN for pgsql? Check PDO docs. Often passed to constructor.
+            } else { // Default to mysql
+                 $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
+            }
+
 
             $defaultOptions = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
             ];
-            $pdoOptions = array_replace($defaultOptions, $options); // Merge default and config options
+            // Merge default and config options, config overrides defaults
+            $pdoOptions = array_replace($defaultOptions, $options);
 
             $this->connection = new PDO($dsn, $username, $password, $pdoOptions);
             $this->connectedSuccessfully = true;
+
+            // Enable WAL mode for SQLite after connection for better concurrency
+            if ($driver === 'sqlite') {
+                 try {
+                     $this->connection->exec('PRAGMA journal_mode = WAL;');
+                 } catch (PDOException $e) {
+                     // Ignore error if WAL mode is not supported or fails
+                     error_log("SQLite WAL mode could not be enabled: " . $e->getMessage());
+                 }
+            }
+
         } catch (PDOException $e) {
             throw new Exception('Veritabanı bağlantısı başlatılamadı: ' . $e->getMessage());
         }
@@ -162,7 +158,6 @@ class Database
 
     /**
      * Set the table for the query.
-     *
      * @param string $table The name of the table.
      * @return self
      */
@@ -172,11 +167,7 @@ class Database
         return $this;
     }
 
-    /**
-     * Reset all query parameters.
-     *
-     * @return void
-     */
+    /** Reset all query parameters. */
     public function reset(): void
     {
         $this->table = '';
@@ -190,191 +181,137 @@ class Database
         $this->offset = null;
         $this->orWhere = [];
         $this->whereRawBindings = [];
+        $this->modelClass = null; // Reset model class too
     }
 
-    /**
-     * Set the columns to select.
-     *
-     * @param array $columns The columns to select.
-     * @return self
-     */
+    /** Set the columns to select. */
     public function select(array $columns = ['*']): self
     {
         $this->select = implode(', ', $columns);
         return $this;
     }
 
-    /**
-     * Add a where condition to the query.
-     *
-     * @param string $column The column name.
-     * @param string $operator The comparison operator.
-     * @param mixed $value The value to compare against.
-     * @return self
-     */
+    /** Add a where condition. */
     public function where(string $column, string $operator, $value): self
     {
         $this->where[] = [$column, $operator, $value];
         return $this;
     }
 
-    /**
-     * Add an or where condition to the query.
-     *
-     * @param string $column The column name.
-     * @param string $operator The comparison operator.
-     * @param mixed $value The value to compare against.
-     * @return self
-     */
+    /** Add an or where condition. */
     public function orWhere(string $column, string $operator, $value): self
     {
         $this->orWhere[] = [$column, $operator, $value];
         return $this;
     }
 
-    /**
-     * Add a where in condition to the query.
-     *
-     * @param string $column The column name.
-     * @param array $values The values to check against.
-     * @return self
-     */
+    /** Add a where in condition. */
     public function whereIn(string $column, array $values): self
     {
+        if (empty($values)) {
+            $this->whereRaw("1 = 0"); // Ensure query returns no results
+            return $this;
+        }
         $this->whereIn[] = [$column, $values];
         return $this;
     }
 
-    /**
-     * Add a where between condition to the query.
-     *
-     * @param string $column The column name.
-     * @param mixed $start The start value.
-     * @param mixed $end The end value.
-     * @return self
-     */
+    /** Add a where between condition. */
     public function whereBetween(string $column, $start, $end): self
     {
         $this->whereBetween[] = [$column, $start, $end];
         return $this;
     }
 
-    /**
-     * Add a raw where condition to the query.
-     *
-     * @param string $rawCondition The raw SQL condition.
-     * @param array $bindings The parameter bindings for the raw condition.
-     * @return self
-     */
+    /** Add a raw where condition. */
     public function whereRaw(string $rawCondition, array $bindings = []): self
     {
         $this->whereRaw[] = $rawCondition;
-        $this->whereRawBindings[] = $bindings;
+        $this->whereRawBindings = array_merge($this->whereRawBindings, $bindings);
         return $this;
     }
 
-    /**
-     * Add an order by clause to the query.
-     *
-     * @param string $column The column to order by.
-     * @param string $direction The direction to order (ASC or DESC).
-     * @return self
-     */
+    /** Add an order by clause. */
     public function orderBy(string $column, string $direction = 'ASC'): self
     {
+        $direction = strtoupper($direction);
+        if (!in_array($direction, ['ASC', 'DESC'])) {
+            $direction = 'ASC';
+        }
         $this->orderBy[] = [$column, $direction];
         return $this;
     }
 
-    /**
-     * Set the limit for the query.
-     *
-     * @param int $limit The limit value.
-     * @return self
-     */
+    /** Set the limit. */
     public function limit(int $limit): self
     {
-        $this->limit = $limit;
+        $this->limit = $limit > 0 ? $limit : null;
         return $this;
     }
 
-    /**
-     * Set the offset for the query.
-     *
-     * @param int $offset The offset value.
-     * @return self
-     */
+    /** Set the offset. */
     public function offset(int $offset): self
     {
-        $this->offset = $offset;
+        $this->offset = $offset >= 0 ? $offset : null;
         return $this;
     }
 
-    /**
-     * Build the where clause for the query.
-     *
-     * @return string The complete where clause.
-     */
+    /** Build the where clause. */
     protected function buildWhereClause(): string
     {
         $conditions = [];
+        $firstCondition = true;
 
-        foreach ($this->where as $index => $condition) {
-            $conditions[] = $this->buildCondition($condition[0], $condition[1], $condition[2], $index === 0 ? 'WHERE' : 'AND');
+        foreach ($this->where as $condition) {
+            $conjunction = $firstCondition ? 'WHERE' : 'AND';
+            // Basic quoting for column name, might need adjustment for different DBs
+            $conditions[] = "$conjunction `{$condition[0]}` {$condition[1]} ?";
+            $firstCondition = false;
         }
-
         foreach ($this->orWhere as $condition) {
-            $conditions[] = $this->buildCondition($condition[0], $condition[1], $condition[2], 'OR');
+            $conjunction = $firstCondition ? 'WHERE' : 'OR';
+            $conditions[] = "$conjunction `{$condition[0]}` {$condition[1]} ?";
+            $firstCondition = false;
         }
-
         foreach ($this->whereIn as $condition) {
+            if (empty($condition[1])) continue;
             $placeholders = implode(', ', array_fill(0, count($condition[1]), '?'));
-            $conditions[] = (empty($conditions) ? 'WHERE ' : 'AND ') . "{$condition[0]} IN ($placeholders)";
+            $conjunction = $firstCondition ? 'WHERE' : 'AND';
+            $conditions[] = "$conjunction `{$condition[0]}` IN ($placeholders)";
+            $firstCondition = false;
         }
-
         foreach ($this->whereBetween as $condition) {
-            $conditions[] = (empty($conditions) ? 'WHERE ' : 'AND ') . "{$condition[0]} BETWEEN ? AND ?";
+            $conjunction = $firstCondition ? 'WHERE' : 'AND';
+            $conditions[] = "$conjunction `{$condition[0]}` BETWEEN ? AND ?";
+            $firstCondition = false;
         }
-
         if (!empty($this->whereRaw)) {
-            foreach ($this->whereRaw as $index => $rawCondition) {
-                $conditions[] = (empty($conditions) && $index === 0 ? 'WHERE ' : 'AND ') . $rawCondition;
+            foreach ($this->whereRaw as $rawCondition) {
+                $conjunction = $firstCondition ? 'WHERE' : 'AND';
+                // Wrap raw condition in parentheses for safety? Depends on usage.
+                $conditions[] = "$conjunction ($rawCondition)";
+                $firstCondition = false;
             }
         }
-
         return implode(' ', $conditions);
     }
 
     /**
-     * Build a single condition for the where clause.
-     *
-     * @param string $column The column name.
-     * @param string $operator The comparison operator.
-     * @param mixed $value The value to compare against.
-     * @param string $conjunction The conjunction (AND or OR).
-     * @return string The built condition.
-     */
-    protected function buildCondition(string $column, string $operator, $value, string $conjunction): string
-    {
-        return "$conjunction $column $operator ?";
-    }
-
-    /**
      * Execute the select query and get the results.
-     *
-     * @return array The query results.
+     * Hydrates results if a modelClass is set.
+     * @return array The query results (array of models or array of arrays).
      */
     public function get(): array
     {
-        $this->initialize();
-        $sql = "SELECT {$this->select} FROM {$this->table} ";
+        $this->initialize(); // Ensure connection is ready
+        $sql = "SELECT {$this->select} FROM `{$this->table}` "; // Quote table name
         $sql .= $this->buildWhereClause();
-
         if (!empty($this->orderBy)) {
-            $orderByColumns = array_map(fn($order) => "{$order[0]} {$order[1]}", $this->orderBy);
+            // Quote order by columns
+            $orderByColumns = array_map(fn($order) => "`{$order[0]}` {$order[1]}", $this->orderBy);
             $sql .= ' ORDER BY ' . implode(', ', $orderByColumns);
         }
-
+        // Use LIMIT/OFFSET syntax
         if ($this->limit !== null) {
             $sql .= " LIMIT ?";
             if ($this->offset !== null) {
@@ -382,345 +319,400 @@ class Database
             }
         }
 
-        $statement = $this->connection->prepare($sql);
+        try {
+            $statement = $this->connection->prepare($sql);
+            $bindValues = $this->getBindValues(); // Get all bindings needed
 
-        $bindValues = $this->getBindValues();
-        foreach ($bindValues as $key => $value) {
-            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            // Bind WHERE parameters first
+            $paramIndex = 1;
+            $whereBindings = $this->getBindValuesForWhere();
+            foreach ($whereBindings as $value) {
+                $statement->bindValue($paramIndex++, $value, $this->getPDOParamType($value));
+            }
+
+            // Bind LIMIT and OFFSET if applicable (PDO needs int type)
+            if ($this->limit !== null) {
+                 $statement->bindValue($paramIndex++, $this->limit, PDO::PARAM_INT);
+                 if ($this->offset !== null) {
+                     $statement->bindValue($paramIndex++, $this->offset, PDO::PARAM_INT);
+                 }
+            }
+
+            $statement->execute();
+            $rows = $statement->fetchAll();
+
+        } catch (PDOException $e) {
+             error_log("Database Error in get(): " . $e->getMessage() . " | SQL: " . $sql);
+             throw $e; // Re-throw exception
         }
 
-        $statement->execute();
-
-        $rows = $statement->fetchAll();
-        // $this->reset(); // Removed: Builder state should persist until explicitly reset or object destroyed
-        return $rows;
+        // If a model class is associated, hydrate the results
+        if ($this->modelClass && method_exists($this->modelClass, 'hydrateModels')) {
+            return call_user_func([$this->modelClass, 'hydrateModels'], $rows);
+        }
+        return $rows; // Return raw rows if no model class
     }
 
     /**
      * Get the first result from the query.
-     *
-     * @return mixed|null The first result or null if no results.
+     * Hydrates result if a modelClass is set.
+     * @return mixed|null The first result (model object or array) or null.
      */
     public function first()
     {
         $this->limit(1);
-        $result = $this->get();
-        return $result[0] ?? null;
+        $results = $this->get(); // Use the modified get() which handles hydration
+        return $results[0] ?? null;
     }
 
     /**
-     * Insert a new record into the database.
-     *
-     * @param array $data The data to insert.
-     * @return int The ID of the inserted record.
+     * Insert a new record.
+     * @param array $data Data to insert.
+     * @return int|false The ID of the inserted record or false on failure.
      */
-    public function insert(array $data): int
+    public function insert(array $data): int|false
     {
         $this->initialize();
-        $columns = implode(', ', array_keys($data));
+        if (empty($data)) return false;
+        $columns = implode(', ', array_map(fn($col) => "`$col`", array_keys($data)));
         $placeholders = implode(', ', array_fill(0, count($data), '?'));
-
-        $sql = "INSERT INTO {$this->table} ($columns) VALUES ($placeholders)";
-        $statement = $this->connection->prepare($sql);
-
-        $values = array_values($data);
-        foreach ($values as $key => $value) {
-            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        $sql = "INSERT INTO `{$this->table}` ($columns) VALUES ($placeholders)";
+        try {
+            $statement = $this->connection->prepare($sql);
+            $values = array_values($data);
+            foreach ($values as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
+            $success = $statement->execute();
+            // Check if insert succeeded and driver supports lastInsertId
+            return ($success && $this->connection->lastInsertId() !== false) ? (int)$this->connection->lastInsertId() : false;
+        } catch (PDOException $e) {
+            error_log("Database Error in insert(): " . $e->getMessage() . " | SQL: " . $sql);
+            return false; // Return false on error
         }
-
-        $statement->execute();
-
-        $insertId = $this->connection->lastInsertId();
-        // $this->reset(); // Removed: Builder state should persist
-
-        return $insertId;
     }
 
+
     /**
-     * Update records in the database.
-     *
-     * @param array $data The data to update.
+     * Update records.
+     * @param array $data Data to update.
      * @return int The number of affected rows.
      */
     public function update(array $data): int
     {
         $this->initialize();
-        $sets = array_map(fn($column) => "$column = ?", array_keys($data));
-        $sql = "UPDATE {$this->table} SET " . implode(', ', $sets);
-        $sql .= ' ' . $this->buildWhereClause();
-
-        $statement = $this->connection->prepare($sql);
-
-        $bindValues = array_merge(array_values($data), $this->getBindValues());
-        foreach ($bindValues as $key => $value) {
-            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        if (empty($data)) return 0;
+        $sets = array_map(fn($column) => "`$column` = ?", array_keys($data));
+        $sql = "UPDATE `{$this->table}` SET " . implode(', ', $sets);
+        $sql .= ' ' . $this->buildWhereClause(); // Append WHERE clause
+        try {
+            $statement = $this->connection->prepare($sql);
+            $bindValues = array_merge(array_values($data), $this->getBindValuesForWhere());
+            foreach ($bindValues as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
+            $statement->execute();
+            return $statement->rowCount();
+        } catch (PDOException $e) {
+            error_log("Database Error in update(): " . $e->getMessage() . " | SQL: " . $sql);
+            return 0; // Return 0 affected rows on error
         }
-
-        $statement->execute();
-
-        $affectedRows = $statement->rowCount();
-        // $this->reset(); // Removed: Builder state should persist
-
-        return $affectedRows;
     }
 
     /**
-     * Delete records from the database.
-     *
+     * Delete records.
      * @return int The number of affected rows.
      */
     public function delete(): int
     {
         $this->initialize();
-        $sql = "DELETE FROM {$this->table} " . $this->buildWhereClause();
-
-        $statement = $this->connection->prepare($sql);
-
-        $bindValues = $this->getBindValues();
-        foreach ($bindValues as $key => $value) {
-            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        $sql = "DELETE FROM `{$this->table}` " . $this->buildWhereClause(); // Append WHERE clause
+        try {
+            $statement = $this->connection->prepare($sql);
+            $bindValues = $this->getBindValuesForWhere();
+            foreach ($bindValues as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
+            $statement->execute();
+            return $statement->rowCount();
+        } catch (PDOException $e) {
+            error_log("Database Error in delete(): " . $e->getMessage() . " | SQL: " . $sql);
+            return 0; // Return 0 affected rows on error
         }
-
-        $statement->execute();
-        $affectedRows = $statement->rowCount();
-        // $this->reset(); // Removed: Builder state should persist
-
-        return $affectedRows;
     }
 
-    /**
-     * Count the number of records matching the query conditions.
-     *
-     * @return int The count of matching records.
-     */
+    /** Count matching records. */
     public function count(): int
     {
         $this->initialize();
-        $sql = "SELECT COUNT(*) AS count FROM {$this->table} " . $this->buildWhereClause();
+        $originalSelect = $this->select;
+        $originalOrderBy = $this->orderBy;
+        $originalLimit = $this->limit;
+        $originalOffset = $this->offset;
 
-        $statement = $this->connection->prepare($sql);
+        $this->select = 'COUNT(*) AS count';
+        $this->orderBy = [];
+        $this->limit = null;
+        $this->offset = null;
 
-        $bindValues = $this->getBindValues();
-        foreach ($bindValues as $key => $value) {
-            $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+        $sql = "SELECT {$this->select} FROM `{$this->table}` " . $this->buildWhereClause();
+        try {
+            $statement = $this->connection->prepare($sql);
+            $bindValues = $this->getBindValuesForWhere();
+            foreach ($bindValues as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
+            $statement->execute();
+            $result = $statement->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+             error_log("Database Error in count(): " . $e->getMessage() . " | SQL: " . $sql);
+             $result = ['count' => 0]; // Default to 0 on error
+        } finally {
+            // Restore original query state regardless of success/failure
+            $this->select = $originalSelect;
+            $this->orderBy = $originalOrderBy;
+            $this->limit = $originalLimit;
+            $this->offset = $originalOffset;
         }
 
-        $statement->execute();
-        $result = $statement->fetch(PDO::FETCH_ASSOC);
-        $count = $result['count'];
-
-        return $count;
+        return (int)($result['count'] ?? 0);
     }
 
-    /**
-     * Paginate the query results.
-     *
-     * @param int $perPage The number of items per page.
-     * @param int $page The current page number.
-     * @return array The paginated results.
-     */
+
+    /** Paginate results. */
     public function paginate(int $perPage, int $page = 1): array
     {
+        if ($perPage <= 0) $perPage = 15;
         $this->initialize();
         $total = $this->count();
-        $totalPages = ceil($total / $perPage);
+        $totalPages = $perPage > 0 ? ceil($total / $perPage) : 0;
+        $page = max(1, (int)$page); // Ensure page is a positive integer
         $offset = ($page - 1) * $perPage;
 
-        $this->limit($perPage)->offset($offset);
-        $data = $this->get();
+        $queryForData = clone $this;
+        $queryForData->limit($perPage)->offset($offset);
+        $data = $queryForData->get(); // Handles hydration
 
-        $baseUrl = request()->fullUrl();
-        $baseUrl = strtok($baseUrl, '?');
-        $existingParams = request()->query();
-        unset($existingParams['page']);
+        // Build URLs
+        $baseUrl = '/'; // Default path
+        $existingParams = [];
+        $separator = '?';
+        try {
+            $currentRequest = request(); // Use helper function
+            $baseUrl = strtok($currentRequest->fullUrl(), '?');
+            $existingParams = $currentRequest->query();
+            unset($existingParams['page']);
+            $separator = empty($existingParams) ? '?' : '&';
+        } catch (\Throwable $e) {
+             error_log("Pagination URL generation failed: Could not get request details - " . $e->getMessage());
+        }
         $baseUrlWithParams = $baseUrl . (empty($existingParams) ? '' : '?' . http_build_query($existingParams));
 
-        $separator = strpos($baseUrlWithParams, '?') === false ? '?' : '&';
 
-        $pagination = $this->generatePaginationLinks($page, $totalPages, $baseUrlWithParams);
+        $pagination = $this->generatePaginationLinks($page, (int)$totalPages, $baseUrlWithParams, $separator);
 
         return [
             'data' => $data,
             'total' => $total,
             'per_page' => $perPage,
             'current_page' => $page,
-            'last_page' => $totalPages,
+            'last_page' => (int)$totalPages,
+            'first_page_url' => $totalPages > 0 ? $baseUrlWithParams . $separator . 'page=1' : null,
+            'last_page_url'  => $totalPages > 0 ? $baseUrlWithParams . $separator . 'page=' . $totalPages : null,
             'prev_page_url' => $page > 1 ? $baseUrlWithParams . $separator . 'page=' . ($page - 1) : null,
             'next_page_url' => $page < $totalPages ? $baseUrlWithParams . $separator . 'page=' . ($page + 1) : null,
+            'path' => $baseUrl,
             'pagination_links' => $pagination,
         ];
     }
 
-    /**
-     * Paginate the query results using a cursor.
-     *
-     * @param int $perPage The number of items per page.
-     * @return array The cursor paginated results.
-     */
+    /** Paginate using cursor. */
     public function cursorPaginate(int $perPage, ?string $cursor = null): array
     {
         $this->initialize();
-        $cursorColumn = 'id';
+        $cursorColumn = 'id'; // TODO: Configurable
+        $direction = 'ASC'; // TODO: Configurable
 
-        $currentCursor = $cursor;
+        if ($perPage <= 0) $perPage = 15;
 
-        if ($currentCursor) {
-            $this->where($cursorColumn, '>', $currentCursor);
+        $query = clone $this;
+        $query->orderBy($cursorColumn, $direction);
+
+        if ($cursor) {
+            $operator = ($direction === 'ASC') ? '>' : '<';
+            $query->where($cursorColumn, $operator, $cursor);
         }
+        $query->limit($perPage + 1);
+        $results = $query->get(); // Handles hydration
 
-        $this->limit($perPage + 1);
-
-        $result = $this->get();
-
-        $hasNextPage = count($result) > $perPage;
+        $hasNextPage = count($results) > $perPage;
         if ($hasNextPage) {
-            array_pop($result);
+            array_pop($results);
         }
 
         $nextCursor = null;
-        if ($hasNextPage) {
-            $lastItem = end($result);
-            $nextCursor = $lastItem[$cursorColumn];
+        if (!empty($results)) {
+            $lastItem = end($results);
+            $nextCursor = is_object($lastItem) ? ($lastItem->{$cursorColumn} ?? null) : ($lastItem[$cursorColumn] ?? null);
         }
 
-        // Use request() helper to get URI components
-        $currentRequest = request();
-        $urlParts = parse_url($currentRequest->getUri());
-        $queryParams = [];
-        if (isset($urlParts['query'])) {
-            parse_str($urlParts['query'], $queryParams);
+        // Build URLs
+        $url = '/'; $queryString = ''; $queryParams = [];
+        try {
+            $currentRequest = request();
+            $urlParts = parse_url($currentRequest->getUri());
+            if (isset($urlParts['query'])) { parse_str($urlParts['query'], $queryParams); }
+            unset($queryParams['cursor']);
+            $queryString = http_build_query($queryParams);
+            $scheme = $currentRequest->getScheme() ?? 'http';
+            $host = $currentRequest->getHost();
+            $path = $urlParts['path'] ?? '/';
+            $url = $scheme . '://' . $host . $path;
+        } catch (\Throwable $e) {
+             error_log("Cursor Pagination URL generation failed: " . $e->getMessage());
         }
 
-        unset($queryParams['cursor']);
-
-        $queryString = http_build_query($queryParams);
-
-        // Reconstruct base URL from request object (more reliable)
-        $scheme = $currentRequest->getScheme() ?? 'http'; // Assuming getScheme() exists or can be added
-        $host = $currentRequest->getHost(); // Assuming getHost() exists or can be added
-        $path = $urlParts['path'] ?? '/';
-        $url = $scheme . '://' . $host . $path;
-
-        $nextPageUrl = $url . ($queryString ? '?' : '') . $queryString;
-
+        $nextPageUrl = null;
         if ($nextCursor) {
-            $nextPageUrl .= ($queryString ? '&' : '?') . "cursor=$nextCursor";
-        } else {
-            $nextPageUrl = null;
+             $nextQueryParams = array_merge($queryParams, ['cursor' => $nextCursor]);
+             $nextPageUrl = $url . '?' . http_build_query($nextQueryParams);
         }
-
-        $prevPageUrl = null;
-        $hasPrevPage = false;
-        if ($currentCursor && count($result) > 0) {
-            $hasPrevPage = true;
-            $firstItem = reset($result);
-            $prevCursor = $firstItem[$cursorColumn] - ($perPage + 1);
-
-            $prevPageUrl = $url . ($queryString ? '?' : '?') . http_build_query(array_merge($queryParams, ['cursor' => $prevCursor]));
-        }
+        $prevPageUrl = null; // Simplified
 
         return [
-            'data' => $result,
+            'data' => $results,
             'next_page_url' => $nextPageUrl,
             'prev_page_url' => $prevPageUrl,
-            'has_next_page' => $hasNextPage,
-            'has_prev_page' => $hasPrevPage,
+            'path' => $url,
+            'next_cursor' => $hasNextPage ? $nextCursor : null,
         ];
     }
 
-    /**
-     * Get the bind values for the query.
-     *
-     * @return array The bind values.
-     */
+
+    /** Get bind values only for the WHERE clause. */
+    protected function getBindValuesForWhere(): array
+    {
+         $bindValues = [];
+         foreach ($this->where as $condition) $bindValues[] = $condition[2];
+         foreach ($this->orWhere as $condition) $bindValues[] = $condition[2];
+         // Ensure values are added in correct order for IN clause placeholders
+         foreach ($this->whereIn as $condition) {
+             if (!empty($condition[1])) {
+                 $bindValues = array_merge($bindValues, $condition[1]);
+             }
+         }
+         foreach ($this->whereBetween as $condition) { $bindValues[] = $condition[1]; $bindValues[] = $condition[2]; }
+         // Raw bindings are added last
+         $bindValues = array_merge($bindValues, $this->whereRawBindings);
+         return $bindValues;
+    }
+
+    /** Get bind values including limit/offset (use carefully). */
     protected function getBindValues(): array
     {
-        $bindValues = [];
-        foreach ($this->where as $condition) {
-            $bindValues[] = $condition[2];
-        }
-        foreach ($this->orWhere as $condition) {
-            $bindValues[] = $condition[2];
-        }
-        foreach ($this->whereIn as $condition) {
-            $bindValues = array_merge($bindValues, $condition[1]);
-        }
-        foreach ($this->whereBetween as $condition) {
-            $bindValues[] = $condition[1];
-            $bindValues[] = $condition[2];
-        }
-        foreach ($this->whereRawBindings as $bindings) {
-            $bindValues = array_merge($bindValues, $bindings);
-        }
-        if ($this->limit !== null) {
-            $bindValues[] = $this->limit;
-            if ($this->offset !== null) {
-                $bindValues[] = $this->offset;
-            }
-        }
-        return $bindValues;
+        // This method primarily needed for direct binding in get(), now simplified
+        return $this->getBindValuesForWhere();
     }
 
-    /**
-     * Get the PDO parameter type for a given value.
-     *
-     * @param mixed $value The value to check.
-     * @return int The PDO parameter type.
-     */
+
+    /** Get PDO param type. */
     protected function getPDOParamType($value): int
     {
-        if (is_int($value)) {
-            return PDO::PARAM_INT;
-        } elseif (is_bool($value)) {
-            return PDO::PARAM_BOOL;
-        } elseif (is_null($value)) {
-            return PDO::PARAM_NULL;
-        } else {
-            return PDO::PARAM_STR;
-        }
+        if (is_int($value)) return PDO::PARAM_INT;
+        if (is_bool($value)) return PDO::PARAM_BOOL;
+        if (is_null($value)) return PDO::PARAM_NULL;
+        return PDO::PARAM_STR;
     }
 
-    /**
-     * Close the database connection.
-     *
-     * @return void
-     */
+    /** Close connection. */
     public function close(): void
     {
         $this->connection = null;
         $this->connectedSuccessfully = false;
     }
 
-    protected function generatePaginationLinks(int $currentPage, int $totalPages, string $baseUrl): array
+    /** Generate pagination links array. */
+    protected function generatePaginationLinks(int $currentPage, int $totalPages, string $baseUrl, string $separator): array
     {
         $links = [];
-        $range = 2;
+        $range = 2; // Number of links around current page
+        $onEachSide = 1; // Simplified range display
 
-        $separator = parse_url($baseUrl, PHP_URL_QUERY) ? '&' : '?';
+        if ($totalPages <= 1) return [];
 
-        // İlk sayfa her zaman gösterilir
-        $links[] = ['url' => $baseUrl . $separator . 'page=1', 'label' => '1', 'active' => $currentPage === 1];
+        // Previous Page Link
+        $links[] = [
+            'url' => $currentPage > 1 ? ($baseUrl . $separator . 'page=' . ($currentPage - 1)) : null,
+            'label' => '&laquo; Previous',
+            'active' => false,
+            'disabled' => $currentPage <= 1
+        ];
 
-        // Eğer gerekirse, ilk sayfadan sonra "..." ekleyin
-        if ($currentPage - $range > 2) {
-            $links[] = ['url' => null, 'label' => '...', 'active' => false];
+
+        // Determine window of links to show
+        $window = $onEachSide * 2;
+        if ($totalPages <= $window + 4) { // Show all if total pages is small
+            $start = 1;
+            $end = $totalPages;
+        } else {
+            $start = max(1, $currentPage - $onEachSide);
+            $end = min($totalPages, $currentPage + $onEachSide);
+
+            if ($start === 1 && $end < $totalPages) {
+                $end = min($totalPages, $start + $window);
+            } elseif ($end === $totalPages && $start > 1) {
+                $start = max(1, $end - $window);
+            }
         }
 
-        // Orta sayfaları ekleyin
-        for ($i = max(2, $currentPage - $range); $i <= min($totalPages - 1, $currentPage + $range); $i++) {
+
+        // Add first page and ellipsis if needed
+        if ($start > 1) {
+            $links[] = ['url' => $baseUrl . $separator . 'page=1', 'label' => '1', 'active' => false];
+            if ($start > 2) {
+                $links[] = ['url' => null, 'label' => '...', 'active' => false, 'disabled' => true];
+            }
+        }
+
+        // Page Number Links
+        for ($i = $start; $i <= $end; $i++) {
             $links[] = ['url' => $baseUrl . $separator . 'page=' . $i, 'label' => (string)$i, 'active' => $currentPage === $i];
         }
 
-        // Eğer gerekirse, son sayfadan önce "..." ekleyin
-        if ($currentPage + $range < $totalPages - 1) {
-            $links[] = ['url' => null, 'label' => '...', 'active' => false];
+        // Add ellipsis and last page if needed
+        if ($end < $totalPages) {
+            if ($end < $totalPages - 1) {
+                $links[] = ['url' => null, 'label' => '...', 'active' => false, 'disabled' => true];
+            }
+            $links[] = ['url' => $baseUrl . $separator . 'page=' . $totalPages, 'label' => (string)$totalPages, 'active' => false];
         }
 
-        // Son sayfa her zaman gösterilir (eğer ilk sayfadan farklıysa)
-        if ($totalPages > 1) {
-            $links[] = ['url' => $baseUrl . $separator . 'page=' . $totalPages, 'label' => (string)$totalPages, 'active' => $currentPage === $totalPages];
-        }
+
+        // Next Page Link
+        $links[] = [
+            'url' => $currentPage < $totalPages ? ($baseUrl . $separator . 'page=' . ($currentPage + 1)) : null,
+            'label' => 'Next &raquo;',
+            'active' => false,
+            'disabled' => $currentPage >= $totalPages
+        ];
+
 
         return $links;
+    }
+
+
+    /**
+     * Set the model class associated with this query.
+     * @param string $modelClass The fully qualified name of the model class.
+     * @return self
+     */
+    public function setModel(string $modelClass): self
+    {
+        // Basic check if class exists and has the static method needed for hydration
+        if (!class_exists($modelClass) || !method_exists($modelClass, 'hydrateModels')) {
+            throw new InvalidArgumentException("Invalid model class provided or hydrateModels method missing: {$modelClass}");
+        }
+        $this->modelClass = $modelClass;
+        return $this;
     }
 }

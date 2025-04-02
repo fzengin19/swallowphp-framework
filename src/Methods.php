@@ -360,3 +360,71 @@ if (!function_exists('csrf_field')) {
     }
 }
 
+
+
+if (!function_exists('view')) {
+    /**
+     * Render a view file, optionally using a layout, and return an HTML response.
+     *
+     * @param string $view The name of the view file (e.g., 'users.index' maps to 'users/index.php').
+     * @param array $data Data to pass to the view and layout.
+     * @param string|null $layout The name of the layout file to wrap the view in (optional).
+     * @return \SwallowPHP\Framework\Http\Response
+     * @throws \SwallowPHP\Framework\Exceptions\ViewNotFoundException If view or layout file is not found.
+     */
+    function view(string $view, array $data = [], ?string $layout = null): \SwallowPHP\Framework\Http\Response
+    {
+        $viewPath = config('app.view_path', '');
+        if (empty($viewPath)) {
+            throw new \RuntimeException("View path is not configured in config/app.php (app.view_path).");
+        }
+
+        // Convert dot notation to directory separator
+        $viewFile = $viewPath . '/' . str_replace('.', '/', $view) . '.php';
+
+        if (!file_exists($viewFile)) {
+            throw new ViewNotFoundException("View file not found: {$viewFile}");
+        }
+
+        // Extract data for the view
+        extract($data);
+
+        // Render the main view content
+        ob_start();
+        try {
+            include $viewFile;
+        } catch (\Throwable $e) {
+            ob_end_clean(); // Clean buffer on error during view include
+            throw $e; // Re-throw the error
+        }
+        $content = ob_get_clean();
+
+        // If a layout is specified, render the layout with the content
+        if ($layout !== null) {
+            $layoutFile = $viewPath . '/' . str_replace('.', '/', $layout) . '.php';
+            if (!file_exists($layoutFile)) {
+                throw new ViewNotFoundException("Layout file not found: {$layoutFile}");
+            }
+
+            // Make view content available to the layout (e.g., as $slot)
+            $slot = $content; // You can name this variable differently if preferred
+
+            ob_start();
+            try {
+                // Extract data again for the layout (layout might need same data)
+                extract($data);
+                include $layoutFile;
+            } catch (\Throwable $e) {
+                ob_end_clean(); // Clean buffer on error during layout include
+                throw $e; // Re-throw the error
+            }
+            $finalContent = ob_get_clean();
+        } else {
+            $finalContent = $content;
+        }
+
+        // Return an HTML response object
+        return \SwallowPHP\Framework\Http\Response::html($finalContent);
+    }
+}
+

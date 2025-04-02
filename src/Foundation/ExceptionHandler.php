@@ -22,6 +22,10 @@ class ExceptionHandler
      */
     public static function handle(Throwable $exception): void
     {
+        // --- DEBUGGING START ---
+        echo "HANDLER REACHED: " . htmlspecialchars($exception->getMessage(), ENT_QUOTES, 'UTF-8') . " in " . htmlspecialchars($exception->getFile(), ENT_QUOTES, 'UTF-8') . ":" . $exception->getLine(); exit;
+        // --- DEBUGGING END ---
+
         // Default status code
         $statusCode = 500;
         $message = 'Internal Server Error'; // Default message

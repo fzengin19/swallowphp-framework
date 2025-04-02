@@ -78,7 +78,7 @@ class Route
    * @param int|null $ttl The time-to-live (TTL) value for the rate limit cache. Defaults to the value of the 'RATE_LIMIT_CACHE_TTL' environment variable, or 60 if not set.
    * @return $this The current object instance.
    */
-  public function limit(int $rateLimit, int $ttl = null)
+  public function limit(int $rateLimit, ?int $ttl = null) // Explicitly mark $ttl as nullable
   {
     $this->rateLimit = $rateLimit;
     $this->ttl = $ttl;

@@ -36,14 +36,10 @@ Router::put('/users/{id}', [UserController::class, 'update']);
 Router::patch('/users/{id}/status', [UserController::class, 'updateStatus']);
 Router::delete('/users/{id}', [UserController::class, 'destroy']);
 
-// Birden fazla metodu tek seferde tanımlama
-Router::match(['GET', 'POST'], '/contact', 'ContactController@handle');
 
-// Tüm metotları kabul eden rota
-Router::any('/legacy-endpoint', 'LegacyController@handle');
 ```
 
--   **Desteklenen Metotlar:** `get`, `post`, `put`, `patch`, `delete`, `options`, `match`, `any`.
+-   **Desteklenen Metotlar:** `get`, `post`, `put`, `patch`, `delete`.
 -   **Action:** Rota eşleştiğinde çalıştırılacak olan kod. Bu bir `Closure` olabilir veya `[Controller::class, 'methodName']` şeklinde bir dizi ya da `'ControllerName@methodName'` şeklinde bir string olabilir. Dizi syntax'ı, IDE'lerde Controller ve metot isimlerine tıklayarak kolayca gitmeyi sağladığı için önerilir.
 
 ## Rota Parametreleri

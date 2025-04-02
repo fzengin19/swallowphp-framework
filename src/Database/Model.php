@@ -83,6 +83,7 @@ class Model
      */
     public function __set(string $key, $value): void
     {
+        // Use correct logical AND operator '&&'
         if ((in_array($key, $this->fillable) || empty($this->fillable)) && !in_array($key, $this->guarded)) {
              $this->attributes[$key] = $value;
         } elseif (in_array($key, $this->guarded)) {
@@ -96,11 +97,8 @@ class Model
      * @param string $table Table name
      * @return \SwallowPHP\Framework\Database Query builder instance
      */
-    public static function table(string $table): Database // Changed return type
+    public static function table(string $table): Database
     {
-        // This method doesn't fit well in the Model context anymore with the new query() approach.
-        // It's better to rely on $table property or getTable() within query().
-        // Keeping it for potential backward compatibility, but it returns a builder now.
         return static::query()->table($table);
     }
 
@@ -113,18 +111,16 @@ class Model
     public static function create(array $data): self|false
     {
         static::fireEvent('creating', $data);
-
-        // Timestamps are handled by save() method now
-        // $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
-        // $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
+        $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
+        $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
 
         $model = static::createModelInstance();
-        $model->fill($data); // Uses fillable
+        $model->fill($data);
 
-        if ($model->save() !== false) { // save() handles insert/update & events
+        if ($model->save() !== false) {
             return $model;
         }
-        return false; // Indicate failure
+        return false;
     }
 
 
@@ -189,7 +185,6 @@ class Model
      */
     public static function get(): array
     {
-        // Database::get() now handles hydration because query() sets the model
         return static::query()->get();
     }
 
@@ -200,7 +195,6 @@ class Model
      */
     public static function first(): ?self
     {
-         // Database::first() now handles hydration
          return static::query()->first();
     }
 
@@ -214,18 +208,13 @@ class Model
      */
     public function toArray(): array
     {
-        $array = []; // Start with empty array
-        // Iterate over attributes to apply casts correctly
+        $array = [];
         foreach ($this->attributes as $key => $value) {
-            // Apply casting logic from __get effectively
-            $array[$key] = $this->__get($key); // Use magic getter to get casted value
+            $array[$key] = $this->__get($key);
         }
-
-        // Remove hidden attributes after casting
         foreach ($this->hidden as $hidden) {
             unset($array[$hidden]);
         }
-
         return $array;
     }
 
@@ -237,34 +226,32 @@ class Model
     public function save(): int|bool
     {
         $this->attributes['updated_at'] = date('Y-m-d H:i:s');
-
         static::fireEvent('saving', $this);
-
         $result = false;
 
+        // Use correct logical AND operator '&&'
         if (!empty($this->attributes['id'])) { // Existing model (UPDATE)
             static::fireEvent('updating', $this);
             $dirtyData = $this->getDirty();
             if (!empty($dirtyData)) {
-                // Include updated_at in dirty data for update
                 $dirtyData['updated_at'] = $this->attributes['updated_at'];
                 $result = static::query()
                                 ->where('id', '=', $this->attributes['id'])
                                 ->update($dirtyData);
             } else {
-                $result = 0; // No changes
+                $result = 0;
             }
-            if ($result !== false) { // Check if update didn't fail (rowCount can be 0)
+            if ($result !== false) {
                 static::fireEvent('updated', $this);
             }
         } else { // New model (INSERT)
             $this->attributes['created_at'] = $this->attributes['created_at'] ?? date('Y-m-d H:i:s');
             static::fireEvent('creating', $this);
-            // Use raw attributes for insert
             $insertId = static::query()->insert($this->attributes);
+            // Use correct logical AND operator '&&'
             if ($insertId !== false && $insertId > 0) {
                 $this->id = (int) $insertId;
-                $this->attributes['id'] = $this->id; // Ensure ID is in attributes
+                $this->attributes['id'] = $this->id;
                 $result = $this->id;
                 static::fireEvent('created', $this);
             } else {
@@ -276,7 +263,6 @@ class Model
             $this->syncOriginal();
             static::fireEvent('saved', $this);
         }
-
         return $result;
     }
 
@@ -300,8 +286,9 @@ class Model
     public function fill(array $data): void
     {
         foreach ($data as $key => $value) {
+             // Use correct logical AND operator '&&'
             if ((in_array($key, $this->fillable) || empty($this->fillable)) && !in_array($key, $this->guarded)) {
-                 $this->attributes[$key] = $value; // Set raw value, casting happens on get/save
+                 $this->attributes[$key] = $value;
             }
         }
     }
@@ -313,7 +300,6 @@ class Model
      */
     public static function insert(array $data): int|false
     {
-        // Add timestamps if not present
         $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
         $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
         return static::query()->insert($data);
@@ -331,12 +317,11 @@ class Model
         if (empty($this->attributes['id'])) {
             throw new InvalidArgumentException('Model must have an ID to refresh');
         }
-        // Use query builder associated with this model instance's class
         $freshModel = static::query()->where('id', '=', $this->attributes['id'])->first();
-        if (!$freshModel instanceof static) { // Check if a model was returned
+        if (!$freshModel instanceof static) {
             throw new InvalidArgumentException('Model not found in database with ID: ' . $this->attributes['id']);
         }
-        $this->attributes = $freshModel->attributes; // Overwrite attributes
+        $this->attributes = $freshModel->attributes;
         $this->syncOriginal();
         return $this;
     }
@@ -350,7 +335,6 @@ class Model
     /** Paginate results. Returns hydrated models. */
     public static function paginate(int $perPage, int $page = 1): array
     {
-        // Database::paginate() now handles hydration via Database::get()
         return static::query()->paginate($perPage, $page);
     }
 
@@ -362,7 +346,6 @@ class Model
     /** Paginate using cursor. Returns hydrated models. */
     public static function cursorPaginate(int $perPage, ?string $cursor = null): array
     {
-        // Database::cursorPaginate() now handles hydration via Database::get()
         return static::query()->cursorPaginate($perPage, $cursor);
     }
 
@@ -376,32 +359,26 @@ class Model
     protected function castAttribute(string $key, $value)
     {
         $castType = $this->casts[$key] ?? null;
-
+         // Use correct logical AND operator '&&'
         if (is_null($value) && !in_array($castType, ['date', 'datetime', 'array', 'object'])) {
              return null;
         }
         if (!$castType) {
-            // Check if attribute should be a date based on $dates array
             if (in_array($key, $this->dates)) {
                  $castType = 'datetime';
             } else {
-                 return $value; // No cast needed
+                 return $value;
             }
         }
 
         switch ($castType) {
-            case 'int':
-            case 'integer':
+            case 'int': case 'integer':
                 return is_numeric($value) ? (int) $value : null;
-            case 'real':
-            case 'float':
-            case 'double':
+            case 'real': case 'float': case 'double':
                 return is_numeric($value) ? (float) $value : null;
             case 'string':
                 return (string) $value;
-            case 'bool':
-            case 'boolean':
-                // Handle common boolean string/int representations
+            case 'bool': case 'boolean':
                 if (is_string($value)) {
                      return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
                 }
@@ -410,8 +387,7 @@ class Model
                 return is_array($value) ? $value : json_decode($value, true);
             case 'object':
                  return is_object($value) ? $value : json_decode($value);
-            case 'date':
-            case 'datetime':
+            case 'date': case 'datetime':
                  if ($value instanceof DateTime) return $value;
                  if (empty($value)) return null;
                  try { return new DateTime($value); } catch (\Exception $e) { return null; }
@@ -426,7 +402,7 @@ class Model
      * @param array $data Raw data rows
      * @return array Hydrated models
      */
-    public static function hydrateModels(array $data): array // Changed visibility to public static
+    public static function hydrateModels(array $data): array
     {
         $models = [];
         foreach ($data as $item) {
@@ -443,11 +419,17 @@ class Model
      * @param array $data Raw data row
      * @return self Hydrated model
      */
-    protected static function hydrateModel(array $data): self // Kept protected static
+    protected static function hydrateModel(array $data): self
     {
         $model = static::createModelInstance();
-        $model->attributes = $data; // Directly set attributes
-        $model->syncOriginal(); // Set original state
+        $model->attributes = $data;
+        $idKey = 'id'; // Assume primary key is 'id'
+         // Use correct logical AND operator '&&'
+        if (array_key_exists($idKey, $data) && property_exists($model, $idKey)) {
+            $castType = $model->casts[$idKey] ?? null;
+            $model->id = ($castType === 'integer' || $castType === 'int') ? (int)$data[$idKey] : $data[$idKey];
+        }
+        $model->syncOriginal();
         return $model;
     }
 
@@ -462,9 +444,8 @@ class Model
     {
         $dirty = [];
         foreach ($this->attributes as $key => $value) {
-            // Check if key exists in original and if values are different (strict check)
             if (!array_key_exists($key, $this->original) || $this->original[$key] !== $value) {
-                 $dirty[$key] = $value; // Use raw value for update
+                 $dirty[$key] = $value;
             }
         }
         return $dirty;
@@ -485,7 +466,7 @@ class Model
         if (isset(static::$eventCallbacks[$class][$event])) {
              foreach (static::$eventCallbacks[$class][$event] as $callback) {
                  if (call_user_func($callback, $payload) === false) {
-                    // break; // Allow stopping propagation?
+                    // break;
                  }
              }
         }
@@ -500,9 +481,8 @@ class Model
         }
         $localValue = $this->attributes[$localKey] ?? null;
         if ($localValue === null) {
-             return []; // Cannot fetch related models if local key is null
+             return [];
         }
-        // Use static query method on the related model class, which returns hydrated models
         return $relatedModel::query()->where($foreignKey, '=', $localValue)->get();
     }
 
@@ -514,9 +494,8 @@ class Model
          }
          $foreignValue = $this->attributes[$foreignKey] ?? null;
          if ($foreignValue === null) {
-              return null; // Cannot fetch related model if foreign key is null
+              return null;
          }
-        // Use static query method on the related model class, which returns a hydrated model or null
         return $relatedModel::query()->where($ownerKey, '=', $foreignValue)->first();
     }
 
@@ -527,6 +506,7 @@ class Model
         if (empty(static::$table)) {
              $className = basename(str_replace('\\', '/', get_called_class()));
              $tableName = strtolower(preg_replace('/(?<!\A)[A-Z]/', '_$0', $className));
+              // Use correct logical AND operator '&&'
              if (str_ends_with($tableName, 'y') && !in_array(substr($tableName, -2, 1), ['a','e','i','o','u'])) {
                   $tableName = substr($tableName, 0, -1) . 'ies';
              } else if (!str_ends_with($tableName, 's')) {
@@ -548,11 +528,10 @@ class Model
         if (!class_exists(Database::class)) {
              throw new \RuntimeException("Database class not found.");
         }
-        // Get Database instance from container
         $builder = \SwallowPHP\Framework\Foundation\App::container()->get(Database::class);
-        $builder->reset(); // Reset state from previous query
-        $builder->table(static::getTable()); // Set table
-        $builder->setModel(static::class); // Associate builder with this model class <<<--- YENİ EKLENEN SATIR
+        $builder->reset();
+        $builder->table(static::getTable());
+        $builder->setModel(static::class); // Associate builder with this model class
         return $builder;
     }
 }

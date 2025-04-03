@@ -1,68 +1,114 @@
 <?php
 
+use SwallowPHP\Framework\Foundation\Env; // Bu use ifadesi artık gereksiz ama kalabilir.
+
 return [
 
     /*
     |--------------------------------------------------------------------------
-    | Session Cookie Name
+    | Default Session Driver (Framework Default)
     |--------------------------------------------------------------------------
+    | The application's config/session.php should override this.
     */
-    // 'cookie' => env('SESSION_COOKIE', 'swallowphp_session'),
-    'cookie' => 'swallowphp_session', // Framework default
+
+    'driver' => 'file', // Default to file-based sessions
 
     /*
     |--------------------------------------------------------------------------
-    | Session Cookie Path
+    | Session Lifetime (Framework Default)
     |--------------------------------------------------------------------------
     */
-    // 'path' => env('SESSION_PATH', '/'),
-    'path' => '/', // Framework default
+
+    'lifetime' => 120, // Default lifetime in minutes
 
     /*
     |--------------------------------------------------------------------------
-    | Session Cookie Domain
+    | Expire On Close (Framework Default)
     |--------------------------------------------------------------------------
     */
-    // 'domain' => env('SESSION_DOMAIN', null),
-    'domain' => null, // Framework default
+
+    'expire_on_close' => false,
 
     /*
     |--------------------------------------------------------------------------
-    | HTTPS Only Cookies
+    | Session File Location (Framework Default)
     |--------------------------------------------------------------------------
+    | Default is null. The actual path will be determined by SessionManager
+    | based on the application's config (app.storage_path) or a fallback.
+    | The application's config/session.php should define this using BASE_PATH.
     */
-    // 'secure' => env('SESSION_SECURE_COOKIE', null), // null will default based on APP_ENV in Cookie::set
-    'secure' => null, // Framework default (Cookie::set will handle logic)
+
+    'files' => null, // Default path is null, resolved later
 
     /*
     |--------------------------------------------------------------------------
-    | HTTP Access Only
+    | Session Database Connection (Placeholder)
     |--------------------------------------------------------------------------
     */
-    // 'http_only' => env('SESSION_HTTP_ONLY', true),
-    'http_only' => true, // Framework default
+
+    'connection' => null,
 
     /*
     |--------------------------------------------------------------------------
-    | Same-Site Cookies
+    | Session Database Table (Placeholder)
     |--------------------------------------------------------------------------
-    | Supported: "Lax", "Strict", "None"
     */
-    // 'same_site' => env('SESSION_SAME_SITE', 'Lax'),
-    'same_site' => 'Lax', // Framework default
+
+    'table' => 'sessions',
 
     /*
     |--------------------------------------------------------------------------
-    | Session Lifetime (for drivers that use it, not directly for cookie expiry)
+    | Session Cookie Name (Framework Default)
     |--------------------------------------------------------------------------
     */
-    // 'lifetime' => 120, // In minutes
+
+    'cookie' => 'swallow_session',
 
     /*
     |--------------------------------------------------------------------------
-    | Expire On Close (for drivers that use it)
+    | Session Cookie Path (Framework Default)
     |--------------------------------------------------------------------------
     */
-    // 'expire_on_close' => false,
+
+    'path' => '/',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session Cookie Domain (Framework Default)
+    |--------------------------------------------------------------------------
+    */
+
+    'domain' => null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | HTTPS Only Cookies (Framework Default)
+    |--------------------------------------------------------------------------
+    */
+
+    'secure' => null, // Cookie manager will decide based on context
+
+    /*
+    |--------------------------------------------------------------------------
+    | HTTP Access Only (Framework Default)
+    |--------------------------------------------------------------------------
+    */
+
+    'http_only' => true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Same-Site Cookies (Framework Default)
+    |--------------------------------------------------------------------------
+    */
+
+    'same_site' => 'Lax',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session Garbage Collection Lottery (Framework Default)
+    |--------------------------------------------------------------------------
+    */
+    'lottery' => [2, 100],
 
 ];

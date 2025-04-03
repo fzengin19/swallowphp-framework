@@ -75,7 +75,7 @@ class SessionManager
      */
     protected function registerSaveHandler(): void
     {
-        $config = App::container()->get('config'); // Get config instance
+        $config = App::container()->get(\SwallowPHP\Framework\Foundation\Config::class); // Get config instance
         $driver = $config->get('session.driver', 'file');
 
         $this->handler = match (strtolower($driver)) {
@@ -115,7 +115,7 @@ class SessionManager
      */
     protected function configureSessionCookie(): void
     {
-         $config = App::container()->get('config');
+         $config = App::container()->get(\SwallowPHP\Framework\Foundation\Config::class);
          session_name($config->get('session.cookie', 'swallow_session'));
 
          $lifetime = (int) $config->get('session.lifetime', 120) * 60; // Lifetime in seconds
@@ -139,7 +139,7 @@ class SessionManager
              'lifetime' => $cookieLifetime,
              'path' => $path,
              'domain' => $domain ?? '', // Use empty string if null
-             'secure' => $secure ?? (config('app.env') === 'production'), // Default secure based on env
+             'secure' => $secure ?? (App::container()->get(\SwallowPHP\Framework\Foundation\Config::class)->get('app.env') === 'production'), // Default secure based on env
              'httponly' => $httpOnly,
              'samesite' => ucfirst(strtolower($sameSite)) // Ensure correct casing
          ]);

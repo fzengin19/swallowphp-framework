@@ -2,22 +2,21 @@
 
 namespace SwallowPHP\Framework\Http\Middleware;
 
-use SwallowPHP\Framework\Session\SessionManager;
+use Psr\Log\LoggerInterface;
 
+// Import necessary classes
+use SwallowPHP\Framework\Session\SessionManager;
 use Closure;
 use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Exceptions\CsrfTokenMismatchException;
-use SwallowPHP\Framework\Foundation\App; // For config access
-use SwallowPHP\Framework\Foundation\Config; // For type hint
+use SwallowPHP\Framework\Foundation\App;
+// No need to import Config here as it's not used directly
 
-// Assuming the base Middleware class exists or is not strictly needed if only handle is used
-abstract class Middleware // Make it abstract if it's just a base
-{
-    abstract public function handle(Request $request, Closure $next): mixed;
-}
+// Import the *actual* base Middleware class
+use SwallowPHP\Framework\Http\Middleware\Middleware;
 
 
-class VerifyCsrfToken extends Middleware
+class VerifyCsrfToken extends Middleware // Extend the correct base class
 {
     /**
      * URIs that should be excluded from CSRF verification.
@@ -44,18 +43,21 @@ class VerifyCsrfToken extends Middleware
         // Ensure session is started only if needed (non-reading requests, not excluded)
         if (!$this->isReading($request) && !$this->inExceptArray($request)) {
             if (session_status() === PHP_SESSION_NONE) {
-                if (!headers_sent()) {
+                if (!headers_sent($file, $line)) { // Get file/line if headers sent
                     // Use SessionManager to start session correctly with handler
                     try {
                          App::container()->get(SessionManager::class)->start();
                     } catch (\Throwable $e) {
-                         // Log this error? Or rethrow? Rethrow for now.
+                         // Log this error? Or rethrow? Rethrow is better for critical failure.
                          throw new \RuntimeException("Session could not be started for CSRF check: " . $e->getMessage(), 0, $e);
                     }
                 } elseif (!isset($_SESSION)) {
                     // Session should have been started by App::run or previous middleware
                     // if headers are already sent. If not, it's a critical error.
-                    throw new \RuntimeException("Session not available for CSRF check and headers already sent.");
+                     $logMsg = "Session not available for CSRF check and headers already sent.";
+                     // Log before throwing
+                     try { App::container()->get(LoggerInterface::class)->critical($logMsg, ['output_started_at' => "{$file}:{$line}"]); } catch (\Throwable $_) {}
+                    throw new \RuntimeException($logMsg);
                 }
             }
         }
@@ -66,14 +68,10 @@ class VerifyCsrfToken extends Middleware
             $this->inExceptArray($request) ||
             $this->tokensMatch($request)
         ) {
-            // Token is valid or check is not required for this request.
-            // Optionally add the token to the response headers for AJAX requests
-            // $this->addCookieToResponse($request, $next($request));
-
-            return $next($request); // Proceed to the next middleware or controller
+            return $next($request); // Proceed
         }
 
-        // If none of the above conditions are met, throw the exception.
+        // If checks fail, throw the exception.
         throw new CsrfTokenMismatchException('CSRF token mismatch.');
     }
 
@@ -86,23 +84,28 @@ class VerifyCsrfToken extends Middleware
     /** Determine if the request URI is in the except array. */
     protected function inExceptArray(Request $request): bool
     {
-        $requestPath = '/' . ltrim($request->getPath(), '/'); // Ensure leading slash
+        $requestPath = '/' . ltrim($request->getPath(), '/');
 
         foreach ($this->except as $except) {
-            $except = '/' . ltrim($except, '/'); // Ensure leading slash for pattern
+            if (!is_string($except) || empty($except)) continue; // Skip invalid entries
+
+            $except = '/' . ltrim($except, '/');
             if ($except !== '/') {
-                $except = rtrim($except, '/'); // Remove trailing slash unless it's '/'
+                $except = rtrim($except, '/');
             }
 
-            if ($requestPath === $except) {
-                return true;
-            }
-            // Simple wildcard matching at the end
+            // Handle wildcard matching (*)
             if (str_ends_with($except, '/*')) {
                 $pattern = rtrim($except, '*');
+                // If pattern is just '/', match everything (should probably not be used like this)
+                // If pattern is '/api/', match '/api/users', '/api/posts/1' etc.
                 if ($pattern === '/' || str_starts_with($requestPath, $pattern)) {
                      return true;
                 }
+            }
+            // Handle exact match
+            elseif ($requestPath === $except) {
+                return true;
             }
         }
         return false;
@@ -111,70 +114,70 @@ class VerifyCsrfToken extends Middleware
     /** Determine if the session and input csrf tokens match. */
     protected function tokensMatch(Request $request): bool
     {
-        // Ensure session is available (should have been started by handle method if needed)
         if (!isset($_SESSION)) {
-             // This indicates a problem with session start logic earlier
-             error_log("Warning: CSRF tokensMatch() called but session is not available.");
+             // Log this critical state
+             try { App::container()->get(LoggerInterface::class)->error("CSRF tokensMatch() called but session is not initialized."); } catch (\Throwable $_) {}
              return false;
         }
 
         $sessionToken = $_SESSION['_token'] ?? null;
+        $token = $request->get('_token') ?: $request->header('X-CSRF-TOKEN') ?: $request->header('X-XSRF-TOKEN');
 
-        // Read token from input field or headers
-        $token = $request->get('_token') ?: $request->header('X-CSRF-TOKEN');
-
-        // Fallback for X-XSRF-TOKEN (consider decryption if needed)
-        if (!$token && $header = $request->header('X-XSRF-TOKEN')) {
-             // If XSRF token is encrypted, it needs decryption here using App Key
-             // For now, assume it's plain if used.
-             $token = $header;
+        // Basic check for non-empty strings before hash_equals
+        if (!is_string($sessionToken) || $sessionToken === '' || !is_string($token) || $token === '') {
+             return false;
         }
 
-        // Tokens must be non-empty strings and match
-        return is_string($sessionToken)
-               && is_string($token)
-               && !empty($sessionToken) // Ensure session token is not empty
-               && !empty($token)        // Ensure request token is not empty
-               && hash_equals($sessionToken, $token);
+        return hash_equals($sessionToken, $token);
     }
 
     /** Get or generate the CSRF token in the session. */
     public static function getToken(): string
     {
-        // Use SessionManager to ensure session is started correctly
         $session = null;
+        $logger = null;
         try {
-            $session = App::container()->get(SessionManager::class);
+            $container = App::container();
+            $logger = $container->get(LoggerInterface::class); // Get logger first
+            $session = $container->get(SessionManager::class);
             $session->start(); // Ensure session is active
-        } catch (\Throwable $e) {
-            // Log error and re-throw as RuntimeException?
-            error_log("CSRF getToken error: Failed to start session. " . $e->getMessage());
-            throw new \RuntimeException("Session could not be started to get CSRF token.", 0, $e);
-        }
 
-        if (!$session->has('_token') || !is_string($session->get('_token'))) {
-            try {
-                 $newToken = bin2hex(random_bytes(32));
-                 $session->put('_token', $newToken);
-                 return $newToken;
-            } catch (\Exception $e) {
-                 error_log("CSRF getToken error: Failed to generate random bytes. " . $e->getMessage());
-                 throw new \RuntimeException("Could not generate CSRF token.", 0, $e);
+            if (!$session->has('_token') || !is_string($session->get('_token'))) {
+                try {
+                     $newToken = bin2hex(random_bytes(32));
+                     $session->put('_token', $newToken);
+                     return $newToken;
+                } catch (\Exception $e) {
+                     if ($logger) $logger->critical("CSRF getToken error: Failed to generate random bytes.", ['exception' => $e]);
+                     throw new \RuntimeException("Could not generate CSRF token.", 0, $e);
+                }
             }
+            return $session->get('_token');
+
+        } catch (\Throwable $e) { // Catch issues getting services or starting session
+            $logMsg = "CSRF getToken error: Failed to get services or start session.";
+            if ($logger) $logger->critical($logMsg, ['exception' => $e]);
+            else error_log($logMsg . " " . $e->getMessage()); // Fallback
+            // Re-throw a generic exception so the calling code knows something failed
+            throw new \RuntimeException("Could not get CSRF token due to session/service error.", 0, $e);
         }
-        return $session->get('_token');
     }
 
      /** Regenerate the CSRF token (optional). */
      protected function refreshToken(): void
      {
+         $logger = null;
          try {
-             $session = App::container()->get(SessionManager::class);
-             $session->start(); // Ensure session is active
+             $container = App::container();
+             $logger = $container->get(LoggerInterface::class);
+             $session = $container->get(SessionManager::class);
+             $session->start();
              $session->put('_token', bin2hex(random_bytes(32)));
          } catch (\Throwable $e) {
-              error_log("CSRF refreshToken error: " . $e->getMessage());
-              // Decide if this should throw or fail silently
+              $logMsg = "CSRF refreshToken error.";
+              if ($logger) $logger->error($logMsg, ['exception' => $e]);
+              else error_log($logMsg . " " . $e->getMessage());
+              // Decide whether to throw or fail silently. Failing silently might hide issues.
               // throw new \RuntimeException("Could not refresh CSRF token.", 0, $e);
          }
      }

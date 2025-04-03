@@ -23,6 +23,9 @@ class ExceptionHandler
      */
     public static function handle(Throwable $exception): void
     {
+        // DEBUGGING: Check if handler starts
+        @error_log("DEBUG: ExceptionHandler::handle started for " . get_class($exception));
+
         // --- Log the exception details to configured file ---
         // Use try-catch for logging itself to avoid breaking the handler
         try {
@@ -137,6 +140,8 @@ class ExceptionHandler
              echo json_encode($responseBody, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         } else {
              if (!headers_sent()) {
+                  // DEBUGGING: Check before HTML output
+                  @error_log("DEBUG: ExceptionHandler - Outputting HTML error.");
                  header('Content-Type: text/html; charset=UTF-8');
              }
             echo "<!DOCTYPE html><html><head><title>Error {$statusCode}</title>";
@@ -149,11 +154,15 @@ class ExceptionHandler
             echo "<h1>Error {$statusCode}</h1>";
             echo "<p>" . htmlspecialchars($responseBody['message'] ?? 'An unexpected error occurred.', ENT_QUOTES, 'UTF-8') . "</p>";
             if ($debug) {
+                 // DEBUGGING: Check inside debug block
+                 @error_log("DEBUG: ExceptionHandler - Debug block entered.");
                 echo "<hr><h2>Details</h2>";
                 echo "<p><strong>Exception:</strong> " . htmlspecialchars($responseBody['exception'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
                 echo "<p><strong>File:</strong> " . htmlspecialchars($responseBody['file'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
                 echo "<p><strong>Line:</strong> " . htmlspecialchars($responseBody['line'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
                 echo "<h3>Trace:</h3><pre>" . htmlspecialchars(implode("\n", $responseBody['trace'] ?? []), ENT_QUOTES, 'UTF-8') . "</pre>";
+                 // DEBUGGING: Check after trace output
+                 @error_log("DEBUG: ExceptionHandler - Debug block finished.");
             }
             echo "</body></html>";
         }

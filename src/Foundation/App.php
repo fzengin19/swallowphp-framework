@@ -72,7 +72,7 @@ class App
                  // This might need adjustment based on the actual project structure
                  // Using a defined constant like BASE_PATH (defined in index.php) would be safer
                  $appBasePath = dirname(__DIR__, 3); // Go up from src/Foundation -> src -> framework_root -> project_root
-                 $appConfigPath = defined('BASE_PATH') ? BASE_PATH . '/config' : $appBasePath . '/config'; // Use defined BASE_PATH if available
+                 $appConfigPath = defined('\\BASE_PATH') ? constant('BASE_PATH') . '/config' : $appBasePath . '/config'; // Use defined BASE_PATH if available
                  return new Config($configPath, $appConfigPath); // Pass both framework and app paths
             });
 
@@ -230,6 +230,7 @@ class App
             } else {
                  // Optionally set higher error reporting for debug mode
                  error_reporting(E_ALL);
+                 ini_set('display_errors', 1); // Ensure errors are displayed if debug is true
                  ini_set('display_errors', 1); // Ensure errors are displayed if debug is true
             }
 

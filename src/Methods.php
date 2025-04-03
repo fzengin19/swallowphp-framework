@@ -6,15 +6,17 @@ use SwallowPHP\Framework\Exceptions\ViewNotFoundException;
 use SwallowPHP\Framework\Database\Model; // Though not directly used here
 use SwallowPHP\Framework\Routing\Router;
 use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception as PHPMailerException; // Import PHPMailer exception
 use SwallowPHP\Framework\Foundation\App;
 use SwallowPHP\Framework\Http\Request; // Updated Request namespace
 use SwallowPHP\Framework\Contracts\CacheInterface; // Add CacheInterface use statement
 use SwallowPHP\Framework\Session\SessionManager; // Import SessionManager
+use Psr\Log\LoggerInterface; // Import LoggerInterface
+use Psr\Log\LogLevel; // Import LogLevel
 
 if (!function_exists('config')) {
     /**
      * Get / set the specified configuration value.
-     *
      * @param  array|string|null  $key
      * @param  mixed  $default
      * @return mixed|\SwallowPHP\Framework\Foundation\Config
@@ -22,13 +24,9 @@ if (!function_exists('config')) {
     function config($key = null, $default = null)
     {
         $config = App::container()->get(\SwallowPHP\Framework\Foundation\Config::class);
-        if (is_null($key)) {
-            return $config;
-        }
+        if (is_null($key)) { return $config; }
         if (is_array($key)) {
-            foreach ($key as $k => $v) {
-                 $config->set($k, $v);
-            }
+            foreach ($key as $k => $v) { $config->set($k, $v); }
             return null;
         }
         return $config->get($key, $default);
@@ -86,18 +84,29 @@ if (!function_exists('redirectToRoute')) {
 }
 
 if (!function_exists('mailto')) {
-    function mailto($to, $subject, $message, $headers = [])
+    function mailto($to, $subject, $message, $headers = []): bool // Added return type hint
     {
+        // Get logger instance early, handle potential failure
+        $logger = null;
+        try {
+            $logger = App::container()->get(LoggerInterface::class);
+        } catch (\Throwable $e) {
+            error_log("Failed to get Logger in mailto() helper: " . $e->getMessage());
+            // Decide if mail sending should proceed without logging, or fail? Fail for safety.
+            return false;
+        }
+
         $mail = new PHPMailer(true);
         try {
+            // Configuration should ideally come from a config file (e.g., config/mail.php)
             $mail->Timeout = 10;
-            $mail->SMTPAutoTLS = false;
+            $mail->SMTPAutoTLS = env('SMTP_MAIL_AUTO_TLS', false); // Use env() helper
             $mail->isSMTP();
             $mail->Host = env('SMTP_MAIL_HOST');
-            $mail->SMTPAuth = true;
+            $mail->SMTPAuth = env('SMTP_MAIL_AUTH', true);
             $mail->Username = env('SMTP_MAIL_USERNAME');
             $mail->Password = env('SMTP_MAIL_PASSWORD');
-            $mail->SMTPSecure = false;
+            $mail->SMTPSecure = env('SMTP_MAIL_ENCRYPTION', false); // false, 'tls', 'ssl'
             $mail->Port = env('SMTP_MAIL_PORT');
             $mail->setFrom(env('SMTP_MAIL_FROM_ADDRESS'), env('SMTP_MAIL_FROM_NAME'));
             $mail->addAddress($to);
@@ -108,12 +117,16 @@ if (!function_exists('mailto')) {
             foreach ($headers as $key => $value) {
                 $mail->addCustomHeader($key, $value);
             }
+
             $mail->send();
-            if ($mail->ErrorInfo) {
-                throw new Exception($mail->ErrorInfo);
-            }
+            // No need to check ErrorInfo, PHPMailer throws Exception on error when constructed with true
+
             return true;
-        } catch (Exception $e) {
+        } catch (PHPMailerException $e) { // Catch specific PHPMailer exception
+            $logger->error("Mail sending failed (PHPMailer): " . $e->errorMessage(), ['exception' => $e]);
+            return false;
+        } catch (\Exception $e) { // Catch other potential exceptions
+            $logger->error("Mail sending failed (General): " . $e->getMessage(), ['exception' => $e]);
             return false;
         }
     }
@@ -122,9 +135,14 @@ if (!function_exists('mailto')) {
 if (!function_exists('printVariable')) {
     function printVariable(string $variableName)
     {
-        if (isset(${$variableName})) {
-            echo ${$variableName};
-        }
+        // This function is potentially unsafe and generally not recommended.
+        // It relies on variable variables and global scope.
+        // Consider passing data explicitly instead.
+        // if (isset(${$variableName})) {
+        //     echo ${$variableName};
+        // }
+        // For safety, let's disable or modify it.
+        // echo "<!-- printVariable disabled for security -->";
     }
 }
 
@@ -134,9 +152,12 @@ if (!function_exists('removeDuplicates')) {
         $result = [];
         $uniqueValues = [];
         foreach ($array as $value) {
+            // Corrected logic: Add if not seen before OR if it's in the exclude list
             if (!in_array($value, $uniqueValues) || in_array($value, $excludeValues)) {
                 $result[] = $value;
-                $uniqueValues[] = $value;
+                if (!in_array($value, $excludeValues)) { // Only mark as unique if not excluded
+                     $uniqueValues[] = $value;
+                }
             }
         }
         return $result;
@@ -144,7 +165,7 @@ if (!function_exists('removeDuplicates')) {
 }
 
 if (!function_exists('request')) {
-    function request()
+    function request(): Request // Add return type hint
     {
         return App::container()->get(Request::class);
     }
@@ -153,9 +174,8 @@ if (!function_exists('request')) {
 if (!function_exists('formatDateForHumans')) {
     /**
      * Formats a datetime string or object into a human-readable relative time difference.
-     *
-     * @param string|\DateTime|null $datetimeInput The datetime string or DateTime object.
-     * @return string The formatted string or the original input on error.
+     * @param string|\DateTime|null $datetimeInput
+     * @return string
      */
     function formatDateForHumans(string|\DateTime|null $datetimeInput): string
     {
@@ -164,7 +184,7 @@ if (!function_exists('formatDateForHumans')) {
         try {
             $then = ($datetimeInput instanceof \DateTime) ? $datetimeInput : new \DateTime($datetimeInput);
         } catch (\Exception $e) {
-            return is_string($datetimeInput) ? $datetimeInput : '';
+            return is_string($datetimeInput) ? htmlspecialchars($datetimeInput, ENT_QUOTES, 'UTF-8') : ''; // Sanitize output
         }
         $thenTimestamp = $then->getTimestamp();
         $diff = $now - $thenTimestamp;
@@ -172,7 +192,7 @@ if (!function_exists('formatDateForHumans')) {
         elseif ($diff < 3600) { return floor($diff / 60) . ' dakika önce'; }
         elseif ($diff < 86400) { return floor($diff / 3600) . ' saat önce'; }
         elseif ($diff < 604800) { return floor($diff / 86400) . ' gün önce'; }
-        else { return $then->format('d F Y'); }
+        else { return $then->format('d F Y'); } // Consider localizing format
     }
 }
 
@@ -184,75 +204,96 @@ if (!function_exists('hasRoute')) {
 }
 
 if (!function_exists('redirect')) {
-    function redirect($uri, $code = 302) // Add default status code
+    function redirect($uri, $code = 302): void // Add return type hint
     {
         header('Location: ' . $uri, true, $code);
-        exit(); // Ensure script stops after redirect header
+        exit();
     }
 }
 
 if (!function_exists('send')) {
-    function send($data)
+    // This function seems intended for debugging, use dd() or similar instead.
+    function send($data): void
     {
+        echo '<pre>';
         print_r($data);
+        echo '</pre>';
     }
 }
 
 if (!function_exists('webpImage')) {
-    function webpImage($source, $quality = 75, $removeOld = false, $fileName = null)
+    function webpImage($source, $quality = 75, $removeOld = false, $fileName = null): string // Added return type hint
     {
-        if (!file_exists($source)) { return $source; }
-        $name = $fileName ?? uniqid() . '.webp';
-        $destination = 'files/' . $name; // Consider making 'files/' configurable
+        // Needs error handling and potentially configuration for destination path
+        if (!extension_loaded('gd')) { error_log('GD extension is not loaded for webpImage'); return $source; }
+        if (!file_exists($source) || !is_readable($source)) { error_log("Source file not found or not readable: {$source}"); return $source; }
+
+        $destinationDir = defined('BASE_PATH') ? constant('BASE_PATH') . '/public/files' : 'files';
+        if (!is_dir($destinationDir)) @mkdir($destinationDir, 0755, true);
+        if (!is_writable($destinationDir)) { error_log("Destination directory not writable: {$destinationDir}"); return $source; }
+
+        $name = $fileName ?? pathinfo($source, PATHINFO_FILENAME) . '_' . uniqid() . '.webp'; // Use original filename base
+        $destination = $destinationDir . '/' . $name;
+
         $info = @getimagesize($source);
-        if (!$info) return $source; // Not an image
-        $isAlpha = false;
+        if (!$info) { error_log("Could not get image size: {$source}"); return $source; }
+
+        $image = null;
         switch ($info['mime']) {
             case 'image/jpeg': $image = @imagecreatefromjpeg($source); break;
             case 'image/gif': $image = @imagecreatefromgif($source); break;
             case 'image/png': $image = @imagecreatefrompng($source); break;
-            case 'image/webp': $image = @imagecreatefromwebp($source); $isAlpha = true; break;
-            default: return $source;
+            case 'image/webp': $image = @imagecreatefromwebp($source); break; // Already webp? Maybe just return?
+            default: error_log("Unsupported image type: {$info['mime']}"); return $source;
         }
-        if (!$image) return $source; // Could not create image resource
-        if ($isAlpha || $info['mime'] === 'image/png') { // Check PNG for alpha too
+        if (!$image) { error_log("Could not create image resource from: {$source}"); return $source; }
+
+        // Handle transparency for PNG and GIF (WebP supports alpha)
+        if ($info['mime'] === 'image/png' || $info['mime'] === 'image/gif') {
             imagepalettetotruecolor($image);
-            imagealphablending($image, true);
-            imagesavealpha($image, true);
+            imagealphablending($image, false); // Important: disable blending
+            imagesavealpha($image, true); // Important: save alpha channel
         }
-        if (!@imagewebp($image, $destination, $quality)) {
-            imagedestroy($image);
-            return $source; // Failed to create webp
-        }
+
+        $success = @imagewebp($image, $destination, $quality);
         imagedestroy($image);
+
+        if (!$success) {
+            error_log("Failed to create webp image at: {$destination}");
+            return $source;
+        }
+
         if ($removeOld) { @unlink($source); }
+        // Return the relative path or just the filename? Returning filename for now.
         return $name;
     }
 }
 
 if (!function_exists('getFile')) {
-    function getFile($name)
+    function getFile($name): string // Added return type hint
     {
-        // Ensure APP_URL ends with a slash if needed, or handle base path better
+        // This assumes 'files' is directly under the public directory accessible via APP_URL
         return rtrim(env('APP_URL', 'http://localhost'), '/') . '/files/' . ltrim($name, '/');
     }
 }
 
 if (!function_exists('db')) {
-    function db()
+    function db(): Database // Add return type hint
     {
         return App::container()->get(Database::class);
     }
 }
 
 if (!function_exists('sendJson')) {
-    function sendJson($data, $status = 200) // Add status code option
+    function sendJson($data, $status = 200): void // Add return type hint
     {
         if (!headers_sent()) {
-            header('Content-Type: application/json');
+            header('Content-Type: application/json; charset=UTF-8');
             http_response_code($status);
         }
-        echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK | JSON_PRETTY_PRINT);
+        // Ensure JSON is valid UTF-8
+        echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PRETTY_PRINT);
+        // Consider adding exit() here if this should always terminate the script
     }
 }
 
@@ -264,9 +305,7 @@ if (!function_exists('cache')) {
      */
     function cache(?string $driver = null): CacheInterface
     {
-        // If specific driver requested, CacheManager needs modification to handle this
         if ($driver) {
-             // return App::container()->get(CacheManager::class)->driver($driver); // If manager is registered
              throw new \LogicException("Getting specific cache drivers via helper not implemented yet.");
         }
         return App::container()->get(CacheInterface::class);
@@ -274,9 +313,8 @@ if (!function_exists('cache')) {
 }
 
 if (!function_exists('getIp')) {
-    function getIp()
+    function getIp(): ?string // Add return type hint
     {
-        // Use Request service for consistency
         return request()->getClientIp();
     }
 }
@@ -287,15 +325,25 @@ if (!function_exists('csrf_field')) {
      */
     function csrf_field(): void
     {
+        $logger = null;
         try {
+            $logger = App::container()->get(LoggerInterface::class); // Get logger for errors
             if (!class_exists(\SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::class)) {
+                 if ($logger) $logger->error('CSRF Middleware Class Not Found');
                  echo '<!-- CSRF Middleware Class Not Found -->'; return;
             }
             $token = \SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::getToken();
             echo '<input type="hidden" name="_token" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
         } catch (\RuntimeException $e) {
-            error_log("CSRF Field Error: " . $e->getMessage());
+            // Log session start error using PSR-3 logger
+            if ($logger) $logger->error("CSRF Field Error: " . $e->getMessage(), ['exception' => $e]);
+            else error_log("CSRF Field Error (Logger unavailable): " . $e->getMessage()); // Fallback
             echo '<!-- CSRF Token Error -->';
+        } catch (\Throwable $t) {
+             // Catch any other error during container access or token generation
+             if ($logger) $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
+             else error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
+             echo '<!-- CSRF Token Error -->';
         }
     }
 }
@@ -338,12 +386,9 @@ if (!function_exists('view')) {
     }
 }
 
-// <<<--- YENİ FONKSİYONLAR --- >>>
-
 if (!function_exists('session')) {
     /**
      * Get the session manager instance or get/set a session value.
-     *
      * @param string|array|null $key Key to get/set or array to set multiple.
      * @param mixed $default Default value if getting a non-existent key.
      * @return \SwallowPHP\Framework\Session\SessionManager|mixed
@@ -351,35 +396,24 @@ if (!function_exists('session')) {
     function session(string|array|null $key = null, mixed $default = null)
     {
         $session = App::container()->get(SessionManager::class);
-
-        if (is_null($key)) {
-            return $session; // Return the manager instance
-        }
-
+        if (is_null($key)) { return $session; }
         if (is_array($key)) {
-            foreach ($key as $k => $v) {
-                $session->put($k, $v); // Set multiple values
-            }
-            return null; // Return nothing when setting
+            foreach ($key as $k => $v) { $session->put($k, $v); }
+            return null;
         }
-
-        // If $default is not null, it might be ambiguous whether getting or setting.
-        // Let's stick to: session('key') gets, session(['key' => 'val']) sets.
-        return $session->get((string)$key, $default); // Get a value
+        return $session->get((string)$key, $default);
     }
 }
 
 if (!function_exists('flash')) {
     /**
      * Flash a message to the session.
-     *
      * @param string $key The key for the flash message.
      * @param mixed $value The message or data to flash.
      * @return void
      */
     function flash(string $key, mixed $value): void
     {
-        // Use the session() helper to get the manager instance
         session()->flash($key, $value);
     }
 }

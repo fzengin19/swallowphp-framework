@@ -2,217 +2,188 @@
 
 namespace SwallowPHP\Framework\Routing;
 
+use SwallowPHP\Framework\Exceptions\RateLimitExceededException;
+
 use SwallowPHP\Framework\Exceptions\MethodNotAllowedException;
 use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
 use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Http\Middleware\RateLimiter;
 use SwallowPHP\Framework\Foundation\Env;
+use SwallowPHP\Framework\Foundation\App; // For config access
 
 class Router
 {
-
     protected static Request $request;
 
-
-    /**
-     * Route collection for storing registered routes.
-     *
-     * This collection holds all registered routes in the application.
-     * It is used to store and retrieve route information for routing purposes.
-     *
-     * @var Route[]
-     */
+    /** @var Route[] Route collection for storing registered routes. */
     protected static $routes = [];
 
-
-    /**
-     * Creates and returns a new Route object for a GET request with the given URI and action.
-     * 
-     * @param string $uri The URI pattern for the route.
-     * @param string $action The action to be taken when the route is matched.
-     * @return Route The newly created Route object.
-     */
-    public static function get($uri, $action)
+    /** Creates a GET route. */
+    public static function get($uri, $action): Route
     {
         $route = new Route('GET', $uri, $action);
-        array_push(self::$routes, $route);
+        self::$routes[] = $route; // Use [] for appending
         return $route;
     }
 
-    /**
-     * Creates a new POST route with the given URI and action function, and adds it to the list of routes.
-     *
-     * @param string $uri The URI pattern for the route.
-     * @param callable|string $action The action function to call when the route is matched.
-     * @return Route The newly created route.
-     */
-    public static function post($uri, $action)
+    /** Creates a POST route. */
+    public static function post($uri, $action): Route
     {
         $route = new Route('POST', $uri, $action);
-        array_push(self::$routes, $route);
+        self::$routes[] = $route;
         return $route;
     }
 
-
-
-
-
-
-    /**
-     * Returns the routes stored in the class variable $routes.
-     *
-     * @return array An array of routes.
-     */
-    public static function getRoutes()
+    /** Returns all registered routes. */
+    public static function getRoutes(): array
     {
         return self::$routes;
     }
-    /**
-     * Checks if a route with the given name exists.
-     * Checks if a route with the given name has been defined.
-     *
-     * @param string $name The name of the route to check.
-     * @return bool Returns true if a route with the given name exists, false otherwise.
-     */
-    public static function hasRoute($name)
+
+    /** Checks if a route with the given name exists. */
+    public static function hasRoute($name): bool
     {
         foreach (self::getRoutes() as $route) {
             if ($route->getName() === $name) {
                 return true;
             }
         }
-
         return false;
     }
-    /**
-     * Creates and returns a new Route object for a DELETE request with the given URI and action.
-     * 
-     * @param string $uri The URI pattern for the route.
-     * @param string $action The action to be taken when the route is matched.
-     * @return Route The newly created Route object.
-     */
-    public static function delete($uri, $action)
+
+    /** Creates a DELETE route. */
+    public static function delete($uri, $action): Route
     {
         $route = new Route('DELETE', $uri, $action);
-        array_push(self::$routes, $route);
+        self::$routes[] = $route;
         return $route;
     }
 
-    public static function getRequest()
+    /** Gets the current request object (set during dispatch). */
+    public static function getRequest(): Request
     {
+        // Consider making this non-static or ensuring $request is always set before access
+        if (!isset(self::$request)) {
+             // This might happen if called outside the dispatch cycle.
+             // Maybe get from container instead?
+             return App::container()->get(Request::class);
+        }
         return self::$request;
     }
-    /**
-     * Creates and returns a new Route object for a PUT request with the given URI and action.
-     * 
-     * @param string $uri The URI pattern for the route.
-     * @param string $action The action to be taken when the route is matched.
-     * @return Route The newly created Route object.
-     */
-    public static function put($uri, $action)
+
+    /** Creates a PUT route. */
+    public static function put($uri, $action): Route
     {
         $route = new Route('PUT', $uri, $action);
-        array_push(self::$routes, $route);
+        self::$routes[] = $route;
         return $route;
     }
-    /**
-     * Creates and returns a new Route object for a PATCH request with the given URI and action.
-     * 
-     * @param string $uri The URI pattern for the route.
-     * @param string $action The action to be taken when the route is matched.
-     * @return Route The newly created Route object.
-     */
-    public static function patch($uri, $action)
+
+    /** Creates a PATCH route. */
+    public static function patch($uri, $action): Route
     {
         $route = new Route('PATCH', $uri, $action);
-        array_push(self::$routes, $route);
+        self::$routes[] = $route;
         return $route;
     }
-    /**
-     * Retrieves the route URL by its name and replaces path parameters with actual values.
-     *
-     * @param string $name The name of the route.
-     * @param array $params An array of path parameters and their corresponding values.
-     * @throws RouteNotFoundException If the route with the given name is not found.
-     * @return string The URL of the route with path parameters replaced or as query parameters if not found in the URI.
-     */
-    public static function getRouteByName($name, $params = [])
+
+    /** Retrieves the route URL by name. */
+    public static function getRouteByName($name, $params = []): string
     {
         foreach (self::getRoutes() as $route) {
             if ($route->getName() === $name) {
                 $uriPattern = $route->getUri();
 
-                // Replace path parameters with actual values
+                // Replace path parameters
                 foreach ($params as $param => $value) {
-                    if (strpos($uriPattern, '{' . $param . '}') !== false) {
-                        $uriPattern = str_replace('{' . $param . '}', $value, $uriPattern);
-                        unset($params[$param]); // Path parametrelerini query parametrelerinden çıkar
+                    $placeholder = '{' . $param . '}';
+                    if (str_contains($uriPattern, $placeholder)) {
+                        $uriPattern = str_replace($placeholder, rawurlencode((string)$value), $uriPattern); // URL encode values
+                        unset($params[$param]);
                     }
+                    // Handle optional parameters? e.g., {param?} - more complex regex needed
                 }
 
-                // Kalan parametreler query string olarak eklenir
-                $queryString = http_build_query($params);
+                // Append remaining params as query string
+                $queryString = !empty($params) ? http_build_query($params) : '';
 
-                // Get base URL from config, ensure no trailing slash
+                // Get base URL from config
                 $baseUrl = rtrim(config('app.url', 'http://localhost'), '/');
-                 // Ensure the URI pattern starts with a slash
-                 $routePath = '/' . ltrim($uriPattern, '/');
+                $routePath = '/' . ltrim($uriPattern, '/');
+                $url = $baseUrl . $routePath;
 
-                 $url = $baseUrl . $routePath;
                 return $queryString ? $url . '?' . $queryString : $url;
             }
         }
-        throw new RouteNotFoundException($name . ' route not found', 404);
+        throw new RouteNotFoundException("Route [{$name}] not defined.", 404);
     }
 
-
-
-    /**
-     * Dispatches the given request to the appropriate route.
-     *
-     * @param Request $request the request object to be dispatched
-     * @throws MethodNotAllowedException if the request method is not allowed for the given route
-     * @throws RouteNotFoundException if no matching route is found for the request
-     * @return mixed the result of executing the matched route
-     */
-    public static function dispatch(Request $request)
+    /** Dispatches the request to the appropriate route. */
+    public static function dispatch(Request $request): mixed
     {
-        self::$request = $request;
-        $requestUri = parse_url(self::$request->getUri(), PHP_URL_PATH);
-        // Use Env helper correctly
+        self::$request = $request; // Store current request statically
+        $requestUriPath = $request->getPath(); // Use getPath() from Request object
+
+        // Remove potential base path defined in config
         $appPath = config('app.path', '');
-        if ($appPath) {
-             $requestUri = preg_replace('/^' . preg_quote($appPath, '/') . '/', '', $requestUri, 1);
+        if (!empty($appPath) && str_starts_with($requestUriPath, $appPath)) {
+             $requestUriPath = substr($requestUriPath, strlen($appPath));
+             // Ensure it starts with / after removing base path
+             if (!str_starts_with($requestUriPath, '/')) {
+                 $requestUriPath = '/' . $requestUriPath;
+             }
         }
-        // DEBUGGING: Log processed URI before matching loop
-        error_log("Router Dispatch - Method: " . $request->getMethod());
-        error_log("Router Dispatch - Processed URI for Matching: '" . $requestUri . "'");
-        // END DEBUGGING
 
-        if ($requestUri != '/') {
-            $requestUri = rtrim($requestUri, '/');
+        // Ensure path starts with / and remove trailing slash (unless it's just '/')
+        $processedUri = '/' . ltrim($requestUriPath, '/');
+        if ($processedUri !== '/') {
+            $processedUri = rtrim($processedUri, '/');
         }
-        $supportedMethods = [];
+
+        $supportedMethods = []; // Track methods for matched URI but wrong method
+
         foreach (self::$routes as $route) {
-            $routeUri = preg_quote($route->getUri(), '/');
+            // Prepare regex pattern from route URI
+            // Escape regex characters, then replace {param} with named capture groups
+            $pattern = preg_quote($route->getUri(), '/');
+            $pattern = preg_replace('/\\\{([a-zA-Z0-9_]+)\\\}/', '(?P<$1>[^\/]+)', $pattern);
+            $regex = '/^' . $pattern . '$/';
 
-            $pattern = '/^' . str_replace(['\{', '\}'], ['(?P<', '>[^\/]+)'], $routeUri) . '$/';
+            if (preg_match($regex, $processedUri, $matches)) {
+                // URI matches, now check method
+                $requestMethod = $request->getMethod(); // Handles _method override
+                if ($route->getMethod() === $requestMethod) {
+                    // Method matches! Execute rate limiter and route action.
+                    try {
+                         RateLimiter::execute($route); // Apply rate limiting
+                    } catch (RateLimitExceededException $e) {
+                         // Let ExceptionHandler handle this specific exception
+                         throw $e;
+                    }
 
-            if (preg_match($pattern, $requestUri, $matches)) {
-                if ($route->getMethod() === self::$request->getMethod() || $route->getMethod() === self::$request->get('_method')) {
+                    // Extract named parameters from matches
+                    $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+                    // Add route parameters to the request object (overwriting query/body params with same name)
+                    $request->setAll(array_merge($request->all(), $params));
 
-                    RateLimiter::execute($route);
-                    $params = array_filter($matches, '\is_string', ARRAY_FILTER_USE_KEY);
-                    self::$request->setAll(array_merge($params, self::$request->all()));
+                    // Execute the route's action (controller or closure)
+                    // Route::execute handles middleware pipeline and action execution
                     return $route->execute($request);
+                } else {
+                    // URI matched, but method didn't. Store the supported method.
+                    $supportedMethods[] = $route->getMethod();
                 }
-                $supportedMethods[] = $route->getMethod();
             }
         }
-        if (count($supportedMethods) > 0) {
-            throw new MethodNotAllowedException($request->getMethod() . ' Method Not Allowed for ' . $requestUri . ' Supported Methods: ' . implode(', ', $supportedMethods));
-        }
 
-        throw new RouteNotFoundException();
+        // After checking all routes:
+        if (!empty($supportedMethods)) {
+            // URI was matched, but no route for the requested method
+            $allowed = implode(', ', array_unique($supportedMethods));
+            throw new MethodNotAllowedException("The {$request->getMethod()} method is not supported for route {$processedUri}. Supported methods: {$allowed}.", 405);
+        } else {
+            // No route matched the URI at all
+            throw new RouteNotFoundException("Route not found for URI [{$processedUri}]", 404);
+        }
     }
 }

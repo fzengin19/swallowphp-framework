@@ -2,175 +2,122 @@
 
 namespace SwallowPHP\Framework\Foundation;
 
-use RuntimeException;
+use RuntimeException; // Keep for potential future use if needed
 
 class Config
 {
-    /**
-     * All of the configuration items.
-     *
-     * @var array
-     */
+    /** @var array All configuration items. */
     protected array $items = [];
 
-    /**
-     * The base path of the framework configuration files.
-     *
-     * @var string
-     */
+    /** @var string Framework config path. */
     protected string $frameworkConfigPath;
 
-    /**
-     * The base path of the application configuration files.
-     *
-     * @var string|null
-     */
+    /** @var string|null Application config path. */
     protected ?string $appConfigPath;
 
     /**
      * Create a new configuration repository.
-     *
-     * @param string|null $frameworkConfigPath Path to the framework configuration directory.
-     * @param string|null $appConfigPath Path to the application configuration directory.
+     * @param string|null $frameworkConfigPath
+     * @param string|null $appConfigPath
      */
-    public function __construct(?string $frameworkConfigPath = null, ?string $appConfigPath = null) // Pass both paths
+    public function __construct(?string $frameworkConfigPath = null, ?string $appConfigPath = null)
     {
-        $this->frameworkConfigPath = $frameworkConfigPath ?: $this->getDefaultFrameworkConfigPath(); // Set framework path
-        $this->appConfigPath = $appConfigPath; // Set app path (can be null)
-        $this->loadConfigurationFiles(); // Load and merge configs
+        $this->frameworkConfigPath = $frameworkConfigPath ?: $this->getDefaultFrameworkConfigPath();
+        $this->appConfigPath = $appConfigPath;
+        $this->loadConfigurationFiles();
     }
 
-    /**
-     * Get the default configuration path.
-     *
-     * @return string
-     */
+    /** Get default framework config path. */
     protected function getDefaultFrameworkConfigPath(): string
     {
-        // Assumes this class is in src/Foundation, so go up 2 levels for project root
         $frameworkBasePath = dirname(__DIR__, 2);
-        return $frameworkBasePath . '/src/Config'; // Point to framework's src/Config
+        return $frameworkBasePath . '/src/Config';
     }
 
-    /**
-     * Load and merge configuration items from framework and application paths.
-     * Application config overrides framework config.
-     *
-     * @return void
-     */
+    /** Load and merge configuration files. */
     protected function loadConfigurationFiles(): void
     {
-        // Load framework config first
         $frameworkItems = $this->loadFromPath($this->frameworkConfigPath);
-        // Load app config if path is provided
         $appItems = $this->appConfigPath ? $this->loadFromPath($this->appConfigPath) : [];
-
-        // Merge framework and application configs, app overrides framework
-        // Use array_replace_recursive to merge nested arrays correctly
         $this->items = array_replace_recursive($frameworkItems, $appItems);
     }
 
     /**
      * Load configuration items from a given directory path.
-     *
      * @param string $configPath
-     * @return array The loaded configuration items.
+     * @return array
      */
     protected function loadFromPath(string $configPath): array
     {
         $items = [];
-        if (!is_dir($configPath)) {
-             error_log("Configuration directory not found or not readable: {$configPath}");
-             return []; // Return empty array if path is invalid
+        // Check if directory exists and is readable, return empty if not.
+        // Logging this early might be problematic due to dependency issues.
+        // Failure here will likely cause errors later when config values are accessed.
+        if (!is_dir($configPath) || !is_readable($configPath)) {
+            // Removed: error_log("Configuration directory not found or not readable: {$configPath}");
+            return [];
         }
 
         foreach (glob($configPath . '/*.php') as $file) {
             $key = basename($file, '.php');
             try {
-                $configData = require $file;
-                if (is_array($configData)) {
-                    $items[$key] = $configData; // Add to items array for this path
+                // Use include instead of require to prevent fatal error on failure
+                $configData = include $file;
+                // Check if include succeeded and returned an array
+                if ($configData !== false && is_array($configData)) {
+                    $items[$key] = $configData;
                 } else {
-                     error_log("Config file did not return an array: {$file}");
+                    // Log this potential issue? Maybe later via a dedicated health check?
+                    // Removed: error_log("Config file did not return an array or failed to include: {$file}");
                 }
             } catch (\Throwable $e) {
-                 error_log("Error loading config file {$file}: " . $e->getMessage());
+                 // Log this potential issue? Maybe later.
+                 // Removed: error_log("Error loading config file {$file}: " . $e->getMessage());
+                 // Continue loading other files even if one fails? Yes.
             }
         }
-
-        return $items; // Return the items loaded from this specific path
+        return $items;
     }
 
-    /**
-     * Determine if the given configuration value exists.
-     * Uses "dot" notation.
-     *
-     * @param  string  $key
-     * @return bool
-     */
+    /** Check if config key exists. */
     public function has(string $key): bool
     {
-        return $this->get($key) !== null;
+        return $this->get($key, '__DEFAULT_NOT_FOUND__') !== '__DEFAULT_NOT_FOUND__';
+        // Using a unique default value is slightly more robust than checking for null,
+        // in case null is a valid stored config value.
     }
 
-    /**
-     * Get the specified configuration value.
-     * Uses "dot" notation (e.g., 'app.name', 'database.connections.mysql.host').
-     *
-     * @param  string  $key
-     * @param  mixed  $default
-     * @return mixed
-     */
+    /** Get config value using dot notation. */
     public function get(string $key, mixed $default = null): mixed
     {
         $array = $this->items;
         $keys = explode('.', $key);
-
         foreach ($keys as $segment) {
             if (is_array($array) && array_key_exists($segment, $array)) {
                 $array = $array[$segment];
             } else {
-                return $default; // Key not found
+                return $default;
             }
         }
-
         return $array;
     }
 
-    /**
-     * Set a given configuration value.
-     * Uses "dot" notation.
-     *
-     * @param  string  $key
-     * @param  mixed  $value
-     * @return void
-     */
+    /** Set config value using dot notation. */
     public function set(string $key, mixed $value): void
     {
         $array = &$this->items;
         $keys = explode('.', $key);
-
         while (count($keys) > 1) {
             $segment = array_shift($keys);
-
-            // If the key doesn't exist at this depth, we will just create an empty array
-            // to hold the next value, allowing us to create the arrays to hold final
-            // values at the correct depth. Then we'll keep digging into the array.
             if (!isset($array[$segment]) || !is_array($array[$segment])) {
                 $array[$segment] = [];
             }
-
             $array = &$array[$segment];
         }
-
         $array[array_shift($keys)] = $value;
     }
 
-    /**
-     * Get all of the configuration items.
-     *
-     * @return array
-     */
+    /** Get all configuration items. */
     public function all(): array
     {
         return $this->items;

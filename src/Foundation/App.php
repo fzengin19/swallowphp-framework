@@ -100,7 +100,6 @@ class App
                          }
                     }
 
-                    error_log("DEBUG: Passing path to FileLogger: [" . $path . "]"); // Log the final path before returning
                     try {
                          if (!class_exists(\SwallowPHP\Framework\Log\FileLogger::class)) { throw new \RuntimeException("FileLogger class not found."); }
                          return new \SwallowPHP\Framework\Log\FileLogger($path, $level);

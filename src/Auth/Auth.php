@@ -41,10 +41,12 @@ class Auth
     public static function authenticate(string $email, string $password, bool $remember = false): bool
     {
         // --- Brute-Force Check ---
-        $ip = \SwallowPHP\Framework\Http\Request::getClientIp() ?? 'unknown_ip';
+        $rawIp = \SwallowPHP\Framework\Http\Request::getClientIp() ?? 'unknown_ip';
+        // Sanitize IP for cache key (replace IPv6 colons)
+        $ipForKey = str_replace(':', '-', $rawIp);
         $cache = App::container()->get(CacheInterface::class);
-        $attemptKey = 'login_attempt:' . $ip . ':' . sha1($email); // Add email hash to key for per-user-per-ip limit
-        $lockoutKey = 'login_lockout:' . $ip . ':' . sha1($email);
+        $attemptKey = 'login_attempt:' . $ipForKey . ':' . sha1($email); // Use sanitized IP
+        $lockoutKey = 'login_lockout:' . $ipForKey . ':' . sha1($email); // Use sanitized IP
         $now = time();
         $maxAttempts = config('auth.max_attempts', 5); // Get from config
         $lockoutTime = config('auth.lockout_time', 900); // Get from config
@@ -52,7 +54,7 @@ class Auth
         // Check if currently locked out
         if ($cache->has($lockoutKey)) {
              // Throw specific exception for lockout
-             throw new AuthenticationLockoutException("Too many login attempts for {$email} from {$ip}. Account locked.");
+             throw new AuthenticationLockoutException("Too many login attempts for {$email} from {$rawIp}. Account locked."); // Show original IP in message
         }
 
         // Get current attempt count
@@ -124,7 +126,7 @@ class Auth
 
         } else {
             // --- Failed Login ---
-            error_log("Login attempt failed for {$email} from {$ip}: Invalid credentials.");
+            error_log("Login attempt failed for {$email} from {$rawIp}: Invalid credentials."); // Log original IP
 
             // Increment attempt count in cache
             $attempts++;
@@ -132,7 +134,7 @@ class Auth
 
             // Check if lockout threshold is reached
             if ($attempts >= $maxAttempts) {
-                 error_log("Locking account for {$email} from {$ip} for " . $lockoutTime . " seconds.");
+                 error_log("Locking account for {$email} from {$rawIp} for " . $lockoutTime . " seconds."); // Log original IP
                  // Set lockout key with TTL
                  $cache->set($lockoutKey, $now, $lockoutTime);
             }

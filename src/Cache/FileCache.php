@@ -3,7 +3,8 @@
 namespace SwallowPHP\Framework\Cache;
 
 use SwallowPHP\Framework\Contracts\CacheInterface;
-use Psr\SimpleCache\InvalidArgumentException as Psr16InvalidArgumentException; // PSR-16 exception
+// PSR-16 Arayüzünü implemente ediyoruz, ancak exception için standart olanı kullanacağız.
+// use Psr\SimpleCache\InvalidArgumentException as Psr16InvalidArgumentException;
 use DateInterval;
 use DateTimeImmutable; // Use immutable for safety
 use Exception; // For internal errors
@@ -24,6 +25,8 @@ class FileCache implements CacheInterface
      * @param int $maxSizeBytes Maximum cache size in bytes (approximate). Default 50MB.
      * @param int $filePermissions File permissions for the cache file. Default 0600.
      * @param int $dirPermissions Directory permissions if cache directory needs creation. Default 0750.
+     * @throws \InvalidArgumentException If path is empty.
+     * @throws \RuntimeException If directory cannot be created or is not writable.
      */
     public function __construct(
         string $cacheFilePath,
@@ -32,8 +35,7 @@ class FileCache implements CacheInterface
         int $dirPermissions = 0750
     ) {
         if (empty($cacheFilePath)) {
-            // Use a more specific exception if available, or standard InvalidArgumentException
-            throw new Psr16InvalidArgumentException("Cache file path cannot be empty.");
+            throw new \InvalidArgumentException("Cache file path cannot be empty."); // Use standard PHP exception
         }
         $this->cacheFile = $cacheFilePath;
         $this->maxCacheSize = $maxSizeBytes;
@@ -43,9 +45,9 @@ class FileCache implements CacheInterface
         // Ensure cache directory exists
         $cacheDir = dirname($this->cacheFile);
         if (!is_dir($cacheDir)) {
-            if (!@mkdir($cacheDir, $this->dirPermissions, true)) {
-                 // Use a more specific exception if available
-                throw new \RuntimeException("Failed to create cache directory: {$cacheDir}");
+            // Use correct logical AND operator '&&'
+            if (!@mkdir($cacheDir, $this->dirPermissions, true) && !is_dir($cacheDir)) { // Check mkdir result and existence
+                 throw new \RuntimeException("Failed to create cache directory: {$cacheDir}");
             }
         }
          if (!is_writable($cacheDir)) {
@@ -57,10 +59,10 @@ class FileCache implements CacheInterface
 
     public function get(string $key, mixed $default = null): mixed
     {
-        $this->validateKey($key);
+        $this->validateKey($key); // Throws InvalidArgumentException on invalid key
         $this->loadCacheIfNeeded();
 
-        if ($this->has($key)) { // has() already checks expiration
+        if ($this->has($key)) { // has() checks existence and expiration
             $item = $this->cache[$key];
              // Basic data structure validation
              if (!array_key_exists('value', $item)) {
@@ -80,10 +82,15 @@ class FileCache implements CacheInterface
 
         $expirationTimestamp = $this->ttlToTimestamp($ttl);
 
-        // Basic check for serializability (json_encode handles most cases)
-        // More complex checks might be needed depending on requirements
+        // Handle immediate deletion for expired TTL on set, as per PSR-16
+        // Use correct logical AND operator '&&'
+        if ($expirationTimestamp !== null && $expirationTimestamp < time()) {
+             return $this->delete($key);
+        }
+
+        // Prevent caching resources
         if (is_resource($value)) {
-             error_log("Cache error in set(): Resources cannot be cached.");
+             error_log("Cache error in set(): Resources cannot be cached (key: '{$key}').");
              return false;
         }
 
@@ -122,23 +129,30 @@ class FileCache implements CacheInterface
     public function clear(): bool
     {
         $this->cache = [];
-        $this->loaded = true; // Mark as loaded even if empty
+        $this->loaded = true;
         return $this->saveCache();
     }
 
     public function getMultiple(iterable $keys, mixed $default = null): iterable
     {
-        // Validate all keys first
+        $validKeys = [];
         foreach ($keys as $key) {
              if (!is_string($key)) {
-                  throw new Psr16InvalidArgumentException("Cache keys must be strings.");
+                  throw new \InvalidArgumentException("Cache keys must be strings.");
              }
-            $this->validateKey($key);
+            $this->validateKey($key); // Reuse validation
+            $validKeys[] = $key;
+        }
+
+        // Return early if no valid keys provided
+        if (empty($validKeys)) {
+             return [];
         }
 
         $this->loadCacheIfNeeded();
         $results = [];
-        foreach ($keys as $key) {
+        foreach ($validKeys as $key) {
+            // Reuse get method logic (which includes expiration check)
             $results[$key] = $this->get($key, $default);
         }
         return $results;
@@ -146,78 +160,101 @@ class FileCache implements CacheInterface
 
     public function setMultiple(iterable $values, null|int|\DateInterval $ttl = null): bool
     {
-         if (!is_array($values) && !$values instanceof \Traversable) {
-             throw new Psr16InvalidArgumentException("Cache values must be an array or Traversable.");
+         if (!is_iterable($values)) {
+             throw new \InvalidArgumentException("Cache values must be an array or Traversable.");
          }
 
         $this->loadCacheIfNeeded();
         $expirationTimestamp = $this->ttlToTimestamp($ttl);
         $success = true;
 
+        // Handle immediate deletion for expired TTL on set
+        // Use correct logical AND operator '&&'
+        if ($expirationTimestamp !== null && $expirationTimestamp < time()) {
+             $keysToDelete = [];
+             foreach ($values as $key => $value) {
+                 if (is_string($key)) $keysToDelete[] = $key;
+             }
+             return $this->deleteMultiple($keysToDelete);
+        }
+
         foreach ($values as $key => $value) {
              if (!is_string($key)) {
-                  throw new Psr16InvalidArgumentException("Cache keys must be strings.");
+                  error_log("Cache error in setMultiple(): Invalid key type provided.");
+                  $success = false;
+                  continue;
              }
-            $this->validateKey($key);
+            try {
+                $this->validateKey($key);
 
-             if (is_resource($value)) {
-                 error_log("Cache error in setMultiple(): Resources cannot be cached (key: '{$key}').");
-                 $success = false;
-                 continue; // Skip this item
-             }
-             try {
-                 if (json_encode($value) === false) {
-                     throw new Exception("Failed to json_encode value for key '{$key}'. Error: " . json_last_error_msg());
-                 }
+                if (is_resource($value)) {
+                    error_log("Cache error in setMultiple(): Resources cannot be cached (key: '{$key}').");
+                    $success = false;
+                    continue;
+                }
+                if (json_encode($value) === false) {
+                    throw new Exception("Failed to json_encode value. Error: " . json_last_error_msg());
+                }
+
                 $this->cache[$key] = [
                     'value' => $value,
                     'expiration' => $expirationTimestamp,
                     'created_at' => time()
                 ];
-             } catch (\Exception $e) {
+             } catch (\Exception $e) { // Catches InvalidArgumentException or Exception
                  error_log("Cache error in setMultiple() for key '{$key}': " . $e->getMessage());
-                 $success = false; // Mark overall operation as failed but continue trying others
+                 $success = false;
              }
         }
 
-        return $this->saveCache() && $success;
+        // Use correct logical AND operator '&&'
+        return $this->saveCache() && $success; // Ensure saveCache() also succeeded
     }
 
     public function deleteMultiple(iterable $keys): bool
     {
-         if (!is_array($keys) && !$keys instanceof \Traversable) {
-             throw new Psr16InvalidArgumentException("Cache keys must be an array or Traversable.");
+         if (!is_iterable($keys)) {
+             throw new \InvalidArgumentException("Cache keys must be an array or Traversable.");
          }
 
         $this->loadCacheIfNeeded();
-        $success = true;
+        $keysWerePresent = false;
 
         foreach ($keys as $key) {
              if (!is_string($key)) {
-                  throw new Psr16InvalidArgumentException("Cache keys must be strings.");
+                  throw new \InvalidArgumentException("Cache keys must be strings.");
              }
-            $this->validateKey($key);
-            if (array_key_exists($key, $this->cache)) {
-                unset($this->cache[$key]);
-            }
+            try {
+                $this->validateKey($key);
+                if (array_key_exists($key, $this->cache)) {
+                    unset($this->cache[$key]);
+                    $keysWerePresent = true;
+                }
+             } catch (\InvalidArgumentException $e) {
+                 throw $e;
+             }
         }
 
-        return $this->saveCache() && $success; // PSR-16 expects true even if some keys didn't exist
+        return $keysWerePresent ? $this->saveCache() : true;
     }
 
     public function has(string $key): bool
     {
-        $this->validateKey($key);
+        try {
+             $this->validateKey($key);
+        } catch (\InvalidArgumentException $e) {
+             return false;
+        }
+
         $this->loadCacheIfNeeded();
 
+        // Use correct logical AND operator '&&'
         return array_key_exists($key, $this->cache) && !$this->isExpired($key);
     }
 
     // Helper Methods
 
-    /**
-     * Loads cache from file if not already loaded.
-     */
+    /** Loads cache from file if not already loaded. */
     private function loadCacheIfNeeded(): void
     {
         if ($this->loaded) {
@@ -225,9 +262,8 @@ class FileCache implements CacheInterface
         }
 
         if (!file_exists($this->cacheFile)) {
-             // Attempt to create the file if it doesn't exist
-             if (touch($this->cacheFile)) {
-                 chmod($this->cacheFile, $this->filePermissions);
+             if (@touch($this->cacheFile)) {
+                 @chmod($this->cacheFile, $this->filePermissions);
              } else {
                   throw new \RuntimeException("Cache file does not exist and could not be created: {$this->cacheFile}");
              }
@@ -246,187 +282,125 @@ class FileCache implements CacheInterface
         }
 
         try {
-            if (flock($fp, LOCK_SH)) {
-                $json = stream_get_contents($fp);
+            if (@flock($fp, LOCK_SH)) {
+                $json = @stream_get_contents($fp, $this->maxCacheSize + 1024);
                 flock($fp, LOCK_UN);
 
-                if (!empty($json)) {
+                if ($json === false) {
+                     throw new \RuntimeException("Failed to read cache file content: {$this->cacheFile}");
+                }
+
+                if (strlen($json) > $this->maxCacheSize) {
+                     error_log("Cache file exceeded max size ({$this->maxCacheSize} bytes): {$this->cacheFile}. Cache cleared.");
+                     $this->cache = [];
+                } elseif (!empty($json)) {
                     $data = json_decode($json, true);
+                    // Use correct logical AND operator '&&'
                     if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
                         $this->cache = $data;
                     } else {
                         error_log("Cache file corruption detected: " . json_last_error_msg() . " in {$this->cacheFile}");
-                        $this->cache = []; // Reset cache on corruption
+                        $this->cache = [];
                     }
                 } else {
-                     $this->cache = []; // Empty file
+                     $this->cache = [];
                 }
             } else {
                 error_log("Could not acquire shared lock for cache file: {$this->cacheFile}");
-                // Decide behavior: throw exception or return empty cache? Returning empty might hide issues.
                  throw new \RuntimeException("Could not acquire shared lock for cache file: {$this->cacheFile}");
-                // $this->cache = [];
             }
         } finally {
-             fclose($fp);
+             @fclose($fp);
         }
 
         $this->loaded = true;
     }
 
-    /**
-     * Saves the current cache state to the file.
-     * Handles pruning if cache exceeds max size.
-     *
-     * @return bool True on success, false on failure.
-     */
+    /** Saves the current cache state to the file. */
     private function saveCache(): bool
     {
-         // Prune cache if needed before encoding
          $this->pruneCacheIfNeeded();
-
-        $fp = @fopen($this->cacheFile, 'c+'); // Open for reading/writing; create if not exists; truncate to zero length
-         if (!$fp) {
-             error_log("Could not open cache file for writing: {$this->cacheFile}");
-             return false;
-         }
-
+        $tempFile = $this->cacheFile . '.' . uniqid(mt_rand(), true) . '.tmp';
         $json = json_encode($this->cache, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
          if ($json === false) {
              error_log("Failed to encode cache data to JSON: " . json_last_error_msg());
-             fclose($fp);
              return false;
          }
-
-        $success = false;
-        try {
-            if (flock($fp, LOCK_EX)) {
-                if (ftruncate($fp, 0) && rewind($fp)) {
-                     $bytesWritten = fwrite($fp, $json);
-                     if ($bytesWritten !== false) {
-                         fflush($fp); // Ensure data is written to disk
-                         $success = true;
-                     } else {
-                          error_log("Failed to write to cache file: {$this->cacheFile}");
-                     }
-                } else {
-                     error_log("Failed to truncate or rewind cache file: {$this->cacheFile}");
-                }
-                flock($fp, LOCK_UN);
-            } else {
-                error_log("Could not acquire exclusive lock for cache file: {$this->cacheFile}");
-            }
-        } finally {
-            fclose($fp);
+        if (@file_put_contents($tempFile, $json, LOCK_EX) === false) {
+            error_log("Failed to write to temporary cache file: {$tempFile}");
+            @unlink($tempFile);
+            return false;
         }
-        return $success;
+        @chmod($tempFile, $this->filePermissions);
+        if (@rename($tempFile, $this->cacheFile)) {
+            return true;
+        } else {
+            error_log("Failed to rename temporary cache file to final destination: {$this->cacheFile}");
+            @unlink($tempFile);
+            return false;
+        }
     }
 
-     /**
-      * Prunes the cache if its size exceeds the maximum allowed size.
-      * Removes items based on their creation time (oldest first).
-      */
+     /** Prunes the cache if needed. */
      private function pruneCacheIfNeeded(): void
      {
-         // Estimate size without encoding everything repeatedly if cache is large
-         if (count($this->cache) < 1000) { // Heuristic threshold
-              $currentSize = strlen(json_encode($this->cache));
-         } else {
-              // Approximate size for large caches to avoid performance hit
-              $currentSize = 0;
-              foreach ($this->cache as $key => $item) {
-                   $currentSize += strlen($key) + strlen(json_encode($item['value'])) + 50; // Rough estimate per item
-              }
-         }
-
-
-         if ($currentSize > $this->maxCacheSize) {
-             // Sort items by creation time (oldest first)
+         $estimatedSize = strlen(json_encode($this->cache));
+         if ($estimatedSize > $this->maxCacheSize) {
              uasort($this->cache, function ($a, $b) {
                  return ($a['created_at'] ?? 0) <=> ($b['created_at'] ?? 0);
              });
-
-             // Remove items until size is below limit
-             while ($currentSize > $this->maxCacheSize && !empty($this->cache)) {
-                 $keyToRemove = array_key_first($this->cache); // Get key of the first (oldest) element
+             $targetSize = $this->maxCacheSize * 0.9;
+             // Use correct logical AND operator '&&'
+             while ($estimatedSize > $targetSize && !empty($this->cache)) {
+                 $keyToRemove = array_key_first($this->cache);
                  if ($keyToRemove !== null) {
-                      $removedItemSize = strlen($keyToRemove) + strlen(json_encode($this->cache[$keyToRemove]['value'])) + 50; // Estimate
                       unset($this->cache[$keyToRemove]);
-                      $currentSize -= $removedItemSize; // Adjust estimated size
+                      if (mt_rand(1, 10) === 1) {
+                          $estimatedSize = strlen(json_encode($this->cache));
+                      }
                  } else {
-                      break; // Should not happen if cache is not empty
+                      break;
                  }
              }
-
-             // Optional: Log that pruning occurred
-             // error_log("Cache pruned due to size limit.");
+             $estimatedSize = strlen(json_encode($this->cache));
+             error_log("Cache pruned: size reduced to ~{$estimatedSize} bytes.");
          }
      }
 
 
-    /**
-     * Checks if a cached item is expired.
-     *
-     * @param string $key
-     * @return bool
-     */
+    /** Checks if a cached item is expired. */
     private function isExpired(string $key): bool
     {
-        // Assumes $this->cache is loaded and key exists
         $expiration = $this->cache[$key]['expiration'] ?? null;
+        // Use correct logical AND operator '&&'
         return $expiration !== null && time() >= $expiration;
     }
 
-    /**
-     * Validates a cache key according to PSR-16 rules.
-     *
-     * @param string $key
-     * @throws Psr16InvalidArgumentException If the key is invalid.
-     */
+    /** Validates a cache key. */
     private function validateKey(string $key): void
     {
         if ($key === '') {
-            throw new Psr16InvalidArgumentException("Cache key cannot be empty.");
+            throw new \InvalidArgumentException("Cache key cannot be empty.");
         }
-        // PSR-16 reserved characters: {}()/\@:
-        if (preg_match('/[{}()\/\\@:]/', $key)) {
-            throw new Psr16InvalidArgumentException("Cache key '{$key}' contains reserved characters.");
+        if (preg_match('/[{}()\/\\\\@:]/', $key)) {
+            throw new \InvalidArgumentException("Cache key '{$key}' contains reserved characters: {}()/\@:");
         }
     }
 
-    /**
-     * Converts TTL value to an absolute Unix timestamp.
-     *
-     * @param null|int|\DateInterval $ttl
-     * @return null|int Absolute expiration timestamp or null for indefinite cache.
-     * @throws Psr16InvalidArgumentException for invalid TTL types.
-     */
+    /** Converts TTL to timestamp. */
     private function ttlToTimestamp(null|int|\DateInterval $ttl): ?int
     {
-        if ($ttl === null) {
-            return null; // Cache forever
-        }
-
+        if ($ttl === null) return null;
         if (is_int($ttl)) {
-            if ($ttl <= 0) {
-                // Expired or invalid TTL, treat as expired now for set, effectively deleting?
-                // PSR-16: "If the TTL value is 0 or less, the item MUST be deleted from the cache if it exists"
-                // For set, we can return an immediate expiration time.
-                return time() - 1; // Expired in the past
-            }
-            return time() + $ttl;
+            return ($ttl > 0) ? time() + $ttl : time() - 1;
         }
-
         if ($ttl instanceof \DateInterval) {
-            try {
-                 // Use DateTimeImmutable for safety
+             try {
                  return (new DateTimeImmutable())->add($ttl)->getTimestamp();
-            } catch (\Exception $e) {
-                 throw new Psr16InvalidArgumentException("Invalid DateInterval provided for TTL.", 0, $e);
-            }
+             } catch (\Exception $e) {
+                  throw new \InvalidArgumentException("Invalid DateInterval provided for TTL.", 0, $e);
+             }
         }
-
-        // Should not happen with type hinting, but as fallback
-        throw new Psr16InvalidArgumentException("Invalid TTL value provided. Must be null, int (seconds), or DateInterval.");
+        throw new \InvalidArgumentException("Invalid TTL value provided. Must be null, int (seconds), or DateInterval.");
     }
 }

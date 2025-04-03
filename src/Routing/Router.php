@@ -184,6 +184,11 @@ class Router
         if ($appPath) {
              $requestUri = preg_replace('/^' . preg_quote($appPath, '/') . '/', '', $requestUri, 1);
         }
+        // DEBUGGING: Log processed URI before matching loop
+        error_log("Router Dispatch - Method: " . $request->getMethod());
+        error_log("Router Dispatch - Processed URI for Matching: '" . $requestUri . "'");
+        // END DEBUGGING
+
         if ($requestUri != '/') {
             $requestUri = rtrim($requestUri, '/');
         }

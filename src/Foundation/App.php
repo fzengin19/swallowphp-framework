@@ -26,21 +26,17 @@ class App
     {
         self::container(); // Initialize container first
 
-        // Get config after container is available
         $config = self::container()->get(Config::class);
 
-        // Set timezone and locale using config, with fallbacks
         date_default_timezone_set($config->get('app.timezone', 'UTC'));
         setlocale(LC_TIME, ($config->get('app.locale', 'en') ?? 'en') . '.UTF-8');
 
-        // Set view directory using config, with fallback calculation
         self::$viewDirectory = $config->get('app.view_path');
         if (!self::$viewDirectory) {
              $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
              self::$viewDirectory = $potentialBasePath . '/resources/views';
         }
 
-        // Get Router from container
         self::$router = self::container()->get(Router::class);
     }
 
@@ -87,7 +83,10 @@ class App
                               if (!is_dir($logDir)) { @mkdir($logDir, 0755, true); }
                          }
                     }
+                    // <<<--- HATA AYIKLAMA LOGU BURAYA --- >>>
                     if (empty($path)) { throw new \RuntimeException("Log path could not be determined for channel '{$defaultChannel}'."); }
+                    error_log("DEBUG: Passing path to FileLogger: [" . $path . "]"); // Log the final path before returning
+                    // <<<--- BİTTİ --- >>>
                     try {
                          if (!class_exists(\SwallowPHP\Framework\Log\FileLogger::class)) { throw new \RuntimeException("FileLogger class not found."); }
                          return new \SwallowPHP\Framework\Log\FileLogger($path, $level);
@@ -113,7 +112,6 @@ class App
             // Session Manager Service - Defined AFTER Config and Logger
              self::$container->addShared(SessionManager::class, function () {
                  $manager = new SessionManager();
-                 // Aging logic moved to App::run after session is started.
                  return $manager;
              });
 
@@ -155,6 +153,7 @@ class App
             self::$container->addShared(Router::class, function () {
                 return new Router();
             });
+
 
             // CSRF Token Middleware (Shared Singleton)
             self::$container->addShared(VerifyCsrfToken::class, function () {
@@ -242,17 +241,15 @@ class App
 
             // --- Request Handling Pipeline ---
             $request = $container->get(Request::class);
-            $sessionManager = $container->get(SessionManager::class); // Get SessionManager
+            $sessionManager = $container->get(SessionManager::class);
 
-            // Start session and Age flash data <<<--- YENİ KISIM
+            // Start session and Age flash data
             $sessionStarted = $sessionManager->start();
             if ($sessionStarted) {
                 $sessionManager->ageFlashData();
             } else {
-                // Logger artık tanımlı olduğu için burada loglayabiliriz
                 $logger->warning('Session could not be started in App::run(): Headers may already be sent.');
             }
-            // <<<--- BİTTİ ---
 
             // Output buffering and Gzip
             if ($config->get('app.gzip_compression', true) === true && isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
@@ -266,7 +263,7 @@ class App
             // Apply global middleware
             $csrfMiddleware = $container->get(VerifyCsrfToken::class);
 
-            $response = $csrfMiddleware->handle($request, function ($request) use ($app, $logger) { // Pass logger
+            $response = $csrfMiddleware->handle($request, function ($request) use ($app, $logger) {
                 $routeResponse = $app->handleRequest($request);
 
                 if (!$routeResponse instanceof \SwallowPHP\Framework\Http\Response) {

@@ -45,8 +45,8 @@ class Auth
         // Sanitize IP for cache key (replace IPv6 colons)
         $ipForKey = str_replace(':', '-', $rawIp);
         $cache = App::container()->get(CacheInterface::class);
-        $attemptKey = 'login_attempt:' . $ipForKey . ':' . sha1($email); // Use sanitized IP
-        $lockoutKey = 'login_lockout:' . $ipForKey . ':' . sha1($email); // Use sanitized IP
+        $attemptKey = 'login_attempt_' . $ipForKey . '_' . sha1($email); // Use underscore as separator
+        $lockoutKey = 'login_lockout_' . $ipForKey . '_' . sha1($email); // Use underscore as separator
         $now = time();
         $maxAttempts = config('auth.max_attempts', 5); // Get from config
         $lockoutTime = config('auth.lockout_time', 900); // Get from config

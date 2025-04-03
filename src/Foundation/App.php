@@ -69,24 +69,38 @@ class App
                 if (!$channelConfig) { throw new \RuntimeException("Default log channel '{$defaultChannel}' configuration not found."); }
                 $driver = $channelConfig['driver'] ?? 'single';
                 $level = $channelConfig['level'] ?? LogLevel::DEBUG;
+
                 if ($driver === 'single') {
-                    $path = $channelConfig['path'] ?? null;
-                    if (!$path) {
-                         $storagePath = $config->get('app.storage_path');
-                         if ($storagePath && is_dir(dirname($storagePath))) {
-                              $path = $storagePath . '/logs/swallow.log';
-                         } else {
-                              $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
-                              $path = $potentialBasePath . '/storage/logs/swallow.log';
-                              error_log("Warning: Log path not configured, using fallback: " . $path);
-                              $logDir = dirname($path);
-                              if (!is_dir($logDir)) { @mkdir($logDir, 0755, true); }
+                    // Get the relative path from logging config
+                    $relativePath = $channelConfig['path'] ?? 'logs/swallow.log'; // Default relative path
+
+                    // Get the absolute storage path from app config
+                    $storagePath = $config->get('app.storage_path');
+
+                    // Ensure storage path is configured and try to determine fallback if not
+                    if (!$storagePath || !is_dir(dirname($storagePath))) {
+                        $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
+                        $storagePath = $potentialBasePath . '/storage';
+                        error_log("Warning: 'app.storage_path' not configured or invalid, using fallback for logging path: " . $storagePath);
+                        // Attempt to create fallback storage directory
+                        if (!is_dir($storagePath)) { @mkdir($storagePath, 0755, true); }
+                    }
+
+                    // Combine absolute storage path with relative log file path
+                    $path = rtrim($storagePath, '/\\') . '/' . ltrim($relativePath, '/\\');
+
+                    // Ensure the final log directory exists (FileLogger constructor also checks this)
+                    $logDir = dirname($path);
+                    if (!is_dir($logDir)) {
+                         // Use @ to suppress errors if directory already exists due to race condition
+                         @mkdir($logDir, 0755, true);
+                         // Double-check after attempt
+                         if (!is_dir($logDir) || !is_writable($logDir)) {
+                              throw new \RuntimeException("Log directory could not be created or is not writable: {$logDir}");
                          }
                     }
-                    // <<<--- HATA AYIKLAMA LOGU BURAYA --- >>>
-                    if (empty($path)) { throw new \RuntimeException("Log path could not be determined for channel '{$defaultChannel}'."); }
+
                     error_log("DEBUG: Passing path to FileLogger: [" . $path . "]"); // Log the final path before returning
-                    // <<<--- BİTTİ --- >>>
                     try {
                          if (!class_exists(\SwallowPHP\Framework\Log\FileLogger::class)) { throw new \RuntimeException("FileLogger class not found."); }
                          return new \SwallowPHP\Framework\Log\FileLogger($path, $level);

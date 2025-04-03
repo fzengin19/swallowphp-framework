@@ -2,23 +2,17 @@
 
 namespace SwallowPHP\Framework\Foundation;
 
-
 use League\Container\Container;
-use League\Container\ReflectionContainer; // Import ReflectionContainer
+use League\Container\ReflectionContainer;
 use SwallowPHP\Framework\Contracts\CacheInterface;
 use SwallowPHP\Framework\Cache\CacheManager;
 use SwallowPHP\Framework\Database\Database;
 use SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken;
 use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Routing\Router;
-
-use SwallowPHP\Framework\Foundation\Config; // Config is back in Foundation
-
-// Set timezone from config
-// Note: config() might not be available *yet* when this file is first parsed.
-// Consider moving this logic inside run() or after container initialization.
-// date_default_timezone_set(config('app.timezone', 'Europe/Istanbul'));
-// setlocale(LC_TIME, config('app.locale', 'tr') . '.UTF-8'); // Ensure locale includes encoding
+use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
+use SwallowPHP\Framework\Foundation\Config;
 
 class App
 {
@@ -27,282 +21,319 @@ class App
     private static ?string $viewDirectory;
     private static ?Container $container = null;
 
-    /**
-     * Initializes a new instance of the class and creates a new Router object.
-     * Private constructor to enforce singleton pattern via getInstance().
-     */
     private function __construct()
     {
-        // Initialize container first
-        self::container();
+        self::container(); // Initialize container first
 
-        // Set timezone and locale after container and config are ready
-        date_default_timezone_set(config('app.timezone', 'Europe/Istanbul'));
-        setlocale(LC_TIME, config('app.locale', 'tr') . '.UTF-8');
+        // Get config after container is available
+        $config = self::container()->get(Config::class);
 
-        // Use config for view path, assuming it's relative to project root
-        self::$viewDirectory = config('app.view_path', dirname(__DIR__, 2) . '/resources/views');
-        // Get Router from container now
-        self::$router = self::container()->get(Router::class); 
+        // Set timezone and locale using config, with fallbacks
+        date_default_timezone_set($config->get('app.timezone', 'UTC'));
+        setlocale(LC_TIME, ($config->get('app.locale', 'en') ?? 'en') . '.UTF-8');
 
-        // Assign the App instance itself to the container? Optional.
-        // self::$container->addShared(App::class, $this);
+        // Set view directory using config, with fallback calculation
+        self::$viewDirectory = $config->get('app.view_path');
+        if (!self::$viewDirectory) {
+            // Calculate fallback relative to potential base path if not configured
+             $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
+             self::$viewDirectory = $potentialBasePath . '/resources/views';
+        }
+
+        // Get Router from container
+        self::$router = self::container()->get(Router::class);
     }
 
-    /**
-     * Get the globally available container instance.
-     * Initializes the container on first call.
-     *
-     * @return Container
-     */
     public static function container(): Container
     {
         if (is_null(self::$container)) {
             self::$container = new Container();
-            // Enable auto-wiring via ReflectionContainer delegate
-            // The 'true' argument allows attempting to resolve even unresolvable parameters (e.g., using default values)
-            self::$container->delegate(new ReflectionContainer(true)); 
-
+            self::$container->delegate(new ReflectionContainer(true));
 
             // --- Configuration Service ---
-            // Load configuration early and share the instance
             self::$container->addShared(Config::class, function () {
-                 $configPath = dirname(__DIR__, 2) . '/src/Config'; // Correct path to src/Config
-                 // Try to determine the application's base path assuming vendor is one level down
-                 // This might need adjustment based on the actual project structure
-                 // Using a defined constant like BASE_PATH (defined in index.php) would be safer
-                 $appBasePath = dirname(__DIR__, 3); // Go up from src/Foundation -> src -> framework_root -> project_root
-                 $appConfigPath = defined('\\BASE_PATH') ? constant('BASE_PATH') . '/config' : $appBasePath . '/config'; // Use defined BASE_PATH if available
-                 return new Config($configPath, $appConfigPath); // Pass both framework and app paths
+                 $frameworkConfigPath = dirname(__DIR__, 2) . '/src/Config';
+                 $appConfigPath = null;
+                 if (defined('BASE_PATH')) { // Use constant() only for value access later
+                      $appConfigPath = constant('BASE_PATH') . '/config';
+                 } else {
+                      $potentialBasePath = dirname(__DIR__, 3);
+                      $appConfigPath = $potentialBasePath . '/config';
+                 }
+                 // Ensure appConfigPath is checked for existence by Config constructor
+                 return new Config($frameworkConfigPath, $appConfigPath);
             });
 
             // --- Service Definitions ---
 
-            // Cache Service (Shared Singleton)
-            // Resolves the appropriate cache driver via CacheManager
-            self::$container->addShared(CacheInterface::class, function () { // Removed 'use ($container)'
+            // Logger Service (PSR-3) - Must be defined AFTER Config
+            self::$container->addShared(LoggerInterface::class, function () {
+                $config = self::container()->get(Config::class); // Get config instance
+                $defaultChannel = $config->get('logging.default', 'file');
+                $channelConfig = $config->get('logging.channels.' . $defaultChannel);
+
+                if (!$channelConfig) {
+                    throw new \RuntimeException("Default log channel '{$defaultChannel}' configuration not found.");
+                }
+
+                $driver = $channelConfig['driver'] ?? 'single';
+                $level = $channelConfig['level'] ?? LogLevel::DEBUG;
+
+                if ($driver === 'single') {
+                    $path = $channelConfig['path'] ?? null;
+                    if (!$path) {
+                         $storagePath = $config->get('app.storage_path');
+                         if ($storagePath && is_dir(dirname($storagePath))) { // Check parent dir of storage path
+                              $path = $storagePath . '/logs/swallow.log';
+                         } else {
+                              $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
+                              $path = $potentialBasePath . '/storage/logs/swallow.log';
+                              error_log("Warning: Log path not configured ('logging.channels.{$defaultChannel}.path' or 'app.storage_path'), using fallback: " . $path);
+                              $logDir = dirname($path);
+                              if (!is_dir($logDir)) { @mkdir($logDir, 0755, true); }
+                         }
+                    }
+                    if (empty($path)) { throw new \RuntimeException("Log path could not be determined for channel '{$defaultChannel}'."); }
+                    try {
+                         if (!class_exists(\SwallowPHP\Framework\Log\FileLogger::class)) {
+                              throw new \RuntimeException("FileLogger class (\SwallowPHP\Framework\Log\FileLogger) not found.");
+                         }
+                         return new \SwallowPHP\Framework\Log\FileLogger($path, $level);
+                    } catch (\Exception $e) {
+                         throw new \RuntimeException("Failed to initialize FileLogger for channel '{$defaultChannel}': " . $e->getMessage(), 0, $e);
+                    }
+                } elseif ($driver === 'errorlog') {
+                     return new class($level) implements LoggerInterface {
+                         use \Psr\Log\LoggerTrait;
+                         private int $minLevelValue;
+                         private array $logLevels = [ LogLevel::DEBUG => 100, LogLevel::INFO => 200, LogLevel::NOTICE => 250, LogLevel::WARNING => 300, LogLevel::ERROR => 400, LogLevel::CRITICAL => 500, LogLevel::ALERT => 550, LogLevel::EMERGENCY => 600 ];
+                         public function __construct(string $minLevel) { $this->minLevelValue = $this->logLevels[$minLevel] ?? 100; }
+                         public function log($level, string|\Stringable $message, array $context = []): void {
+                              if (($this->logLevels[$level] ?? 0) >= $this->minLevelValue) {
+                                   $replace = [];
+                                   foreach ($context as $key => $val) { $replace['{' . $key . '}'] = is_scalar($val) || (is_object($val) && method_exists($val,'__toString')) ? (string)$val : '['.gettype($val).']'; }
+                                   $interpolatedMessage = strtr((string) $message, $replace);
+                                   error_log(strtoupper($level) . ': ' . $interpolatedMessage);
+                              }
+                         }
+                     };
+                } else {
+                    throw new \RuntimeException("Unsupported log driver [{$driver}] configured for channel '{$defaultChannel}'.");
+                }
+            });
+
+            // Cache Service (Shared Singleton) - Defined AFTER Config and Logger
+            self::$container->addShared(CacheInterface::class, function () {
                 try {
-                    // Get config service first using the static accessor
-                    // This is safe because Config service is defined before this closure
                     $config = self::container()->get(Config::class);
-                    // Get the default driver name from the resolved config
                     $driverName = $config->get('cache.default', 'file');
-                    // Pass the specific driver name to the manager
-                    return CacheManager::driver($driverName); 
+                    return CacheManager::driver($driverName);
                 } catch (\Exception $e) {
-                    // Log the error and potentially throw a more specific framework exception
-                    error_log("Cache service initialization failed: " . $e->getMessage());
-                    // Depending on requirements, could return a NullCache driver or re-throw
+                    // Attempt to log the error using the logger service
+                    try {
+                         self::container()->get(LoggerInterface::class)->error("Cache service initialization failed: " . $e->getMessage());
+                    } catch (\Throwable $logException) {
+                         // Fallback if logger itself fails
+                         error_log("Cache service initialization failed AND logging failed: " . $e->getMessage());
+                    }
                     throw new \RuntimeException("Failed to initialize cache service.", 0, $e);
                 }
             });
 
-            // Request Service (Shared Singleton for the current request)
-            // Create the request instance once from globals and share it.
+            // Request Service (Shared Singleton)
             self::$container->addShared(Request::class, function () {
                 return Request::createFromGlobals();
             });
 
-            // Database Service (Shared Singleton)
-            // Assumes Database constructor handles connection
-            self::$container->addShared(Database::class, function() { // Removed 'use ($container)'
-                 // Get config service from container
-                 $config = self::container()->get(Config::class); // Use static accessor
-                 // Get default connection name
-                 $connectionName = $config->get('database.default', 'mysql');
-                 // Get connection specific config
-                 $connectionConfig = $config->get("database.connections.{$connectionName}");
-
-                 if (!$connectionConfig) {
-                      throw new \RuntimeException("Database configuration for connection '{$connectionName}' not found.");
+            // Database Service (Shared Singleton) - Defined AFTER Config and Logger
+            self::$container->addShared(Database::class, function() {
+                 try {
+                     $config = self::container()->get(Config::class);
+                     $connectionName = $config->get('database.default', 'mysql');
+                     $connectionConfig = $config->get("database.connections.{$connectionName}");
+                     if (!$connectionConfig) {
+                          throw new \RuntimeException("Database configuration for connection '{$connectionName}' not found.");
+                     }
+                     return new Database($connectionConfig);
+                 } catch (\Exception $e) {
+                     try {
+                          self::container()->get(LoggerInterface::class)->error("Database service initialization failed: " . $e->getMessage());
+                     } catch (\Throwable $logException) {
+                          error_log("Database service initialization failed AND logging failed: " . $e->getMessage());
+                     }
+                     throw new \RuntimeException("Failed to initialize database service.", 0, $e);
                  }
-                 // Pass the specific connection config to the Database constructor
-                 return new Database($connectionConfig);
-             });
+            });
 
             // Router Service (Shared Singleton)
             self::$container->addShared(Router::class, function () {
-                // Keep simple instantiation for now, can be enhanced later
-                return new Router(); 
+                return new Router();
             });
 
             // CSRF Token Middleware (Shared Singleton)
             self::$container->addShared(VerifyCsrfToken::class, function () {
-                return new VerifyCsrfToken(); // Assuming no constructor dependencies
+                return new VerifyCsrfToken();
             });
-
-            // Add other core services...
 
         }
         return self::$container;
     }
 
-    /**
-     * Get the application's view directory path.
-     *
-     * @return string|null
-     */
     public static function getViewDirectory(): ?string
     {
-        // Ensure instance exists if called statically before run()
-        // self::getInstance(); // This might cause issues if called too early
         return self::$viewDirectory;
     }
 
-    /**
-     * Returns the singleton instance of this class.
-     *
-     * @return self
-     */
     public static function getInstance(): self
     {
         if (!isset(self::$instance)) {
-            self::$instance = new self(); // Calls private __construct which initializes container
+            self::$instance = new self();
         }
         return self::$instance;
     }
 
-    /**
-     * Returns the router instance.
-     *
-     * @return Router The router instance.
-     */
     public static function getRouter(): Router
     {
-        // Get router from container
         return self::container()->get(Router::class);
     }
 
-    /**
-     * Sets the router object to be used by the class.
-     * Note: This is generally discouraged; router should be managed by the container.
-     * Kept for potential backward compatibility or specific use cases.
-     *
-     * @param Router $router The router object to be used.
-     * @return void
-     */
-    // public static function setRouter(Router $router): void
-    // {
-    //     self::$router = $router;
-    //     // Optionally update container if router is managed there
-    //     // self::container()->extend(Router::class)->setConcrete($router);
-    // }
-
-    /**
-     * Handles a request by dispatching it to the router.
-     *
-     * @param Request $request The request object to handle.
-     * @return mixed The response from the router dispatch.
-     */
     public static function handleRequest(Request $request): mixed
     {
-        // Use the router instance obtained from the container
         return self::getRouter()->dispatch($request);
     }
 
-
-    /**
-     * Runs the application.
-     * This is the main entry point.
-     *
-     * @throws \Throwable If an error occurs during execution.
-     */
     public static function run(): void
     {
-        // Load environment variables FIRST!
-        // This ensures $_ENV is populated before container/config is initialized.
-        Env::load(); 
+        // --- Error and Exception Handling Setup ---
+        error_reporting(E_ALL);
+        ini_set('display_errors', 0); // Let ExceptionHandler manage display
 
+        set_error_handler(function ($severity, $message, $file, $line) {
+            if (!(error_reporting() & $severity)) { return false; }
+            throw new \ErrorException($message, 0, $severity, $file, $line);
+        });
+
+        // Basic fallback handler for very early errors
+        $earlyExceptionHandler = set_exception_handler(function ($exception) {
+             http_response_code(500);
+             echo "<h1>Fatal Error</h1><p>An error occurred during application initialization.</p>";
+             error_log("Early Exception: " . $exception->getMessage() . " in " . $exception->getFile() . ":" . $exception->getLine());
+             exit;
+        });
+
+        // --- Core Application Logic ---
         try {
-            // Ensure the App instance and container are created
-            $app = self::getInstance(); // This also initializes the container via __construct -> container()
-            $container = self::container(); // Get initialized container
+            Env::load(); // Load .env first
 
-            // Basic environment setup using config (now available)
-            set_time_limit((int)config('app.max_execution_time', 30));
-            if (config('app.ssl_redirect', false) === true && empty($_SERVER['HTTPS'])) {
+            // Initialize App & Container (registers Config, Logger etc.)
+            $app = self::getInstance();
+            $container = self::container();
+
+            // Restore previous handler (or default), main try/catch takes over
+            if ($earlyExceptionHandler) { // Check if a handler was actually set
+                 restore_exception_handler();
+            }
+
+            // --- Configure PHP based on loaded config ---
+            $config = $container->get(Config::class);
+            $logger = $container->get(LoggerInterface::class); // Get logger instance
+
+            // Set Timezone and Locale
+            date_default_timezone_set($config->get('app.timezone', 'UTC'));
+            setlocale(LC_TIME, ($config->get('app.locale', 'en') ?? 'en') . '.UTF-8');
+
+            // Set Execution Time Limit
+            set_time_limit((int)$config->get('app.max_execution_time', 30));
+
+            // Configure Error Reporting and Display
+            $isDebug = $config->get('app.debug', false);
+            if (!$isDebug) {
+                error_reporting(0);
+                ini_set('display_errors', 0);
+            } else {
+                 error_reporting(E_ALL);
+                 ini_set('display_errors', 1); // Display errors ONLY if debug is true
+            }
+
+            // SSL Redirect
+            // Use correct logical AND operator '&&'
+            if ($config->get('app.ssl_redirect', false) === true && empty($_SERVER['HTTPS'])) {
                 header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
                 exit;
             }
-            // Use debug config for error reporting
-            if (config('app.debug', false) !== true) {
-                error_reporting(0);
-            } else {
-                 // Optionally set higher error reporting for debug mode
-                 error_reporting(E_ALL);
-                 ini_set('display_errors', 1); // Ensure errors are displayed if debug is true
-                 ini_set('display_errors', 1); // Ensure errors are displayed if debug is true
-            }
 
-            // Get Request instance from container
-            $request = $container->get(Request::class); 
+            // --- Request Handling Pipeline ---
+            $request = $container->get(Request::class);
 
-            // Setup encoding and session
-            mb_internal_encoding('UTF-8');
+            // Session Start
             if (session_status() == PHP_SESSION_NONE) {
-                // Ensure headers aren't already sent before starting session
                 if (!headers_sent()) {
-                    // TODO: Use session config from config/session.php if available
-                    session_start(); 
+                    session_start();
                 } else {
-                    // Log error if session cannot be started
-                    error_log("App::run() - Session could not be started: Headers already sent.");
+                    $logger->warning('Session could not be started: Headers already sent.');
                 }
             }
 
             // Output buffering and Gzip
-            if (config('app.gzip_compression', true) === true && isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
+            // Use correct logical AND operators '&&'
+            if ($config->get('app.gzip_compression', true) === true && isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
                 ini_set('zlib.output_compression', '1');
-                header('Content-Encoding: gzip');
+                 if (!headers_sent()) header('Content-Encoding: gzip');
             } else {
                 ini_set('zlib.output_compression', '0');
             }
-            ob_start(); // Always start output buffering
+            ob_start();
 
-            // Apply global middleware (e.g., CSRF protection)
+            // Apply global middleware
             $csrfMiddleware = $container->get(VerifyCsrfToken::class);
 
-            $response = $csrfMiddleware->handle($request, function ($request) use ($app) {
-                // Pass request through router
-                // Ensure handleRequest always returns a Response object or convertible value
-                $routeResponse = $app->handleRequest($request); // Calls Router::dispatch
+            $response = $csrfMiddleware->handle($request, function ($request) use ($app, $container, $logger) { // Pass logger too
+                $routeResponse = $app->handleRequest($request); // Dispatch
 
-                // Handle non-Response return types from controllers/closures
+                // Convert response if needed
                 if (!$routeResponse instanceof \SwallowPHP\Framework\Http\Response) {
                      if (is_array($routeResponse) || is_object($routeResponse)) {
                          return \SwallowPHP\Framework\Http\Response::json($routeResponse);
+                     // Use correct logical AND operator '&&'
                      } elseif (is_scalar($routeResponse) || is_null($routeResponse) || (is_object($routeResponse) && method_exists($routeResponse, '__toString'))) {
                          return \SwallowPHP\Framework\Http\Response::html((string) $routeResponse);
                      } else {
-                          // Log error for unhandled return type
-                          error_log("Route action returned an unconvertible type: " . gettype($routeResponse));
-                          return \SwallowPHP\Framework\Http\Response::html('Internal Server Error: Invalid response type from route.', 500);
+                          $logger->error("Route action returned an unconvertible type: " . gettype($routeResponse));
+                          return \SwallowPHP\Framework\Http\Response::html('Internal Server Error: Invalid response type.', 500);
                      }
                 }
-                return $routeResponse; // Return original Response object
+                return $routeResponse;
             });
 
-            // Send the response
-            // Ensure $response is a Response object before sending
+            // Send the final response
             if (!$response instanceof \SwallowPHP\Framework\Http\Response) {
-                 // This case might happen if middleware directly returns non-response
-                 // Log error and create a default error response
-                 error_log("Middleware pipeline did not return a Response object. Got: " . gettype($response));
+                 $logger->error("Middleware pipeline did not return a Response object. Got: " . gettype($response));
                  $response = \SwallowPHP\Framework\Http\Response::html('Internal Server Error', 500);
             }
-            $response->send(); // Send the response object
+            $response->send();
 
-            ob_end_flush(); // Send output buffer content
+            ob_end_flush();
 
         } catch (\Throwable $th) {
-            // Ensure output buffer is cleaned on error
+            // --- Main Exception Handling ---
             if (ob_get_level() > 0) {
                 ob_end_clean();
             }
-            ExceptionHandler::handle($th);
+            // Use ExceptionHandler if available
+            if (class_exists(ExceptionHandler::class)) {
+                 // Pass logger to ExceptionHandler if needed (modify ExceptionHandler::handle)
+                 // For now, ExceptionHandler logs internally or uses error_log
+                 ExceptionHandler::handle($th);
+            } else {
+                 // Fallback if ExceptionHandler is missing
+                 http_response_code(500);
+                 echo "<h1>Fatal Error</h1><p>Application Exception Handler is unavailable.</p>";
+                 error_log("Critical: ExceptionHandler class not found. Original Exception: " . $th->getMessage());
+                 exit;
+            }
+        } finally {
+             // Restore default error handler at the very end
+             restore_error_handler();
         }
     }
-
-    // Removed getPreferredFormat() - Logic moved to Response/Content Negotiation if needed
-    // Removed outputResponse() - Logic moved to Response::send()
 }

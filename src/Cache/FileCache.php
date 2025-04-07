@@ -252,6 +252,78 @@ class FileCache implements CacheInterface
         return array_key_exists($key, $this->cache) && !$this->isExpired($key);
     }
 
+
+    // Non-PSR-16 addition (common extension)
+
+    public function increment(string $key, int $step = 1): int|false
+    {
+        $this->validateKey($key);
+        $fp = @fopen($this->cacheFile, 'c+'); // Open for read/write, create if not exist
+        if (!$fp) {
+            error_log("Cache error in increment(): Could not open file '{$this->cacheFile}'");
+            return false;
+        }
+
+        try {
+            if (!@flock($fp, LOCK_EX)) {
+                error_log("Cache error in increment(): Could not acquire lock for file '{$this->cacheFile}'");
+                return false;
+            }
+
+            // Reload cache data inside the lock
+            $this->loaded = false; // Force reload within lock
+            $this->loadCacheIfNeeded();
+
+            $item = $this->cache[$key] ?? null;
+            $currentValue = 0;
+
+            if ($item !== null && !$this->isExpired($key) && isset($item['value']) && is_numeric($item['value'])) {
+                $currentValue = (int)$item['value'];
+            } elseif ($item !== null && !$this->isExpired($key)) {
+                 // Item exists but is not numeric, cannot increment
+                 error_log("Cache error in increment(): Value for key '{$key}' is not numeric.");
+                 flock($fp, LOCK_UN);
+                 return false;
+            }
+            // If item doesn't exist or is expired, start from 0
+
+            $newValue = $currentValue + $step;
+
+            // Save the new value (using set logic without reload)
+            $expirationTimestamp = $item['expiration'] ?? $this->ttlToTimestamp(config('cache.ttl'));
+            $this->cache[$key] = [
+                'value' => $newValue,
+                'expiration' => $expirationTimestamp,
+                'created_at' => $item['created_at'] ?? time()
+            ];
+
+            if (!$this->saveCache()) { // saveCache handles prune and writing
+                 flock($fp, LOCK_UN); // Ensure unlock on save failure
+                 return false;
+            }
+
+            flock($fp, LOCK_UN);
+            return $newValue;
+
+        } catch (\Throwable $e) {
+            error_log("Cache error in increment() for key '{$key}': " . $e->getMessage());
+            if (isset($fp) && is_resource($fp)) {
+                 @flock($fp, LOCK_UN);
+            }
+            return false;
+        } finally {
+             if (isset($fp) && is_resource($fp)) {
+                 @fclose($fp);
+             }
+        }
+    }
+
+    public function decrement(string $key, int $step = 1): int|false
+    {
+        return $this->increment($key, -$step);
+    }
+
+
     // Helper Methods
 
     /** Loads cache from file if not already loaded. */

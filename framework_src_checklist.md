@@ -16,8 +16,8 @@
 [x] src/Auth/AuthenticatableModel.php
 [x] src/Auth/AuthenticatableTrait.php
 [x] src/Cache/CacheManager.php
-[x] src/Cache/FileCache.php
-[x] src/Cache/SqliteCache.php
+[✅] src/Cache/FileCache.php
+[✅] src/Cache/SqliteCache.php
 [x] src/Config/app.php
 [x] src/Config/auth.php
 [x] src/Config/cache.php

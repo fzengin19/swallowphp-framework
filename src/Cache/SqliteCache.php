@@ -306,6 +306,78 @@ class SqliteCache implements CacheInterface
         }
     }
 
+
+    // Non-PSR-16 addition (common extension)
+
+    public function increment(string $key, int $step = 1): int|false
+    {
+        $this->validateKey($key);
+        try {
+            $this->db->beginTransaction();
+
+            // Get current value and expiration
+            $selectStmt = $this->db->prepare("SELECT value, expiration FROM `{$this->tableName}` WHERE key = ?");
+            $selectStmt->execute([$key]);
+            $item = $selectStmt->fetch(PDO::FETCH_ASSOC);
+
+            $currentValue = 0;
+            $expiration = null;
+
+            if ($item !== false && !$this->isRowExpired($item)) {
+                $decodedValue = json_decode($item['value'], true);
+                if (is_numeric($decodedValue)) {
+                    $currentValue = (int)$decodedValue;
+                    $expiration = $item['expiration']; // Keep existing expiration
+                } else {
+                    error_log("SQLite Cache: Cannot increment non-numeric value for key '{$key}'.");
+                    $this->db->rollBack();
+                    return false;
+                }
+            } else {
+                // If expired or not found, start from 0 and use default TTL
+                 $expiration = $this->ttlToTimestamp(config('cache.ttl'));
+                 if ($item !== false) $this->delete($key); // Delete expired before inserting
+            }
+
+            $newValue = $currentValue + $step;
+            $encodedNewValue = json_encode($newValue);
+            if ($encodedNewValue === false) {
+                 error_log("SQLite Cache: Failed to json_encode new incremented value for key '{$key}'.");
+                 $this->db->rollBack();
+                 return false;
+            }
+
+            // Update or Insert
+            $updateStmt = $this->db->prepare("INSERT OR REPLACE INTO `{$this->tableName}` (key, value, expiration) VALUES (?, ?, ?)");
+            if (!$updateStmt->execute([$key, $encodedNewValue, $expiration])) {
+                 $this->db->rollBack();
+                 return false;
+            }
+
+            $this->db->commit();
+            return $newValue;
+
+        } catch (PDOException $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            error_log("SQLite Cache error in increment() for key '{$key}': " . $e->getMessage());
+            return false;
+        } catch (\Throwable $e) { // Catch other potential errors like json_encode failure
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            error_log("General error in increment() for key '{$key}': " . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function decrement(string $key, int $step = 1): int|false
+    {
+        return $this->increment($key, -$step);
+    }
+
+
     // Helper Methods
 
     /**

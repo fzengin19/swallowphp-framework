@@ -11,7 +11,7 @@
 [x] docs/09-cache.md
 [x] docs/10-helpers.md
 [x] docs/11-exceptions.md
-[x] src/Methods.php
+[✅] src/Methods.php
 [x] src/Auth/Auth.php
 [x] src/Auth/AuthenticatableModel.php
 [x] src/Auth/AuthenticatableTrait.php

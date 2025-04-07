@@ -98,17 +98,20 @@ if (!function_exists('mailto')) {
 
         $mail = new PHPMailer(true);
         try {
-            // Configuration should ideally come from a config file (e.g., config/mail.php)
-            $mail->Timeout = 10;
-            $mail->SMTPAutoTLS = env('SMTP_MAIL_AUTO_TLS', false); // Use env() helper
+            // Get configuration from config('mail.mailers.smtp.*') and config('mail.from')
+            $smtpConfig = config('mail.mailers.smtp', []);
+            $fromConfig = config('mail.from', []);
+
+            $mail->Timeout = config('mail.timeout', 10);
+            $mail->SMTPAutoTLS = $smtpConfig['autotls'] ?? false;
             $mail->isSMTP();
-            $mail->Host = env('SMTP_MAIL_HOST');
-            $mail->SMTPAuth = env('SMTP_MAIL_AUTH', true);
-            $mail->Username = env('SMTP_MAIL_USERNAME');
-            $mail->Password = env('SMTP_MAIL_PASSWORD');
-            $mail->SMTPSecure = env('SMTP_MAIL_ENCRYPTION', false); // false, 'tls', 'ssl'
-            $mail->Port = env('SMTP_MAIL_PORT');
-            $mail->setFrom(env('SMTP_MAIL_FROM_ADDRESS'), env('SMTP_MAIL_FROM_NAME'));
+            $mail->Host = $smtpConfig['host'] ?? null;
+            $mail->SMTPAuth = ($smtpConfig['username'] ?? null) !== null; // Enable auth if username is set
+            $mail->Username = $smtpConfig['username'] ?? null;
+            $mail->Password = $smtpConfig['password'] ?? null;
+            $mail->SMTPSecure = $smtpConfig['encryption'] ?? false; // false, 'tls', 'ssl'
+            $mail->Port = $smtpConfig['port'] ?? 587;
+            $mail->setFrom($fromConfig['address'] ?? 'hello@example.com', $fromConfig['name'] ?? 'Example');
             $mail->addAddress($to);
             $mail->isHTML(true);
             $mail->Subject = $subject;
@@ -273,7 +276,8 @@ if (!function_exists('getFile')) {
     function getFile($name): string // Added return type hint
     {
         // This assumes 'files' is directly under the public directory accessible via APP_URL
-        return rtrim(env('APP_URL', 'http://localhost'), '/') . '/files/' . ltrim($name, '/');
+        // Use config('app.url') instead of env() directly
+        return rtrim(config('app.url', 'http://localhost'), '/') . '/files/' . ltrim($name, '/');
     }
 }
 

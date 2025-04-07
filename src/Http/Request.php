@@ -12,6 +12,7 @@ class Request
     public array $headers = [];
     public array $server = []; // Subset of $_SERVER relevant to the request
     public string $rawInput = '';
+    public array $files = []; // Added property for uploaded files ($_FILES)
 
     /**
      * Protected constructor. Use createFromGlobals() to instantiate.
@@ -21,6 +22,7 @@ class Request
         string $method,
         array $query,
         array $request,
+        array $files, // Added files parameter
         array $headers,
         array $server,
         string $rawInput
@@ -29,6 +31,7 @@ class Request
         $this->method = $method;
         $this->query = $this->sanitizeData($query);
         $this->request = $this->sanitizeData($request);
+        $this->files = $files; // Assign files data (no sanitization)
         $this->headers = $headers; // Headers are sanitized during creation
         $this->server = $server;
         $this->rawInput = $rawInput;
@@ -80,9 +83,18 @@ class Request
                 // Removed: error_log("Request creation: Invalid JSON received.");
             }
         }
-        // TODO: Add handling for multipart/form-data ($_FILES and potentially combining with $_POST)
+        // Handle multipart/form-data ($_FILES)
+        // Note: PHP might place POST fields in $_POST even for multipart
+        if ($method === 'POST' && str_contains($contentType, 'multipart/form-data')) {
+             if (!empty($_POST)) {
+                  // Merge $_POST data into requestData if not already handled by urlencoded check
+                  // This might overwrite fields if name conflicts exist, consider strategy
+                  $requestData = array_merge($requestData, $_POST);
+             }
+        }
+        $files = $_FILES ?? []; // Get uploaded file data
 
-        return new static($uri, $method, $query, $requestData, $headers, $server, $rawInput);
+        return new static($uri, $method, $query, $requestData, $files, $headers, $server, $rawInput);
     }
 
     /**
@@ -123,7 +135,7 @@ class Request
 
         // Sanitize header values (consider if this is always desired)
         $sanitizedHeaders = [];
-        $tempInstance = new static('/', 'GET', [], [], [], [], '');
+        $tempInstance = new static('/', 'GET', [], [], [], [], [], ''); // Added empty array for files arg
         foreach ($headers as $key => $value) {
              $sanitizedHeaders[$key] = $tempInstance->sanitizeData($value);
         }
@@ -153,6 +165,13 @@ class Request
     {
         return array_merge($this->query, $this->request);
     }
+
+     /** Get uploaded file data. */
+     public function files(): array
+     {
+         return $this->files;
+     }
+
 
     /** Get query parameters. */
     public function query(): array

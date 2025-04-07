@@ -288,15 +288,20 @@ if (!function_exists('sendJson')) {
 if (!function_exists('cache')) {
     /**
      * Get the available cache instance.
-     * @param string|null $driver Specify a driver or use default.
+     * If $driver is null, the default driver will be returned.
+     *
+     * @param string|null $driver Specify a driver name (e.g., 'file', 'sqlite').
      * @return CacheInterface
+     * @throws \RuntimeException If the specified driver cannot be resolved.
      */
     function cache(?string $driver = null): CacheInterface
     {
-        if ($driver) {
-             throw new \LogicException("Getting specific cache drivers via helper not implemented yet.");
+        // Use CacheManager to resolve the specific or default driver
+        // Need to ensure CacheManager class exists
+        if (!class_exists(\SwallowPHP\Framework\Cache\CacheManager::class)) {
+             throw new \RuntimeException('CacheManager class not found.');
         }
-        return App::container()->get(CacheInterface::class);
+        return \SwallowPHP\Framework\Cache\CacheManager::driver($driver);
     }
 }
 

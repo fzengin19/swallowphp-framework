@@ -3,20 +3,11 @@
     "version": "0.0.2",
     "description": "Swallow PHP framework",
     "type": "library",
-    "keywords": ["SwallowPHP" ,"framework","SwallowPHP"],
+    "keywords": ["SwallowPHP", "framework"],
     "license": "MIT",
     "autoload": {
         "psr-4": {
-            "SwallowPHP\\Framework\\": "src/",
-            "SwallowPHP\\Framework\\Auth\\": "src/Auth/",
-            "SwallowPHP\\Framework\\Cache\\": "src/Cache/",
-            "SwallowPHP\\Framework\\Config\\": "src/Config/",
-            "SwallowPHP\\Framework\\Contracts\\": "src/Contracts/",
-            "SwallowPHP\\Framework\\Database\\": "src/Database/",
-            "SwallowPHP\\Framework\\Exceptions\\": "src/Exceptions/",
-            "SwallowPHP\\Framework\\Foundation\\": "src/Foundation/",
-            "SwallowPHP\\Framework\\Http\\": "src/Http/",
-            "SwallowPHP\\Framework\\Routing\\": "src/Routing/"
+            "SwallowPHP\\Framework\\": "src/"
         },
         "files": ["src/Methods.php"]
     },

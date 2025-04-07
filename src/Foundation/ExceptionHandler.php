@@ -192,7 +192,8 @@ class ExceptionHandler
             return 429;
         }
         if ($exception instanceof AuthorizationException) {
-            return 403;
+             // Return the code set in the exception itself (defaults to 401, can be 403)
+             return $exception->getCode() ?: 403; // Fallback to 403 if code is 0 for some reason
         }
         if ($exception instanceof CsrfTokenMismatchException) {
             return 419;

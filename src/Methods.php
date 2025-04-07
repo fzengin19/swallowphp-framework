@@ -354,7 +354,7 @@ if (!function_exists('view')) {
     function view(string $view, array $data = [], ?string $layout = null): \SwallowPHP\Framework\Http\Response
     {
         $appViewPath = config('app.view_path', null);
-        $frameworkViewPath = dirname(__DIR__) . '/resources/views'; // Framework's default view path
+        $frameworkViewPath = __DIR__ . '/../resources/views'; // Corrected: Path relative to this file within src
 
         // Function to find the view file in given paths
         $findViewFile = function(string $viewName, ?string $primaryPath, string $fallbackPath): ?string {

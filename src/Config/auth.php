@@ -14,9 +14,9 @@ return [
     |
     */
 
-// Framework default - This should ideally be null or a very basic placeholder.
-// The actual model MUST be defined in the application's config/auth.php or .env file.
-'model' => null, // Do NOT call env() here during framework's internal config load.    
+    // Framework default - This should ideally be null or a very basic placeholder.
+    // The actual model MUST be defined in the application's config/auth.php or .env file.
+    'model' => null, // Do NOT call env() here during framework's internal config load.    
 
     /*
     |--------------------------------------------------------------------------
@@ -24,6 +24,6 @@ return [
     |--------------------------------------------------------------------------
     */
     'max_attempts' => 5, // Default value
-'lockout_time' => 900, // Default value
+    'lockout_time' => 900, // Default value
 
 ];

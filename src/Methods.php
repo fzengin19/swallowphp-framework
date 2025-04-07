@@ -135,20 +135,6 @@ if (!function_exists('mailto')) {
     }
 }
 
-if (!function_exists('printVariable')) {
-    function printVariable(string $variableName)
-    {
-        // This function is potentially unsafe and generally not recommended.
-        // It relies on variable variables and global scope.
-        // Consider passing data explicitly instead.
-        // if (isset(${$variableName})) {
-        //     echo ${$variableName};
-        // }
-        // For safety, let's disable or modify it.
-        // echo "<!-- printVariable disabled for security -->";
-    }
-}
-
 if (!function_exists('removeDuplicates')) {
     function removeDuplicates($array, $excludeValues)
     {

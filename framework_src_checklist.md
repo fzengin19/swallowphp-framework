@@ -38,7 +38,7 @@
 [x] src/Exceptions/RouteNotFoundException.php
 [x] src/Exceptions/ViewNotFoundException.php
 [x] src/Foundation/App.php
-[x] src/Foundation/Config.php
+[✅] src/Foundation/Config.php
 [x] src/Foundation/Env.php
 [x] src/Foundation/ExceptionHandler.php
 [x] src/Http/Cookie.php

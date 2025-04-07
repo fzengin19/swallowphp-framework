@@ -53,9 +53,14 @@ class Config
         // Check if directory exists and is readable, return empty if not.
         // Logging this early might be problematic due to dependency issues.
         // Failure here will likely cause errors later when config values are accessed.
-        if (!is_dir($configPath) || !is_readable($configPath)) {
-            // Removed: error_log("Configuration directory not found or not readable: {$configPath}");
+        if (!is_dir($configPath)) {
+            // Log if directory doesn't exist (might be optional like app config path)
+            // error_log("Configuration directory not found: {$configPath}");
             return [];
+        }
+        if (!is_readable($configPath)) {
+             error_log("Configuration directory not readable: {$configPath}");
+             return []; // Cannot proceed if not readable
         }
 
         foreach (glob($configPath . '/*.php') as $file) {
@@ -67,13 +72,12 @@ class Config
                 if ($configData !== false && is_array($configData)) {
                     $items[$key] = $configData;
                 } else {
-                    // Log this potential issue? Maybe later via a dedicated health check?
-                    // Removed: error_log("Config file did not return an array or failed to include: {$file}");
+                    // Log files that don't return arrays or fail include (but don't stop loading)
+                    error_log("Config file did not return an array or failed to include (returned: " . gettype($configData) . "): {$file}");
                 }
             } catch (\Throwable $e) {
-                 // Log this potential issue? Maybe later.
-                 // Removed: error_log("Error loading config file {$file}: " . $e->getMessage());
-                 // Continue loading other files even if one fails? Yes.
+                 // Log exceptions during include (but don't stop loading)
+                 error_log("Error loading config file {$file}: " . $e->getMessage());
             }
         }
         return $items;

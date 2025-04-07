@@ -353,28 +353,57 @@ if (!function_exists('view')) {
      */
     function view(string $view, array $data = [], ?string $layout = null): \SwallowPHP\Framework\Http\Response
     {
-        $viewPath = config('app.view_path', '');
-        if (empty($viewPath) || !is_dir($viewPath)) {
-            throw new \RuntimeException("View path is not configured or invalid in config/app.php (app.view_path). Path: " . ($viewPath ?: 'Not Set'));
+        $appViewPath = config('app.view_path', null);
+        $frameworkViewPath = dirname(__DIR__) . '/resources/views'; // Framework's default view path
+
+        // Function to find the view file in given paths
+        $findViewFile = function(string $viewName, ?string $primaryPath, string $fallbackPath): ?string {
+            $viewFilePath = str_replace('.', '/', $viewName) . '.php';
+
+            // Check primary (app) path first
+            if ($primaryPath && is_dir($primaryPath)) {
+                 $fullPath = rtrim($primaryPath, '/\\') . '/' . $viewFilePath;
+                 if (file_exists($fullPath)) {
+                     return $fullPath;
+                 }
+            }
+            // Check fallback (framework) path
+            if (is_dir($fallbackPath)) {
+                 $fullPath = rtrim($fallbackPath, '/\\') . '/' . $viewFilePath;
+                 if (file_exists($fullPath)) {
+                     return $fullPath;
+                 }
+            }
+            return null;
+        };
+
+        // Find the main view file
+        $viewFile = $findViewFile($view, $appViewPath, $frameworkViewPath);
+        if ($viewFile === null) {
+            throw new ViewNotFoundException("View [{$view}] not found in configured paths.");
         }
-        $viewFile = $viewPath . '/' . str_replace('.', '/', $view) . '.php';
-        if (!file_exists($viewFile)) {
-            throw new ViewNotFoundException("View file not found: {$viewFile}");
-        }
+
+        // Render the main view content
         extract($data);
         ob_start();
         try { include $viewFile; } catch (\Throwable $e) { ob_end_clean(); throw $e; }
         $content = ob_get_clean();
+
+        // Handle layout if specified
         if ($layout !== null) {
-            $layoutFile = $viewPath . '/' . str_replace('.', '/', $layout) . '.php';
-            if (!file_exists($layoutFile)) { throw new ViewNotFoundException("Layout file not found: {$layoutFile}"); }
-            $slot = $content;
+            $layoutFile = $findViewFile($layout, $appViewPath, $frameworkViewPath);
+            if ($layoutFile === null) {
+                throw new ViewNotFoundException("Layout [{$layout}] not found in configured paths.");
+            }
+            $slot = $content; // Make view content available as $slot in layout
             ob_start();
+            // Extract data again for layout scope
             try { extract($data); include $layoutFile; } catch (\Throwable $e) { ob_end_clean(); throw $e; }
             $finalContent = ob_get_clean();
         } else {
             $finalContent = $content;
         }
+
         return \SwallowPHP\Framework\Http\Response::html($finalContent);
     }
 }

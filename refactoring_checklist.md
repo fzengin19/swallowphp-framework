@@ -9,4 +9,4 @@ Bu liste, `result.md` analiz raporunda belirtilen ve kod değişikliği gerektir
 - [✅] **src/Database/Model.php:** Eksik statik `find($id)` metodunu implemente et.
 - [✅] **src/Http/Request.php:** `createFromGlobals` metoduna temel `$_FILES` yönetimi ekle.
 - [✅] **src/Http/Request.php:** `parseHeadersFromServer` metoduna Bearer token ayrıştırması ekle.
-- [✅] **src/Foundation/ExceptionHandler.php:** `getStatusCode` metodunda `AuthorizationException` için durum kodunu exception'dan al.
+- [✅] **src/Foundation/ExceptionHandler.php:** Hata yönetimi iyileştirildi (view kullanımı, Response döndürme).

@@ -20,9 +20,9 @@ class ExceptionHandler
      * Handle exceptions, log them, and generate an appropriate response.
      *
      * @param Throwable $exception The exception to handle.
-     * @return void Outputs the response directly.
+     * @return \SwallowPHP\Framework\Http\Response The response object to be sent.
      */
-    public static function handle(Throwable $exception): void
+    public static function handle(Throwable $exception): \SwallowPHP\Framework\Http\Response
     {
         // Get Logger instance from container
         $logger = null;
@@ -100,55 +100,95 @@ class ExceptionHandler
               else @error_log("Error accessing request() helper in ExceptionHandler: " . $requestError->getMessage());
          }
 
-        // Ensure output buffer is clean
-        while (ob_get_level() > 0) {
-            @ob_end_clean();
+        // Prepare data for view or JSON response
+        $data = [
+            'exception' => $exception,
+            'statusCode' => $statusCode,
+            'statusText' => self::STATUS_TEXTS[$statusCode] ?? 'Error',
+            'message' => $responseBody['message'] ?? 'An unexpected error occurred.',
+            'debug' => $debug,
+        ];
+        if ($debug) {
+             $data['exceptionClass'] = $responseBody['exception'] ?? null;
+             $data['file'] = $responseBody['file'] ?? null;
+             $data['line'] = $responseBody['line'] ?? null;
+             $data['trace'] = $responseBody['trace'] ?? [];
         }
 
-        // Send Response
-        if (!headers_sent()) {
-             http_response_code($statusCode);
-        }
 
-        if ($wantsJson) {
-             if (!headers_sent()) header('Content-Type: application/json');
-             try {
-                  echo json_encode($responseBody, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
-             } catch (\JsonException $jsonError) {
-                  if ($logger) $logger->critical("JSON encoding failed in ExceptionHandler", ['error' => $jsonError]);
-                  else @error_log("JSON encoding failed in ExceptionHandler: " . $jsonError->getMessage());
-                  if (!headers_sent()) http_response_code(500);
-                  echo '{"error": "Internal server error during error reporting."}';
-             }
-        } else { // HTML Response
-             if (!headers_sent()) header('Content-Type: text/html; charset=UTF-8');
-            $statusText = htmlspecialchars(self::STATUS_TEXTS[$statusCode] ?? 'Error', ENT_QUOTES, 'UTF-8');
-            echo "<!DOCTYPE html><html><head><title>Error {$statusCode} - {$statusText}</title>";
-            echo "<style>body{font-family:sans-serif;padding:20px;background-color:#f8f8f8;color:#333}h1{color:#d9534f;border-bottom:1px solid #eee;padding-bottom:10px}p{font-size:1.1em}pre{background-color:#eee;border:1px solid #ccc;padding:10px;overflow-x:auto;font-size:0.9em;line-height:1.4em;white-space:pre-wrap;word-wrap:break-word}</style>";
-            echo "</head><body>";
-            echo "<h1>Error {$statusCode} - {$statusText}</h1>";
-            echo "<p>" . htmlspecialchars($responseBody['message'] ?? 'An unexpected error occurred.', ENT_QUOTES, 'UTF-8') . "</p>";
-
-            if ($debug) {
-                echo "<hr><h2>Details</h2>";
-                echo "<p><strong>Exception:</strong> " . htmlspecialchars($responseBody['exception'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
-                echo "<p><strong>File:</strong> " . htmlspecialchars($responseBody['file'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
-                echo "<p><strong>Line:</strong> " . htmlspecialchars($responseBody['line'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
-                $traceOutput = 'No trace available.';
-                if (isset($responseBody['trace']) && is_array($responseBody['trace'])) {
-                    try {
-                        $traceString = implode("\n", $responseBody['trace']);
-                        $traceOutput = htmlspecialchars($traceString, ENT_QUOTES, 'UTF-8');
-                    } catch (\Throwable $e) {
-                        if ($logger) $logger->warning("Error processing trace for HTML output", ['error' => $e]);
-                        $traceOutput = 'Error displaying trace.';
-                    }
+        // Return Response object
+        try {
+            if ($wantsJson) {
+                $responseData = ['message' => $data['message']];
+                if ($debug) {
+                    $responseData['exception'] = $data['exceptionClass'];
+                    $responseData['file'] = $data['file'];
+                    $responseData['line'] = $data['line'];
+                    $responseData['trace'] = $data['trace'];
                 }
-                echo "<h3>Trace:</h3><pre>" . $traceOutput . "</pre>";
+                return \SwallowPHP\Framework\Http\Response::json($responseData, $statusCode);
+            } else {
+                // Attempt to render view
+                try {
+                    // Check if view() helper exists before calling
+                    if (function_exists('view')) {
+                         // Try specific status code view first
+                         try {
+                              return view("errors.{$statusCode}", $data);
+                         } catch (ViewNotFoundException $e) {
+                              // Fallback to default error view
+                              return view("errors.default", $data);
+                         }
+                    } else {
+                         throw new \RuntimeException('view() helper function not available.');
+                    }
+                } catch (ViewNotFoundException $e) {
+                     if ($logger) $logger->warning("Error views not found (errors.{$statusCode} or errors.default). Falling back to basic HTML.", ['exception' => $e]);
+                     // Fallback to basic HTML if no views found
+                     return self::renderFallbackHtml($statusCode, $data['statusText'], $data['message'], $debug, $data);
+                } catch (\Throwable $viewError) {
+                     if ($logger) $logger->critical("Error rendering error view.", ['exception' => $viewError]);
+                     // Fallback to basic HTML if view rendering fails
+                     return self::renderFallbackHtml($statusCode, $data['statusText'], 'An error occurred while rendering the error page.', $debug, $data);
+                }
             }
-            echo "</body></html>";
+        } catch (\Throwable $responseError) {
+             // Catch potential errors during Response creation itself (e.g., JSON encoding)
+             if ($logger) $logger->critical("Critical error creating response in ExceptionHandler.", ['exception' => $responseError]);
+             // Last resort: plain text error
+             http_response_code(500);
+             header('Content-Type: text/plain');
+             echo "Internal Server Error. Could not generate error response.";
+             exit; // Exit here as we can't even create a response object
         }
-        exit;
+    }
+
+    /** Renders a basic HTML fallback error page */
+    private static function renderFallbackHtml(int $statusCode, string $statusText, string $message, bool $debug, array $debugData = []): \SwallowPHP\Framework\Http\Response
+    {
+        $content = "<!DOCTYPE html><html><head><title>Error {$statusCode} - {$statusText}</title>";
+        $content .= "<style>body{font-family:sans-serif;padding:20px;background-color:#f8f8f8;color:#333}h1{color:#d9534f;border-bottom:1px solid #eee;padding-bottom:10px}p{font-size:1.1em}pre{background-color:#eee;border:1px solid #ccc;padding:10px;overflow-x:auto;font-size:0.9em;line-height:1.4em;white-space:pre-wrap;word-wrap:break-word}</style>";
+        $content .= "</head><body>";
+        $content .= "<h1>Error {$statusCode} - {$statusText}</h1>";
+        $content .= "<p>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</p>";
+
+        if ($debug) {
+            $content .= "<hr><h2>Details</h2>";
+            $content .= "<p><strong>Exception:</strong> " . htmlspecialchars($debugData['exceptionClass'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
+            $content .= "<p><strong>File:</strong> " . htmlspecialchars($debugData['file'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
+            $content .= "<p><strong>Line:</strong> " . htmlspecialchars($debugData['line'] ?? 'N/A', ENT_QUOTES, 'UTF-8') . "</p>";
+            $traceOutput = 'No trace available.';
+            if (isset($debugData['trace']) && is_array($debugData['trace'])) {
+                try {
+                    $traceString = implode("\n", $debugData['trace']);
+                    $traceOutput = htmlspecialchars($traceString, ENT_QUOTES, 'UTF-8');
+                } catch (\Throwable $e) { $traceOutput = 'Error displaying trace.'; }
+            }
+            $content .= "<h3>Trace:</h3><pre>" . $traceOutput . "</pre>";
+        }
+        $content .= "</body></html>";
+
+        return \SwallowPHP\Framework\Http\Response::html($content, $statusCode);
     }
 
     /**

@@ -128,9 +128,12 @@ class Request
                        $headers['php-auth-user'] = $user;
                        $headers['php-auth-pw'] = $pw;
                   }
-             }
-             // Add handling for other Authorization types like Bearer if needed
-             // elseif (str_starts_with(strtolower($server['HTTP_AUTHORIZATION']),'bearer ')) { ... }
+               } elseif (str_starts_with(strtolower($server['HTTP_AUTHORIZATION']), 'bearer ')) {
+                    $token = trim(substr($server['HTTP_AUTHORIZATION'], 7)); // Get token after 'bearer '
+                    if (!empty($token)) {
+                         $headers['bearer-token'] = $token;
+                    }
+               }
         }
 
         // Sanitize header values (consider if this is always desired)
@@ -275,9 +278,16 @@ class Request
 
      /** Get all headers. */
      public function headers(): array
-     {
-         return $this->headers;
-     }
+ {
+     return $this->headers;
+ }
+
+    /** Get the bearer token from the Authorization header. */
+    public function bearerToken(): ?string
+    {
+        return $this->headers['bearer-token'] ?? null;
+    }
+
 
     /** Get the raw request body content. */
     public function rawInput(): string

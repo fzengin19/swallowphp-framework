@@ -31,7 +31,7 @@
 [x] src/Exceptions/AuthenticationLockoutException.php
 [x] src/Exceptions/AuthorizationException.php
 [x] src/Exceptions/CsrfTokenMismatchException.php
-[x] src/Exceptions/EnvPropertyValueException.php
+[✅] src/Exceptions/EnvPropertyValueException.php
 [x] src/Exceptions/MethodNotAllowedException.php
 [x] src/Exceptions/MethodNotFoundException.php
 [x] src/Exceptions/RateLimitExceededException.php

@@ -135,24 +135,6 @@ if (!function_exists('mailto')) {
     }
 }
 
-if (!function_exists('removeDuplicates')) {
-    function removeDuplicates($array, $excludeValues)
-    {
-        $result = [];
-        $uniqueValues = [];
-        foreach ($array as $value) {
-            // Corrected logic: Add if not seen before OR if it's in the exclude list
-            if (!in_array($value, $uniqueValues) || in_array($value, $excludeValues)) {
-                $result[] = $value;
-                if (!in_array($value, $excludeValues)) { // Only mark as unique if not excluded
-                     $uniqueValues[] = $value;
-                }
-            }
-        }
-        return $result;
-    }
-}
-
 if (!function_exists('request')) {
     function request(): Request // Add return type hint
     {

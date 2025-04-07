@@ -3,7 +3,7 @@
 Bu liste, `result.md` analiz raporunda belirtilen ve kod değişikliği gerektiren iyileştirmeleri içerir.
 
 - [✅] **src/Methods.php:** `printVariable` fonksiyonunu kaldır.
-- [ ] **src/Methods.php:** `removeDuplicates` fonksiyonunu gözden geçir/kaldır (şimdilik kaldıralım).
+- [✅] **src/Methods.php:** `removeDuplicates` fonksiyonunu gözden geçir/kaldır (şimdilik kaldıralım).
 - [ ] **src/Methods.php:** `webpImage` fonksiyonundaki `@` hata bastırmalarını kaldırıp loglama ekle.
 - [ ] **src/Methods.php:** `cache()` helper'ına belirli sürücüleri getirme yeteneği ekle.
 - [ ] **src/Database/Model.php:** Eksik statik `find($id)` metodunu implemente et.

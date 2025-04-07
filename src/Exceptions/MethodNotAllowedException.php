@@ -11,8 +11,8 @@ class MethodNotAllowedException extends Exception
     /**
      * Constructor for the class.
      *
-     * @param string $message The error message. Default is 'Env Property Is Not Allowed'.
-     * @param int $code The error code. Default is 519.
+     * @param string $message The error message. Default is 'Method Not Allowed'.
+     * @param int $code The error code. Default is 405.
      * @param Exception $previous The previous exception. Default is null.
      * @throws Exception When an error occurs.
      * @return void

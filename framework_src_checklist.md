@@ -32,8 +32,8 @@
 [x] src/Exceptions/AuthorizationException.php
 [x] src/Exceptions/CsrfTokenMismatchException.php
 [✅] src/Exceptions/EnvPropertyValueException.php
-[x] src/Exceptions/MethodNotAllowedException.php
-[x] src/Exceptions/MethodNotFoundException.php
+[✅] src/Exceptions/MethodNotAllowedException.php
+[✅] src/Exceptions/MethodNotFoundException.php
 [x] src/Exceptions/RateLimitExceededException.php
 [x] src/Exceptions/RouteNotFoundException.php
 [x] src/Exceptions/ViewNotFoundException.php

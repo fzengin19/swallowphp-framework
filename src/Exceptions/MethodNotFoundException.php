@@ -8,7 +8,7 @@ class MethodNotFoundException extends Exception
 {
 
     /**
-     * Constructs a new instance of the EnvPropertyNotAllowedException
+     * Constructs a new instance of the MethodNotFoundException
      *
      * @param string $message the exception message
      * @param int $code the exception code

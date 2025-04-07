@@ -326,11 +326,35 @@ class Model
         return $this;
     }
 
-    /** Static delete is disallowed. */
-    public static function delete(): int
+    /**
+     * Delete the model from the database.
+     *
+     * @return int|false Number of affected rows or false on failure.
+     * @throws \InvalidArgumentException If model does not have an ID.
+     */
+    public function delete(): int|false
     {
-        throw new \LogicException("Static delete without conditions is not supported. Use query()->where(...)->delete() instead.");
+        if (empty($this->attributes['id'])) {
+            throw new InvalidArgumentException('Model must have an ID to be deleted.');
+        }
+
+        static::fireEvent('deleting', $this);
+
+        $result = static::query()
+                        ->where('id', '=', $this->attributes['id'])
+                        ->delete();
+
+        if ($result !== false && $result > 0) { // Check if delete was successful
+            static::fireEvent('deleted', $this);
+            // Optionally clear attributes or mark as deleted?
+            // $this->attributes = []; // Or add a $deleted property
+            return $result;
+        }
+
+        return false;
     }
+
+
 
     /** Paginate results. Returns hydrated models. */
     public static function paginate(int $perPage, int $page = 1): array

@@ -27,7 +27,7 @@
 [x] src/Contracts/CacheInterface.php
 [x] src/Contracts/Auth/AuthenticatableInterface.php
 [x] src/Database/Database.php
-[x] src/Database/Model.php
+[✅] src/Database/Model.php
 [x] src/Exceptions/AuthenticationLockoutException.php
 [x] src/Exceptions/AuthorizationException.php
 [x] src/Exceptions/CsrfTokenMismatchException.php

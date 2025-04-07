@@ -1,6 +1,6 @@
 [x] .gitignore
 [✅] composer.json
-[x] composer.lock
+[✅] composer.lock
 [x] docs/01-application-lifecycle.md
 [x] docs/02-configuration.md
 [x] docs/03-routing.md

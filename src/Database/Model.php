@@ -198,6 +198,20 @@ class Model
          return static::query()->first();
     }
 
+    /**
+     * Find a model by its primary key.
+     *
+     * @param  mixed  $id
+     * @return static|null
+     */
+    public static function find(mixed $id): ?self
+    {
+        // Assuming primary key is 'id'. If AuthenticatableModel trait is used,
+        // it could potentially use getAuthIdentifierName(), but keeping it simple here.
+        return static::query()->where('id', '=', $id)->first();
+    }
+
+
     // addCreatedAt is now handled within save() logic for inserts
     // public function addCreatedAt(): void { ... }
 

@@ -200,21 +200,33 @@ if (!function_exists('webpImage')) {
         if (!file_exists($source) || !is_readable($source)) { error_log("Source file not found or not readable: {$source}"); return $source; }
 
         $destinationDir = defined('BASE_PATH') ? constant('BASE_PATH') . '/public/files' : 'files';
-        if (!is_dir($destinationDir)) @mkdir($destinationDir, 0755, true);
-        if (!is_writable($destinationDir)) { error_log("Destination directory not writable: {$destinationDir}"); return $source; }
+        // Attempt to create directory if it doesn't exist
+        if (!is_dir($destinationDir)) {
+            // Check mkdir result and existence after attempt
+            if (!mkdir($destinationDir, 0755, true) && !is_dir($destinationDir)) {
+                error_log("Failed to create destination directory: {$destinationDir}");
+                return $source; // Return original source on directory creation failure
+            }
+        }
+        // Check writability after ensuring directory exists
+        if (!is_writable($destinationDir)) {
+             error_log("Destination directory not writable: {$destinationDir}");
+             return $source;
+        }
 
         $name = $fileName ?? pathinfo($source, PATHINFO_FILENAME) . '_' . uniqid() . '.webp'; // Use original filename base
         $destination = $destinationDir . '/' . $name;
 
-        $info = @getimagesize($source);
+        $info = getimagesize($source); // Remove error suppression
         if (!$info) { error_log("Could not get image size: {$source}"); return $source; }
 
         $image = null;
         switch ($info['mime']) {
-            case 'image/jpeg': $image = @imagecreatefromjpeg($source); break;
-            case 'image/gif': $image = @imagecreatefromgif($source); break;
-            case 'image/png': $image = @imagecreatefrompng($source); break;
-            case 'image/webp': $image = @imagecreatefromwebp($source); break; // Already webp? Maybe just return?
+            // Remove error suppression, check return values
+            case 'image/jpeg': $image = imagecreatefromjpeg($source); break;
+            case 'image/gif': $image = imagecreatefromgif($source); break;
+            case 'image/png': $image = imagecreatefrompng($source); break;
+            case 'image/webp': $image = imagecreatefromwebp($source); break; // Already webp? Maybe just return?
             default: error_log("Unsupported image type: {$info['mime']}"); return $source;
         }
         if (!$image) { error_log("Could not create image resource from: {$source}"); return $source; }
@@ -226,7 +238,7 @@ if (!function_exists('webpImage')) {
             imagesavealpha($image, true); // Important: save alpha channel
         }
 
-        $success = @imagewebp($image, $destination, $quality);
+        $success = imagewebp($image, $destination, $quality); // Remove error suppression
         imagedestroy($image);
 
         if (!$success) {
@@ -234,7 +246,11 @@ if (!function_exists('webpImage')) {
             return $source;
         }
 
-        if ($removeOld) { @unlink($source); }
+        if ($removeOld) {
+            if (!unlink($source)) { // Check unlink result
+                error_log("Failed to remove original image: {$source}");
+            }
+        }
         // Return the relative path or just the filename? Returning filename for now.
         return $name;
     }

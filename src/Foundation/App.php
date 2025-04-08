@@ -266,9 +266,10 @@ class App
             }
 
             // Output buffering and Gzip
+            // Enable Gzip compression via PHP setting if configured and supported
             if ($config->get('app.gzip_compression', true) === true && isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== false) {
                 ini_set('zlib.output_compression', '1');
-                 if (!headers_sent()) header('Content-Encoding: gzip');
+                // Do NOT manually send Content-Encoding header here, zlib handles it.
             } else {
                 ini_set('zlib.output_compression', '0');
             }

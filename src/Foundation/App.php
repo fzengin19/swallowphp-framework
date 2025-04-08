@@ -243,7 +243,8 @@ class App
                 ini_set('display_errors', 0);
             } else {
                  error_reporting(E_ALL);
-                 ini_set('display_errors', 1);
+                 // display_errors should always be 0 to let the error handler work
+                 ini_set('display_errors', 0);
             }
 
             // SSL Redirect

@@ -355,6 +355,7 @@ if (!function_exists('view')) {
     {
         $appViewPath = config('app.view_path', null);
         $frameworkViewPath = __DIR__ . '/../resources/views'; // Corrected: Path relative to this file within src
+        error_log('Framework View Path: ' . $frameworkViewPath); // DEBUGGING
 
         // Function to find the view file in given paths
         $findViewFile = function(string $viewName, ?string $primaryPath, string $fallbackPath): ?string {

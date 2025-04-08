@@ -347,11 +347,12 @@ if (!function_exists('view')) {
      * @param string $view The name of the view file (e.g., 'users.index').
      * @param array $data Data to pass to the view and layout.
      * @param string|null $layout The name of the layout file (optional).
+     * @param int $status The HTTP status code.
      * @return \SwallowPHP\Framework\Http\Response
      * @throws \SwallowPHP\Framework\Exceptions\ViewNotFoundException
      * @throws \RuntimeException
      */
-    function view(string $view, array $data = [], ?string $layout = null): \SwallowPHP\Framework\Http\Response
+    function view(string $view, array $data = [], ?string $layout = null, int $status = 200): \SwallowPHP\Framework\Http\Response
     {
         $appViewPath = config('app.view_path', null);
         // Framework's default view path (assuming framework is in vendor)
@@ -406,7 +407,7 @@ if (!function_exists('view')) {
             $finalContent = $content;
         }
 
-        return \SwallowPHP\Framework\Http\Response::html($finalContent);
+        return \SwallowPHP\Framework\Http\Response::html($finalContent, $status);
     }
 }
 

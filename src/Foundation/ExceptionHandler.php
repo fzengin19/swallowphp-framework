@@ -134,10 +134,12 @@ class ExceptionHandler
                     if (function_exists('view')) {
                          // Try specific status code view first
                          try {
-                              return view("errors.{$statusCode}", $data);
+                              // Pass status code to view() helper
+                              return view("errors.{$statusCode}", $data, null, $statusCode);
                          } catch (ViewNotFoundException $e) {
                               // Fallback to default error view
-                              return view("errors.default", $data);
+                              // Pass status code to view() helper
+                              return view("errors.default", $data, null, $statusCode);
                          }
                     } else {
                          throw new \RuntimeException('view() helper function not available.');

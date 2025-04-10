@@ -11,6 +11,7 @@ use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Foundation\App; // For logger access
 use Psr\Log\LoggerInterface; // For logger type hint
 use SwallowPHP\Framework\Database\Paginator; // Import the Paginator class
+use Closure; // Import Closure for type hinting
 
 /**
  * Database class for handling database operations using PDO.
@@ -180,28 +181,91 @@ class Database
     public function select(array $columns = ['*']): self { $this->select = implode(', ', $columns); return $this; }
     /**
      * Add a where condition.
-     * Can be called with two arguments (column, value) which defaults operator to '='.
-     * Or with three arguments (column, operator, value).
+     * Can be called with:
+     * - Two arguments: where(string $column, mixed $value) - operator defaults to '='.
+     * - Three arguments: where(string $column, string $operator, mixed $value).
+     * - One argument: where(Closure $callback) - for nested conditions with AND boolean.
+     * - Two arguments: where(Closure $callback, string $boolean = 'AND') - specify boolean.
      */
-    public function where(string $column, $operatorOrValue, $value = null): self
+    public function where($column, $operatorOrValue = null, $value = null, $boolean = 'AND'): self
     {
-        if ($value === null) {
-            // Two arguments provided: where($column, $value)
-            $this->where[] = [$column, '=', $operatorOrValue];
+        // Handle nested where (Closure)
+        if ($column instanceof Closure) {
+            // The second argument might be the boolean ('AND'/'OR') if provided
+            $actualBoolean = ($operatorOrValue === 'OR' || $operatorOrValue === 'or') ? 'OR' : 'AND';
+            $this->where[] = ['type' => 'Nested', 'query' => $column, 'boolean' => $actualBoolean];
+            return $this;
+        }
+
+        // Handle standard where (column, operator, value) or (column, value)
+        // Adjust logic slightly to handle the optional $boolean argument potentially being passed
+        // when only two args (column, value) are intended.
+        if (func_num_args() === 2 || $value === null && $operatorOrValue !== null && !($operatorOrValue instanceof Closure)) {
+             // where($column, $value) case
+             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
+        } elseif ($value !== null) {
+             // where($column, $operator, $value) case
+             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $operatorOrValue, 'value' => $value, 'boolean' => $boolean];
         } else {
-            // Three arguments provided: where($column, $operator, $value)
-            $this->where[] = [$column, $operatorOrValue, $value];
+             // Fallback or error? Could indicate invalid usage.
+             // For now, let's assume it might be a where($column) scenario which isn't standard.
+             // Or perhaps where($column, null) which should likely be whereNull($column).
+             // Let's treat where($column, null) as where($column, '=', null) for now.
+             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
+        }
+
+        return $this;
+    }
+
+    /**
+     * Add an or where condition.
+     * Can be called with:
+     * - Three arguments: orWhere(string $column, string $operator, mixed $value).
+     * - One argument: orWhere(Closure $callback) - for nested conditions with OR boolean.
+     */
+    public function orWhere($column, $operator = null, $value = null): self
+    {
+        if ($column instanceof Closure) {
+            // Nested orWhere
+            $this->where[] = ['type' => 'Nested', 'query' => $column, 'boolean' => 'OR'];
+            return $this;
+        }
+
+        // Standard orWhere (assuming 3 arguments for simplicity here, matching previous implementation)
+        // We might need to add the 2-argument version (column, value) later if desired.
+        if ($value !== null) {
+             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $operator, 'value' => $value, 'boolean' => 'OR'];
+        } else {
+             // Handle orWhere(column, value)
+             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operator, 'boolean' => 'OR'];
         }
         return $this;
     }
-    /** Add an or where condition. */
-    public function orWhere(string $column, string $operator, $value): self { $this->orWhere[] = [$column, $operator, $value]; return $this; }
+
     /** Add a where in condition. */
-    public function whereIn(string $column, array $values): self { if (empty($values)) { $this->whereRaw("1 = 0"); return $this; } $this->whereIn[] = [$column, $values]; return $this; }
+    public function whereIn(string $column, array $values, string $boolean = 'AND'): self
+    {
+        if (empty($values)) {
+             // Add a condition that's always false
+             return $this->whereRaw("1 = 0", [], $boolean);
+        }
+        $this->where[] = ['type' => 'In', 'column' => $column, 'values' => $values, 'boolean' => $boolean];
+        return $this;
+    }
     /** Add a where between condition. */
-    public function whereBetween(string $column, $start, $end): self { $this->whereBetween[] = [$column, $start, $end]; return $this; }
+    public function whereBetween(string $column, $start, $end, string $boolean = 'AND'): self
+    {
+        $this->where[] = ['type' => 'Between', 'column' => $column, 'values' => [$start, $end], 'boolean' => $boolean];
+        return $this;
+    }
     /** Add a raw where condition. */
-    public function whereRaw(string $rawCondition, array $bindings = []): self { $this->whereRaw[] = $rawCondition; $this->whereRawBindings = array_merge($this->whereRawBindings, $bindings); return $this; }
+    public function whereRaw(string $rawCondition, array $bindings = [], string $boolean = 'AND'): self
+    {
+        $this->where[] = ['type' => 'Raw', 'sql' => $rawCondition, 'bindings' => $bindings, 'boolean' => $boolean];
+        // Keep whereRawBindings for now for compatibility with getBindValuesForWhere, but ideally refactor later
+        $this->whereRawBindings = array_merge($this->whereRawBindings, $bindings);
+        return $this;
+    }
     /** Add an order by clause. */
     public function orderBy(string $column, string $direction = 'ASC'): self { $direction = strtoupper($direction); if (!in_array($direction, ['ASC', 'DESC'])) { $direction = 'ASC'; } $this->orderBy[] = [$column, $direction]; return $this; }
     /** Set the limit. */
@@ -209,16 +273,69 @@ class Database
     /** Set the offset. */
     public function offset(int $offset): self { $this->offset = $offset >= 0 ? $offset : null; return $this; }
 
-    /** Build the where clause. */
+    /** Build the where clause SQL string. */
     protected function buildWhereClause(): string
     {
-        $conditions = []; $firstCondition = true;
-        foreach ($this->where as $condition) { $conjunction = $firstCondition ? 'WHERE' : 'AND'; $conditions[] = "$conjunction `{$condition[0]}` {$condition[1]} ?"; $firstCondition = false; }
-        foreach ($this->orWhere as $condition) { $conjunction = $firstCondition ? 'WHERE' : 'OR'; $conditions[] = "$conjunction `{$condition[0]}` {$condition[1]} ?"; $firstCondition = false; }
-        foreach ($this->whereIn as $condition) { if (empty($condition[1])) continue; $placeholders = implode(', ', array_fill(0, count($condition[1]), '?')); $conjunction = $firstCondition ? 'WHERE' : 'AND'; $conditions[] = "$conjunction `{$condition[0]}` IN ($placeholders)"; $firstCondition = false; }
-        foreach ($this->whereBetween as $condition) { $conjunction = $firstCondition ? 'WHERE' : 'AND'; $conditions[] = "$conjunction `{$condition[0]}` BETWEEN ? AND ?"; $firstCondition = false; }
-        if (!empty($this->whereRaw)) { foreach ($this->whereRaw as $rawCondition) { $conjunction = $firstCondition ? 'WHERE' : 'AND'; $conditions[] = "$conjunction ($rawCondition)"; $firstCondition = false; } }
-        return implode(' ', $conditions);
+        if (empty($this->where)) {
+            return '';
+        }
+
+        $sqlParts = [];
+        $first = true;
+
+        foreach ($this->where as $condition) {
+            $boolean = $first ? 'WHERE' : $condition['boolean']; // Use 'WHERE' for the very first condition
+            $type = $condition['type'] ?? 'Basic'; // Default to Basic if type isn't set
+
+            switch ($type) {
+                case 'Basic':
+                    $sqlParts[] = "{$boolean} `{$condition['column']}` {$condition['operator']} ?";
+                    break;
+                case 'In':
+                    if (!empty($condition['values'])) {
+                        $placeholders = implode(', ', array_fill(0, count($condition['values']), '?'));
+                        $sqlParts[] = "{$boolean} `{$condition['column']}` IN ({$placeholders})";
+                    } else {
+                         // Handle empty IN array - this case is handled in whereIn by adding a raw '1=0'
+                    }
+                    break;
+                case 'Between':
+                    $sqlParts[] = "{$boolean} `{$condition['column']}` BETWEEN ? AND ?";
+                    break;
+                case 'Raw':
+                    $sqlParts[] = "{$boolean} ({$condition['sql']})";
+                    break;
+                case 'Nested':
+                    $nestedQuery = $this->newQuery(); // Create a fresh builder for the closure
+                    $condition['query']($nestedQuery); // Execute the closure
+                    $nestedSql = $nestedQuery->buildWhereClause(); // Build the nested SQL
+
+                    // Remove leading 'WHERE ' from nested SQL if it exists
+                    if (str_starts_with($nestedSql, 'WHERE ')) {
+                        $nestedSql = substr($nestedSql, 6);
+                    }
+
+                    if (!empty($nestedSql)) {
+                        $sqlParts[] = "{$boolean} ({$nestedSql})";
+                    }
+                    break;
+                 // Add cases for whereNull, whereNotNull etc. if implemented later
+            }
+            $first = false; // Only the very first condition gets 'WHERE'
+        }
+
+        return implode(' ', $sqlParts);
+    }
+
+    /** Creates a new instance of the query builder for nesting. */
+    protected function newQuery(): self
+    {
+        // Create a new instance without re-initializing connection etc.
+        // Pass the logger if available.
+        $newInstance = new static($this->config);
+        $newInstance->logger = $this->logger; // Share logger
+        // Important: Do NOT copy table, select, existing wheres etc. It's a fresh sub-query.
+        return $newInstance;
     }
 
     /** Execute the select query and get the results. */
@@ -450,15 +567,44 @@ class Database
     }
 
     /** Get bind values only for the WHERE clause. */
+    /** Get all bind values for the WHERE clause, including nested ones. */
     protected function getBindValuesForWhere(): array
     {
-         $bindValues = [];
-         foreach ($this->where as $condition) $bindValues[] = $condition[2];
-         foreach ($this->orWhere as $condition) $bindValues[] = $condition[2];
-         foreach ($this->whereIn as $condition) { if (!empty($condition[1])) { $bindValues = array_merge($bindValues, $condition[1]); } }
-         foreach ($this->whereBetween as $condition) { $bindValues[] = $condition[1]; $bindValues[] = $condition[2]; }
-         $bindValues = array_merge($bindValues, $this->whereRawBindings);
-         return $bindValues;
+        $bindings = [];
+        foreach ($this->where as $condition) {
+            $type = $condition['type'] ?? 'Basic';
+
+            switch ($type) {
+                case 'Basic':
+                    $bindings[] = $condition['value'];
+                    break;
+                case 'In':
+                    if (!empty($condition['values'])) {
+                        $bindings = array_merge($bindings, $condition['values']);
+                    }
+                    break;
+                case 'Between':
+                    $bindings = array_merge($bindings, $condition['values']); // values is an array [start, end]
+                    break;
+                case 'Raw':
+                    if (!empty($condition['bindings'])) {
+                        $bindings = array_merge($bindings, $condition['bindings']);
+                    }
+                    break;
+                case 'Nested':
+                    // Need to get bindings from the nested query generated within the closure
+                    $nestedQuery = $this->newQuery();
+                    $condition['query']($nestedQuery);
+                    $nestedBindings = $nestedQuery->getBindValuesForWhere(); // Recursively get bindings
+                    $bindings = array_merge($bindings, $nestedBindings);
+                    break;
+            }
+        }
+        // Include bindings from the old whereRawBindings property for backward compatibility,
+        // though ideally, 'Raw' type should handle its own bindings.
+        // $bindings = array_merge($bindings, $this->whereRawBindings); // Re-evaluate if needed
+
+        return $bindings;
     }
 
     /** Get bind values including limit/offset (use carefully). */

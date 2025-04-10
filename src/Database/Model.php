@@ -136,24 +136,35 @@ class Model
         return static::query()->select($columns);
     }
 
-    /**
-     * Add where condition
-     *
-     * @param string $column Column name
-     * @param string $operator Comparison operator
-      * @param string|mixed $operatorOrValue Comparison operator or value (if operator is omitted and defaults to '=')
-      * @param mixed|null $value Comparison value (if operator is provided)
+     /**
+      * Add where condition.
+      * Accepts standard (column, operator, value), (column, value), or nested (Closure) conditions.
+      *
+      * @param string|Closure $column Column name or Closure for nested query.
+      * @param mixed|null $operatorOrValue Operator, value (if 2 args), or boolean (if Closure).
+      * @param mixed|null $value Value (if 3 args).
+      * @param string $boolean Boolean connector ('AND' or 'OR'), used mainly internally by Database class.
       * @return \SwallowPHP\Framework\Database
       */
-     public static function where(string $column, $operatorOrValue, $value = null): Database
+     public static function where($column, $operatorOrValue = null, $value = null, string $boolean = 'AND'): Database
      {
-         // Pass arguments directly to the Database query builder's where method
-         // which now handles the two/three argument logic.
-         return static::query()->where($column, $operatorOrValue, $value);
+         // Pass all arguments directly to the Database query builder's where method
+         // which now handles all argument variations including Closures.
+         return static::query()->where($column, $operatorOrValue, $value, $boolean);
      }
 
-    public static function orWhere(string $column, string $operator, $value): Database
+     /**
+      * Add an or where condition.
+      * Accepts standard (column, operator, value), (column, value), or nested (Closure) conditions.
+      *
+      * @param string|Closure $column Column name or Closure for nested query.
+      * @param mixed|null $operator Operator or value (if 2 args).
+      * @param mixed|null $value Value (if 3 args).
+      * @return \SwallowPHP\Framework\Database
+      */
+    public static function orWhere($column, $operator = null, $value = null): Database
     {
+        // Pass arguments directly to the Database query builder's orWhere method.
         return static::query()->orWhere($column, $operator, $value);
     }
 

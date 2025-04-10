@@ -7,12 +7,17 @@ class Request
     // Store core request components as properties
     public string $uri;
     public string $method;
-    public array $query = []; // Query parameters (?foo=bar)
-    public array $request = []; // Parsed body parameters (POST, JSON etc.)
-    public array $headers = [];
+    public array $query = []; // Query parameters (?foo=bar) - Now RAW
+    public array $request = []; // Parsed body parameters (POST, JSON etc.) - Now RAW
+    public array $headers = []; // Headers - Now RAW
     public array $server = []; // Subset of $_SERVER relevant to the request
     public string $rawInput = '';
     public array $files = []; // Added property for uploaded files ($_FILES)
+
+    // Removed original data properties as main properties will hold raw data now
+    // protected array $originalQuery = [];
+    // protected array $originalRequest = [];
+    // protected array $originalHeaders = [];
 
     /**
      * Protected constructor. Use createFromGlobals() to instantiate.
@@ -29,10 +34,18 @@ class Request
     ) {
         $this->uri = $uri;
         $this->method = $method;
-        $this->query = $this->sanitizeData($query);
-        $this->request = $this->sanitizeData($request);
+
+        // Assign RAW data directly to public properties
+        $this->query = $query;
+        $this->request = $request;
+        $this->headers = $headers; // Headers are already parsed by parseHeadersFromServer
+
+        // Removed sanitization calls for query, request, headers
+        // $this->query = $this->sanitizeData($query);
+        // $this->request = $this->sanitizeData($request);
+        // $this->headers = $this->sanitizeData($headers);
+
         $this->files = $files; // Assign files data (no sanitization)
-        $this->headers = $headers; // Headers are sanitized during creation
         $this->server = $server;
         $this->rawInput = $rawInput;
     }
@@ -136,30 +149,28 @@ class Request
                }
         }
 
-        // Sanitize header values (consider if this is always desired)
-        $sanitizedHeaders = [];
-        $tempInstance = new static('/', 'GET', [], [], [], [], [], ''); // Added empty array for files arg
-        foreach ($headers as $key => $value) {
-             $sanitizedHeaders[$key] = $tempInstance->sanitizeData($value);
-        }
-
-        return $sanitizedHeaders;
+        // Return raw headers as parsed
+        return $headers;
     }
 
     /**
-     * Sanitizes input data recursively (basic XSS protection for string data).
+     * Cleans input data recursively (removes null bytes).
+     * NOTE: htmlspecialchars sanitization has been REMOVED.
      * @param mixed $data
      * @return mixed
      */
     protected function sanitizeData(mixed $data): mixed
     {
         if (is_array($data)) {
+            // Still recurse for arrays to clean null bytes from all levels
             return array_map([$this, 'sanitizeData'], $data);
         }
         if (is_string($data)) {
-            $data = str_replace(chr(0), '', $data); // Remove null bytes
-            return htmlspecialchars($data, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            // Only remove null bytes now
+            return str_replace(chr(0), '', $data);
+            // REMOVED: return htmlspecialchars($data, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         }
+        // Return other types (int, bool, float, null) as is
         return $data;
     }
 
@@ -188,36 +199,67 @@ class Request
          return $this->request;
      }
 
-    /** Get a specific input value (checks body first, then query). */
-    public function get(string $key, mixed $default = null): mixed
+    /**
+     * Get a specific input value (checks body first, then query).
+     * Returns RAW data by default.
+     * @param string $key The key to retrieve.
+     * @param mixed $default Default value if key not found.
+     * @param bool $sanitize DEPRECATED - This parameter no longer has an effect as sanitization is removed.
+     * @return mixed
+     */
+    public function get(string $key, mixed $default = null, bool $sanitize = false): mixed // Kept $sanitize param for potential BC, but it does nothing now.
     {
-        // Check request body first, then query parameters
-        return $this->request[$key] ?? $this->query[$key] ?? $default;
+        // Check request body first, then query parameters - returns RAW data
+        $value = $this->request[$key] ?? $this->query[$key] ?? $default;
+        // Sanitization logic removed here
+        return $value;
     }
 
-     /** Get a specific query parameter value. */
+     /**
+      * Get a specific query parameter value. Returns RAW data.
+      * @param string $key The key to retrieve.
+      * @param mixed $default Default value if key not found.
+      * @return mixed
+      */
      public function getQuery(string $key, mixed $default = null): mixed
      {
-         return $this->query[$key] ?? $default;
+         return $this->query[$key] ?? $default; // Returns RAW
      }
 
-     /** Get a specific request body parameter value. */
+     /**
+      * Get a specific request body parameter value. Returns RAW data.
+      * @param string $key The key to retrieve.
+      * @param mixed $default Default value if key not found.
+      * @return mixed
+      */
      public function getRequestValue(string $key, mixed $default = null): mixed
      {
-         return $this->request[$key] ?? $default;
+         return $this->request[$key] ?? $default; // Returns RAW
      }
 
-    /** Sets a value in the request body data array (use with caution). */
+    /**
+     * Sets a value in the request body data array (use with caution).
+     * Stores the value RAW.
+     * @param string $key
+     * @param mixed $value
+     */
     public function set(string $key, mixed $value): void
     {
-        // Sanitize value before setting
-        $this->request[$key] = $this->sanitizeData($value);
+        // Store value RAW
+        $this->request[$key] = $value;
+        // Removed: $this->request[$key] = $this->sanitizeData($value);
     }
 
-    /** Set all request body data (overwrites existing, use with caution). */
+    /**
+     * Set all request body data (overwrites existing, use with caution).
+     * Stores the data RAW.
+     * @param array $data
+     */
     public function setAll(array $data): void
     {
-        $this->request = $this->sanitizeData($data);
+        // Store data RAW
+        $this->request = $data;
+        // Removed: $this->request = $this->sanitizeData($data);
     }
 
     /** Get the request URI (path + query string). */
@@ -270,17 +312,25 @@ class Request
         return $this->getScheme() . '://' . $this->getHost() . $this->getUri();
     }
 
-    /** Retrieve a header from the request (case-insensitive). */
+    /**
+     * Retrieve a header from the request (case-insensitive). Returns RAW header value.
+     * @param string $key Header key.
+     * @param string|null $default Default value.
+     * @return string|null
+     */
     public function header(string $key, ?string $default = null): ?string
     {
-        return $this->headers[strtolower($key)] ?? $default;
+        return $this->headers[strtolower($key)] ?? $default; // Returns RAW
     }
 
-     /** Get all headers. */
+     /**
+      * Get all headers. Returns RAW header values.
+      * @return array
+      */
      public function headers(): array
- {
-     return $this->headers;
- }
+     {
+         return $this->headers; // Returns RAW
+     }
 
     /** Get the bearer token from the Authorization header. */
     public function bearerToken(): ?string

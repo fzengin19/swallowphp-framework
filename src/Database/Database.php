@@ -177,8 +177,22 @@ class Database
 
     /** Set the columns to select. */
     public function select(array $columns = ['*']): self { $this->select = implode(', ', $columns); return $this; }
-    /** Add a where condition. */
-    public function where(string $column, string $operator, $value): self { $this->where[] = [$column, $operator, $value]; return $this; }
+    /**
+     * Add a where condition.
+     * Can be called with two arguments (column, value) which defaults operator to '='.
+     * Or with three arguments (column, operator, value).
+     */
+    public function where(string $column, $operatorOrValue, $value = null): self
+    {
+        if ($value === null) {
+            // Two arguments provided: where($column, $value)
+            $this->where[] = [$column, '=', $operatorOrValue];
+        } else {
+            // Three arguments provided: where($column, $operator, $value)
+            $this->where[] = [$column, $operatorOrValue, $value];
+        }
+        return $this;
+    }
     /** Add an or where condition. */
     public function orWhere(string $column, string $operator, $value): self { $this->orWhere[] = [$column, $operator, $value]; return $this; }
     /** Add a where in condition. */

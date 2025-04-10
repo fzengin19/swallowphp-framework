@@ -140,13 +140,16 @@ class Model
      *
      * @param string $column Column name
      * @param string $operator Comparison operator
-     * @param mixed $value Comparison value
-     * @return \SwallowPHP\Framework\Database
-     */
-    public static function where(string $column, string $operator, $value): Database
-    {
-        return static::query()->where($column, $operator, $value);
-    }
+      * @param string|mixed $operatorOrValue Comparison operator or value (if operator is omitted and defaults to '=')
+      * @param mixed|null $value Comparison value (if operator is provided)
+      * @return \SwallowPHP\Framework\Database
+      */
+     public static function where(string $column, $operatorOrValue, $value = null): Database
+     {
+         // Pass arguments directly to the Database query builder's where method
+         // which now handles the two/three argument logic.
+         return static::query()->where($column, $operatorOrValue, $value);
+     }
 
     public static function orWhere(string $column, string $operator, $value): Database
     {

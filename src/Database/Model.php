@@ -4,6 +4,7 @@ namespace SwallowPHP\Framework\Database;
 
 use DateTime;
 use InvalidArgumentException;
+use SwallowPHP\Framework\Database\Paginator; // Import Paginator
 
 /**
  * Model class manages database operations and data manipulation.
@@ -373,8 +374,13 @@ class Model
 
 
 
-    /** Paginate results. Returns hydrated models. */
-    public static function paginate(int $perPage, int $page = 1): array
+    /**
+     * Paginate results. Returns a Paginator instance containing hydrated models.
+     * @param int $perPage Number of items per page.
+     * @param int $page Current page number.
+     * @return Paginator Paginator instance.
+     */
+    public static function paginate(int $perPage, int $page = 1): Paginator
     {
         return static::query()->paginate($perPage, $page);
     }

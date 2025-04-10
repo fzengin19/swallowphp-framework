@@ -10,6 +10,7 @@ use SwallowPHP\Framework\Foundation\Config;
 use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Foundation\App; // For logger access
 use Psr\Log\LoggerInterface; // For logger type hint
+use SwallowPHP\Framework\Database\Paginator; // Import the Paginator class
 
 /**
  * Database class for handling database operations using PDO.
@@ -347,11 +348,36 @@ class Database
         return (int)($result['count'] ?? 0);
     }
 
-    /** Paginate results. */
-    public function paginate(int $perPage, int $page = 1): array
+    /**
+     * Paginate results.
+     * @param int $perPage Number of items per page.
+     * @param int $page Current page number.
+     * @return Paginator Paginator instance.
+     */
+    public function paginate(int $perPage, int $page = 1): Paginator
     {
         if ($perPage <= 0) $perPage = 15;
         $this->initialize();
+
+        // Clone the current query state BEFORE calculating total and fetching data
+        $queryForCount = clone $this;
+        // Remove order by for count query for potential performance improvement
+        // but keep where clauses. Limit/offset are handled by count() method itself.
+        $queryForCount->orderBy = [];
+
+        // Calculate total using the cloned query state
+        $total = $queryForCount->count();
+
+        $totalPages = $perPage > 0 ? ceil($total / $perPage) : 0;
+        $page = max(1, (int)$page);
+        $offset = ($page - 1) * $perPage;
+
+        // Fetch data using the original query state with limit and offset applied
+        $queryForData = clone $this; // Clone again to keep original state clean
+        $queryForData->limit($perPage)->offset($offset);
+        $data = $queryForData->get(); // get() handles model hydration if set
+
+        // --- URL Generation ---
         $total = $this->count();
         $totalPages = $perPage > 0 ? ceil($total / $perPage) : 0;
         $page = max(1, (int)$page);
@@ -372,16 +398,20 @@ class Database
              else error_log($errorMsg . " - " . $e->getMessage());
         }
         $baseUrlWithParams = $baseUrl . (empty($existingParams) ? '' : '?' . http_build_query($existingParams));
-        $pagination = $this->generatePaginationLinks($page, (int)$totalPages, $baseUrlWithParams, $separator);
-        return [
-            'data' => $data, 'total' => $total, 'per_page' => $perPage, 'current_page' => $page,
+        $linkStructure = $this->generatePaginationLinks($page, (int)$totalPages, $baseUrlWithParams, $separator);
+
+        // --- Create Paginator Instance ---
+        $options = [
             'last_page' => (int)$totalPages,
             'first_page_url' => $totalPages > 0 ? $baseUrlWithParams . $separator . 'page=1' : null,
             'last_page_url'  => $totalPages > 0 ? $baseUrlWithParams . $separator . 'page=' . $totalPages : null,
             'prev_page_url' => $page > 1 ? $baseUrlWithParams . $separator . 'page=' . ($page - 1) : null,
             'next_page_url' => $page < $totalPages ? $baseUrlWithParams . $separator . 'page=' . ($page + 1) : null,
-            'path' => $baseUrl, 'pagination_links' => $pagination,
+            'path' => $baseUrl,
+            'pagination_links' => $linkStructure, // Pass the generated structure
         ];
+
+        return new Paginator($data, $total, $perPage, $page, $options);
     }
 
     /** Paginate using cursor. */

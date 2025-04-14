@@ -502,30 +502,36 @@ class Database
         $queryForData = clone $this;
         $queryForData->limit($perPage)->offset($offset);
         $data = $queryForData->get();
-        $baseUrl = '/'; $existingParams = []; $separator = '?';
+        $baseUrl = '/'; $currentQuery = []; $separator = '?';
         try {
-            $currentRequest = request();
-            $baseUrl = strtok($currentRequest->fullUrl(), '?');
-            $existingParams = $currentRequest->query();
-            unset($existingParams['page']);
-            $separator = empty($existingParams) ? '?' : '&';
+            $currentRequest = request(); // Get current request instance
+            $baseUrl = strtok($currentRequest->fullUrl(), '?'); // Get base URL without query string
+            $currentQuery = $currentRequest->query(); // Get all query parameters
+            unset($currentQuery['page']); // Remove 'page' parameter itself
+            $separator = empty($currentQuery) ? '?' : '&'; // Determine separator for new page param
         } catch (\Throwable $e) {
              $errorMsg = "Pagination URL generation failed: Could not get request details";
              if ($this->logger) $this->logger->warning($errorMsg, ['error' => $e->getMessage()]);
              else error_log($errorMsg . " - " . $e->getMessage());
         }
-        $baseUrlWithParams = $baseUrl . (empty($existingParams) ? '' : '?' . http_build_query($existingParams));
-        $linkStructure = $this->generatePaginationLinks($page, (int)$totalPages, $baseUrlWithParams, $separator);
+        // Base URL for links, including existing query parameters (page will be added by generatePaginationLinks)
+        $baseUrlWithExistingQuery = $baseUrl . (empty($currentQuery) ? '' : '?' . http_build_query($currentQuery));
+        // Ensure separator is correct based on whether baseUrlWithExistingQuery already has '?'
+        $separator = str_contains($baseUrlWithExistingQuery, '?') ? '&' : '?';
+
+        $linkStructure = $this->generatePaginationLinks($page, (int)$totalPages, $baseUrlWithExistingQuery, $separator);
 
         // --- Create Paginator Instance ---
         $options = [
             'last_page' => (int)$totalPages,
-            'first_page_url' => $totalPages > 0 ? $baseUrlWithParams . $separator . 'page=1' : null,
-            'last_page_url'  => $totalPages > 0 ? $baseUrlWithParams . $separator . 'page=' . $totalPages : null,
-            'prev_page_url' => $page > 1 ? $baseUrlWithParams . $separator . 'page=' . ($page - 1) : null,
-            'next_page_url' => $page < $totalPages ? $baseUrlWithParams . $separator . 'page=' . ($page + 1) : null,
-            'path' => $baseUrl,
+            // Use $baseUrlWithExistingQuery for base URLs before adding page number
+            'first_page_url' => $totalPages > 0 ? $baseUrlWithExistingQuery . $separator . 'page=1' : null,
+            'last_page_url'  => $totalPages > 0 ? $baseUrlWithExistingQuery . $separator . 'page=' . $totalPages : null,
+            'prev_page_url' => $page > 1 ? $baseUrlWithExistingQuery . $separator . 'page=' . ($page - 1) : null,
+            'next_page_url' => $page < $totalPages ? $baseUrlWithExistingQuery . $separator . 'page=' . ($page + 1) : null,
+            'path' => $baseUrl, // Base path without query
             'pagination_links' => $linkStructure, // Pass the generated structure
+            'query' => $currentQuery // Pass current query params (excluding 'page') for appends() base
         ];
 
         return new Paginator($data, $total, $perPage, $page, $options);

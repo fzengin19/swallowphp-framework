@@ -391,8 +391,9 @@ class Model
      * @param int $page Current page number.
      * @return Paginator Paginator instance.
      */
-    public static function paginate(int $perPage, int $page = 1): Paginator
+    public static function paginate(int $perPage, ?int $page = null): Paginator
     {
+        if($page === null) $page = request()->getQuery('page', 1);
         return static::query()->paginate($perPage, $page);
     }
 

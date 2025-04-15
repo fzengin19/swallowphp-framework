@@ -18,7 +18,7 @@ class Paginator implements ArrayAccess, Countable, IteratorAggregate, JsonSerial
     protected array $items;
 
     /** @var int Total number of items. */
-    protected int $total;
+    protected ?int $total;
 
     /** @var int Number of items per page. */
     protected int $perPage;

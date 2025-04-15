@@ -644,27 +644,19 @@ class Database
         // Determine base URL and query parameters
         $baseUrl = '/';
         $queryParams = [];
-        $separator = '?';
 
         try {
             $currentRequest = request();
             $baseUrl = strtok($currentRequest->fullUrl(), '?');
             $queryParams = $currentRequest->query();
             unset($queryParams['cursor']); // Remove cursor parameter
-            $separator = empty($queryParams) ? '?' : '&';
         } catch (\Throwable $e) {
             $errorMsg = "Cursor Pagination URL generation failed";
             if ($this->logger) $this->logger->warning($errorMsg, ['error' => $e->getMessage()]);
             else error_log($errorMsg . ": " . $e->getMessage());
         }
 
-        // Build base URL with existing query parameters
-        $baseUrlWithExistingQuery = $baseUrl . (empty($queryParams) ? '' : '?' . http_build_query($queryParams));
-
-        // Ensure separator is correct
-        $separator = str_contains($baseUrlWithExistingQuery, '?') ? '&' : '?';
-
-        // Build options for Paginator
+        // Build options for Paginator - use count($results) for total to avoid type error
         $options = [
             'path' => $baseUrl,
             'is_cursor_pagination' => true,
@@ -674,15 +666,14 @@ class Database
             'per_page' => $perPage,
             'has_more_pages' => $hasMorePages,
             'current_cursor' => $cursor,
-            'next_page_url' => $hasMorePages ? ($baseUrlWithExistingQuery . $separator . 'cursor=' . $nextCursor) : null,
-            'prev_page_url' => $cursor ? ($baseUrlWithExistingQuery . $separator . 'cursor=' . null) : null, // Basit bir önceki sayfa mantığı
+            'last_page' => 0, // Set a valid default for lastPage
+            'next_page_url' => $hasMorePages ? ($baseUrl . '?cursor=' . urlencode($nextCursor)) : null,
+            'prev_page_url' => $cursor ? ($baseUrl . '?cursor=') : null,
             'query' => $queryParams
         ];
 
-        // Total count is not applicable for cursor pagination as it's designed for efficiency
-        // where counting all items might be expensive
-
-        return new Paginator($results, null, $perPage, 1, $options);
+        // Pass count($results) as the total for type compatibility
+        return new Paginator($results, count($results), $perPage, 1, $options);
     }
 
     /** Get bind values only for the WHERE clause. */

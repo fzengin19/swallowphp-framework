@@ -532,16 +532,18 @@ class Model
 
 
     /** Define a one-to-many relationship */
-    public function hasMany(string $relatedModel, string $foreignKey, string $localKey = 'id'): array
+    public function hasMany(string $relatedModel, string $foreignKey, string $localKey = 'id'): \SwallowPHP\Framework\Database\Relation
     {
         if (!class_exists($relatedModel)) {
             throw new \RuntimeException("Related model not found: {$relatedModel}");
         }
         $localValue = $this->attributes[$localKey] ?? null;
         if ($localValue === null) {
-             return [];
+             $builder = $relatedModel::query()->whereRaw('1 = 0'); // Boş sonuç için
+        } else {
+             $builder = $relatedModel::query()->where($foreignKey, '=', $localValue);
         }
-        return $relatedModel::query()->where($foreignKey, '=', $localValue)->get();
+        return new \SwallowPHP\Framework\Database\Relation($builder);
     }
 
     /** Define a belongs-to relationship */

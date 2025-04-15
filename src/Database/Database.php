@@ -77,9 +77,9 @@ class Database
         }
         // Get logger instance early if possible
         try {
-             $this->logger = App::container()->get(LoggerInterface::class);
+            $this->logger = App::container()->get(LoggerInterface::class);
         } catch (\Throwable $e) {
-             error_log("CRITICAL: Could not resolve LoggerInterface in Database constructor: " . $e->getMessage());
+            error_log("CRITICAL: Could not resolve LoggerInterface in Database constructor: " . $e->getMessage());
         }
         $this->initialize();
     }
@@ -105,26 +105,29 @@ class Database
 
         try {
             if ($driver === 'sqlite') {
-                 $storagePath = config('app.storage_path');
-                 if (!$storagePath || !is_dir(dirname($storagePath))) {
-                     $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
-                     $storagePath = $potentialBasePath . '/storage';
-                     $warningMsg = "Warning: 'app.storage_path' not configured or invalid, using fallback for DB path: " . $storagePath;
-                     if ($this->logger) $this->logger->warning($warningMsg); else error_log($warningMsg);
-                     if (!is_dir($storagePath)) { @mkdir($storagePath, 0755, true); }
-                 }
-                 $dbPath = rtrim($storagePath, '/\\') . '/' . ltrim($database, '/\\');
-                 $dbDir = dirname($dbPath);
-                 if (!is_dir($dbDir)) {
-                      if (!@mkdir($dbDir, 0755, true) && !is_dir($dbDir)) {
-                           throw new InvalidArgumentException("Could not create directory for SQLite database: {$dbDir}");
-                      }
-                 }
-                 $dsn = "sqlite:" . $dbPath;
+                $storagePath = config('app.storage_path');
+                if (!$storagePath || !is_dir(dirname($storagePath))) {
+                    $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
+                    $storagePath = $potentialBasePath . '/storage';
+                    $warningMsg = "Warning: 'app.storage_path' not configured or invalid, using fallback for DB path: " . $storagePath;
+                    if ($this->logger) $this->logger->warning($warningMsg);
+                    else error_log($warningMsg);
+                    if (!is_dir($storagePath)) {
+                        @mkdir($storagePath, 0755, true);
+                    }
+                }
+                $dbPath = rtrim($storagePath, '/\\') . '/' . ltrim($database, '/\\');
+                $dbDir = dirname($dbPath);
+                if (!is_dir($dbDir)) {
+                    if (!@mkdir($dbDir, 0755, true) && !is_dir($dbDir)) {
+                        throw new InvalidArgumentException("Could not create directory for SQLite database: {$dbDir}");
+                    }
+                }
+                $dsn = "sqlite:" . $dbPath;
             } elseif ($driver === 'pgsql') {
                 $dsn = "pgsql:host=$host;port=$port;dbname=$database";
             } else {
-                 $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
+                $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
             }
 
             $defaultOptions = [
@@ -138,26 +141,25 @@ class Database
             $this->connectedSuccessfully = true;
 
             if ($driver === 'sqlite') {
-                 try {
-                     $this->connection->exec('PRAGMA journal_mode = WAL;');
-                 } catch (PDOException $e) {
-                     $warningMsg = "SQLite WAL mode could not be enabled";
-                     if ($this->logger) $this->logger->warning($warningMsg, ['error' => $e->getMessage()]);
-                     else error_log($warningMsg . ": " . $e->getMessage());
-                 }
+                try {
+                    $this->connection->exec('PRAGMA journal_mode = WAL;');
+                } catch (PDOException $e) {
+                    $warningMsg = "SQLite WAL mode could not be enabled";
+                    if ($this->logger) $this->logger->warning($warningMsg, ['error' => $e->getMessage()]);
+                    else error_log($warningMsg . ": " . $e->getMessage());
+                }
             }
-
         } catch (PDOException $e) {
-             // Log connection error before throwing
-             $errorMsg = 'Veritabanı bağlantısı başlatılamadı';
-             if ($this->logger) $this->logger->critical($errorMsg, ['exception' => $e, 'driver' => $driver]);
-             else error_log($errorMsg . ": " . $e->getMessage());
+            // Log connection error before throwing
+            $errorMsg = 'Veritabanı bağlantısı başlatılamadı';
+            if ($this->logger) $this->logger->critical($errorMsg, ['exception' => $e, 'driver' => $driver]);
+            else error_log($errorMsg . ": " . $e->getMessage());
             throw new Exception($errorMsg, 0, $e); // Re-throw generic Exception
         } catch (\Throwable $e) { // Catch other potential errors (like InvalidArgumentException)
-             $errorMsg = 'Veritabanı başlatılırken beklenmedik hata';
-             if ($this->logger) $this->logger->critical($errorMsg, ['exception' => $e, 'driver' => $driver]);
-             else error_log($errorMsg . ": " . $e->getMessage());
-             throw new Exception($errorMsg, 0, $e);
+            $errorMsg = 'Veritabanı başlatılırken beklenmedik hata';
+            if ($this->logger) $this->logger->critical($errorMsg, ['exception' => $e, 'driver' => $driver]);
+            else error_log($errorMsg . ": " . $e->getMessage());
+            throw new Exception($errorMsg, 0, $e);
         }
     }
 
@@ -171,14 +173,26 @@ class Database
     /** Reset all query parameters. */
     public function reset(): void
     {
-        $this->table = ''; $this->select = '*'; $this->where = []; $this->whereRaw = [];
-        $this->whereIn = []; $this->whereBetween = []; $this->orderBy = [];
-        $this->limit = null; $this->offset = null; $this->orWhere = [];
-        $this->whereRawBindings = []; $this->modelClass = null;
+        $this->table = '';
+        $this->select = '*';
+        $this->where = [];
+        $this->whereRaw = [];
+        $this->whereIn = [];
+        $this->whereBetween = [];
+        $this->orderBy = [];
+        $this->limit = null;
+        $this->offset = null;
+        $this->orWhere = [];
+        $this->whereRawBindings = [];
+        $this->modelClass = null;
     }
 
     /** Set the columns to select. */
-    public function select(array $columns = ['*']): self { $this->select = implode(', ', $columns); return $this; }
+    public function select(array $columns = ['*']): self
+    {
+        $this->select = implode(', ', $columns);
+        return $this;
+    }
     /**
      * Add a where condition.
      * Can be called with:
@@ -201,17 +215,17 @@ class Database
         // Adjust logic slightly to handle the optional $boolean argument potentially being passed
         // when only two args (column, value) are intended.
         if (func_num_args() === 2 || $value === null && $operatorOrValue !== null && !($operatorOrValue instanceof Closure)) {
-             // where($column, $value) case
-             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
+            // where($column, $value) case
+            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
         } elseif ($value !== null) {
-             // where($column, $operator, $value) case
-             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $operatorOrValue, 'value' => $value, 'boolean' => $boolean];
+            // where($column, $operator, $value) case
+            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $operatorOrValue, 'value' => $value, 'boolean' => $boolean];
         } else {
-             // Fallback or error? Could indicate invalid usage.
-             // For now, let's assume it might be a where($column) scenario which isn't standard.
-             // Or perhaps where($column, null) which should likely be whereNull($column).
-             // Let's treat where($column, null) as where($column, '=', null) for now.
-             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
+            // Fallback or error? Could indicate invalid usage.
+            // For now, let's assume it might be a where($column) scenario which isn't standard.
+            // Or perhaps where($column, null) which should likely be whereNull($column).
+            // Let's treat where($column, null) as where($column, '=', null) for now.
+            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
         }
 
         return $this;
@@ -234,10 +248,10 @@ class Database
         // Standard orWhere (assuming 3 arguments for simplicity here, matching previous implementation)
         // We might need to add the 2-argument version (column, value) later if desired.
         if ($value !== null) {
-             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $operator, 'value' => $value, 'boolean' => 'OR'];
+            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $operator, 'value' => $value, 'boolean' => 'OR'];
         } else {
-             // Handle orWhere(column, value)
-             $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operator, 'boolean' => 'OR'];
+            // Handle orWhere(column, value)
+            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operator, 'boolean' => 'OR'];
         }
         return $this;
     }
@@ -246,8 +260,8 @@ class Database
     public function whereIn(string $column, array $values, string $boolean = 'AND'): self
     {
         if (empty($values)) {
-             // Add a condition that's always false
-             return $this->whereRaw("1 = 0", [], $boolean);
+            // Add a condition that's always false
+            return $this->whereRaw("1 = 0", [], $boolean);
         }
         $this->where[] = ['type' => 'In', 'column' => $column, 'values' => $values, 'boolean' => $boolean];
         return $this;
@@ -267,11 +281,27 @@ class Database
         return $this;
     }
     /** Add an order by clause. */
-    public function orderBy(string $column, string $direction = 'ASC'): self { $direction = strtoupper($direction); if (!in_array($direction, ['ASC', 'DESC'])) { $direction = 'ASC'; } $this->orderBy[] = [$column, $direction]; return $this; }
+    public function orderBy(string $column, string $direction = 'ASC'): self
+    {
+        $direction = strtoupper($direction);
+        if (!in_array($direction, ['ASC', 'DESC'])) {
+            $direction = 'ASC';
+        }
+        $this->orderBy[] = [$column, $direction];
+        return $this;
+    }
     /** Set the limit. */
-    public function limit(int $limit): self { $this->limit = $limit > 0 ? $limit : null; return $this; }
+    public function limit(int $limit): self
+    {
+        $this->limit = $limit > 0 ? $limit : null;
+        return $this;
+    }
     /** Set the offset. */
-    public function offset(int $offset): self { $this->offset = $offset >= 0 ? $offset : null; return $this; }
+    public function offset(int $offset): self
+    {
+        $this->offset = $offset >= 0 ? $offset : null;
+        return $this;
+    }
 
     /** Build the where clause SQL string. */
     protected function buildWhereClause(): string
@@ -296,7 +326,7 @@ class Database
                         $placeholders = implode(', ', array_fill(0, count($condition['values']), '?'));
                         $sqlParts[] = "{$boolean} `{$condition['column']}` IN ({$placeholders})";
                     } else {
-                         // Handle empty IN array - this case is handled in whereIn by adding a raw '1=0'
+                        // Handle empty IN array - this case is handled in whereIn by adding a raw '1=0'
                     }
                     break;
                 case 'Between':
@@ -319,7 +349,7 @@ class Database
                         $sqlParts[] = "{$boolean} ({$nestedSql})";
                     }
                     break;
-                 // Add cases for whereNull, whereNotNull etc. if implemented later
+                    // Add cases for whereNull, whereNotNull etc. if implemented later
             }
             $first = false; // Only the very first condition gets 'WHERE'
         }
@@ -344,22 +374,37 @@ class Database
         $this->initialize();
         $sql = "SELECT {$this->select} FROM `{$this->table}` ";
         $sql .= $this->buildWhereClause();
-        if (!empty($this->orderBy)) { $orderByColumns = array_map(fn($order) => "`{$order[0]}` {$order[1]}", $this->orderBy); $sql .= ' ORDER BY ' . implode(', ', $orderByColumns); }
-        if ($this->limit !== null) { $sql .= " LIMIT ?"; if ($this->offset !== null) { $sql .= " OFFSET ?"; } }
+        if (!empty($this->orderBy)) {
+            $orderByColumns = array_map(fn($order) => "`{$order[0]}` {$order[1]}", $this->orderBy);
+            $sql .= ' ORDER BY ' . implode(', ', $orderByColumns);
+        }
+        if ($this->limit !== null) {
+            $sql .= " LIMIT ?";
+            if ($this->offset !== null) {
+                $sql .= " OFFSET ?";
+            }
+        }
 
         try {
             $statement = $this->connection->prepare($sql);
             $paramIndex = 1;
             $whereBindings = $this->getBindValuesForWhere();
-            foreach ($whereBindings as $value) { $statement->bindValue($paramIndex++, $value, $this->getPDOParamType($value)); }
-            if ($this->limit !== null) { $statement->bindValue($paramIndex++, $this->limit, PDO::PARAM_INT); if ($this->offset !== null) { $statement->bindValue($paramIndex++, $this->offset, PDO::PARAM_INT); } }
+            foreach ($whereBindings as $value) {
+                $statement->bindValue($paramIndex++, $value, $this->getPDOParamType($value));
+            }
+            if ($this->limit !== null) {
+                $statement->bindValue($paramIndex++, $this->limit, PDO::PARAM_INT);
+                if ($this->offset !== null) {
+                    $statement->bindValue($paramIndex++, $this->offset, PDO::PARAM_INT);
+                }
+            }
             $statement->execute();
             $rows = $statement->fetchAll();
         } catch (PDOException $e) {
-             $errorMsg = "Database Error in get()";
-             if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
-             else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
-             throw $e;
+            $errorMsg = "Database Error in get()";
+            if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
+            else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
+            throw $e;
         }
         if ($this->modelClass && method_exists($this->modelClass, 'hydrateModels')) {
             return call_user_func([$this->modelClass, 'hydrateModels'], $rows);
@@ -386,13 +431,15 @@ class Database
         try {
             $statement = $this->connection->prepare($sql);
             $values = array_values($data);
-            foreach ($values as $key => $value) { $statement->bindValue($key + 1, $value, $this->getPDOParamType($value)); }
+            foreach ($values as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
             $success = $statement->execute();
             return ($success && $this->connection->lastInsertId() !== false) ? (int)$this->connection->lastInsertId() : false;
         } catch (PDOException $e) {
             $errorMsg = "Database Error in insert()";
-             if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql, 'data' => $data]); // Log data too
-             else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
+            if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql, 'data' => $data]); // Log data too
+            else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
             return false;
         }
     }
@@ -408,13 +455,15 @@ class Database
         try {
             $statement = $this->connection->prepare($sql);
             $bindValues = array_merge(array_values($data), $this->getBindValuesForWhere());
-            foreach ($bindValues as $key => $value) { $statement->bindValue($key + 1, $value, $this->getPDOParamType($value)); }
+            foreach ($bindValues as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
             $statement->execute();
             return $statement->rowCount();
         } catch (PDOException $e) {
             $errorMsg = "Database Error in update()";
-             if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql, 'data' => $data]);
-             else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
+            if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql, 'data' => $data]);
+            else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
             return 0;
         }
     }
@@ -427,13 +476,15 @@ class Database
         try {
             $statement = $this->connection->prepare($sql);
             $bindValues = $this->getBindValuesForWhere();
-            foreach ($bindValues as $key => $value) { $statement->bindValue($key + 1, $value, $this->getPDOParamType($value)); }
+            foreach ($bindValues as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
             $statement->execute();
             return $statement->rowCount();
         } catch (PDOException $e) {
             $errorMsg = "Database Error in delete()";
-             if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
-             else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
+            if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
+            else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
             return 0;
         }
     }
@@ -442,25 +493,33 @@ class Database
     public function count(): int
     {
         $this->initialize();
-        $originalSelect = $this->select; $originalOrderBy = $this->orderBy;
-        $originalLimit = $this->limit; $originalOffset = $this->offset;
-        $this->select = 'COUNT(*) AS count'; $this->orderBy = [];
-        $this->limit = null; $this->offset = null;
+        $originalSelect = $this->select;
+        $originalOrderBy = $this->orderBy;
+        $originalLimit = $this->limit;
+        $originalOffset = $this->offset;
+        $this->select = 'COUNT(*) AS count';
+        $this->orderBy = [];
+        $this->limit = null;
+        $this->offset = null;
         $sql = "SELECT {$this->select} FROM `{$this->table}` " . $this->buildWhereClause();
         try {
             $statement = $this->connection->prepare($sql);
             $bindValues = $this->getBindValuesForWhere();
-            foreach ($bindValues as $key => $value) { $statement->bindValue($key + 1, $value, $this->getPDOParamType($value)); }
+            foreach ($bindValues as $key => $value) {
+                $statement->bindValue($key + 1, $value, $this->getPDOParamType($value));
+            }
             $statement->execute();
             $result = $statement->fetch(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
-             $errorMsg = "Database Error in count()";
-             if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
-             else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
-             $result = ['count' => 0];
+            $errorMsg = "Database Error in count()";
+            if ($this->logger) $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
+            else error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
+            $result = ['count' => 0];
         } finally {
-            $this->select = $originalSelect; $this->orderBy = $originalOrderBy;
-            $this->limit = $originalLimit; $this->offset = $originalOffset;
+            $this->select = $originalSelect;
+            $this->orderBy = $originalOrderBy;
+            $this->limit = $originalLimit;
+            $this->offset = $originalOffset;
         }
         return (int)($result['count'] ?? 0);
     }
@@ -502,7 +561,9 @@ class Database
         $queryForData = clone $this;
         $queryForData->limit($perPage)->offset($offset);
         $data = $queryForData->get();
-        $baseUrl = '/'; $currentQuery = []; $separator = '?';
+        $baseUrl = '/';
+        $currentQuery = [];
+        $separator = '?';
         try {
             $currentRequest = request(); // Get current request instance
             $baseUrl = strtok($currentRequest->fullUrl(), '?'); // Get base URL without query string
@@ -510,9 +571,9 @@ class Database
             unset($currentQuery['page']); // Remove 'page' parameter itself
             $separator = empty($currentQuery) ? '?' : '&'; // Determine separator for new page param
         } catch (\Throwable $e) {
-             $errorMsg = "Pagination URL generation failed: Could not get request details";
-             if ($this->logger) $this->logger->warning($errorMsg, ['error' => $e->getMessage()]);
-             else error_log($errorMsg . " - " . $e->getMessage());
+            $errorMsg = "Pagination URL generation failed: Could not get request details";
+            if ($this->logger) $this->logger->warning($errorMsg, ['error' => $e->getMessage()]);
+            else error_log($errorMsg . " - " . $e->getMessage());
         }
         // Base URL for links, including existing query parameters (page will be added by generatePaginationLinks)
         $baseUrlWithExistingQuery = $baseUrl . (empty($currentQuery) ? '' : '?' . http_build_query($currentQuery));
@@ -537,39 +598,91 @@ class Database
         return new Paginator($data, $total, $perPage, $page, $options);
     }
 
-    /** Paginate using cursor. */
-    public function cursorPaginate(int $perPage, ?string $cursor = null): array
+    /**
+     * Paginate results using cursor-based pagination.
+     * @param int $perPage Number of items per page.
+     * @param string|null $cursor Current cursor value.
+     * @return Paginator Paginator instance.
+     */
+    public function cursorPaginate(int $perPage, ?string $cursor = null): Paginator
     {
         $this->initialize();
-        $cursorColumn = 'id'; $direction = 'ASC';
+        $cursorColumn = 'id'; // Default cursor column
+        $direction = 'ASC';   // Default direction
+
         if ($perPage <= 0) $perPage = 15;
-        $query = clone $this; $query->orderBy($cursorColumn, $direction);
-        if ($cursor) { $operator = ($direction === 'ASC') ? '>' : '<'; $query->where($cursorColumn, $operator, $cursor); }
+
+        // Clone the current query to preserve original state
+        $query = clone $this;
+        $query->orderBy($cursorColumn, $direction);
+
+        // Apply cursor condition if cursor is provided
+        if ($cursor) {
+            $operator = ($direction === 'ASC') ? '>' : '<';
+            $query->where($cursorColumn, $operator, $cursor);
+        }
+
+        // Get one extra item to determine if there are more pages
         $query->limit($perPage + 1);
         $results = $query->get();
-        $hasNextPage = count($results) > $perPage;
-        if ($hasNextPage) { array_pop($results); }
-        $nextCursor = null;
-        if (!empty($results)) { $lastItem = end($results); $nextCursor = is_object($lastItem) ? ($lastItem->{$cursorColumn} ?? null) : ($lastItem[$cursorColumn] ?? null); }
-        $hasPrevPage = !empty($cursor); // Basic check
-        $url = '/'; $queryString = ''; $queryParams = [];
-        try {
-            $currentRequest = request(); $urlParts = parse_url($currentRequest->getUri());
-            if (isset($urlParts['query'])) { parse_str($urlParts['query'], $queryParams); } unset($queryParams['cursor']);
-            $queryString = http_build_query($queryParams); $scheme = $currentRequest->getScheme() ?? 'http';
-            $host = $currentRequest->getHost(); $path = $urlParts['path'] ?? '/'; $url = $scheme . '://' . $host . $path;
-        } catch (\Throwable $e) {
-             $errorMsg = "Cursor Pagination URL generation failed";
-             if ($this->logger) $this->logger->warning($errorMsg, ['error' => $e->getMessage()]);
-             else error_log($errorMsg . ": " . $e->getMessage());
+
+        // Check if we have more results than requested
+        $hasMorePages = count($results) > $perPage;
+
+        // Remove the extra item if we have more pages
+        if ($hasMorePages) {
+            array_pop($results);
         }
-        $nextPageUrl = null;
-        if ($nextCursor) { $nextQueryParams = array_merge($queryParams, ['cursor' => $nextCursor]); $nextPageUrl = $url . '?' . http_build_query($nextQueryParams); }
-        $prevPageUrl = null; // Simplified
-        return [
-            'data' => $results, 'next_page_url' => $nextPageUrl, 'prev_page_url' => $prevPageUrl,
-            'path' => $url, 'next_cursor' => $hasNextPage ? $nextCursor : null,
+
+        // Get next cursor from the last item
+        $nextCursor = null;
+        if (!empty($results)) {
+            $lastItem = end($results);
+            $nextCursor = is_object($lastItem) ? ($lastItem->{$cursorColumn} ?? null) : ($lastItem[$cursorColumn] ?? null);
+        }
+
+        // Determine base URL and query parameters
+        $baseUrl = '/';
+        $queryParams = [];
+        $separator = '?';
+
+        try {
+            $currentRequest = request();
+            $baseUrl = strtok($currentRequest->fullUrl(), '?');
+            $queryParams = $currentRequest->query();
+            unset($queryParams['cursor']); // Remove cursor parameter
+            $separator = empty($queryParams) ? '?' : '&';
+        } catch (\Throwable $e) {
+            $errorMsg = "Cursor Pagination URL generation failed";
+            if ($this->logger) $this->logger->warning($errorMsg, ['error' => $e->getMessage()]);
+            else error_log($errorMsg . ": " . $e->getMessage());
+        }
+
+        // Build base URL with existing query parameters
+        $baseUrlWithExistingQuery = $baseUrl . (empty($queryParams) ? '' : '?' . http_build_query($queryParams));
+
+        // Ensure separator is correct
+        $separator = str_contains($baseUrlWithExistingQuery, '?') ? '&' : '?';
+
+        // Build options for Paginator
+        $options = [
+            'path' => $baseUrl,
+            'is_cursor_pagination' => true,
+            'cursor_name' => 'cursor',
+            'next_cursor' => $hasMorePages ? $nextCursor : null,
+            'prev_cursor' => $cursor,
+            'per_page' => $perPage,
+            'has_more_pages' => $hasMorePages,
+            'current_cursor' => $cursor,
+            'next_page_url' => $hasMorePages ? ($baseUrlWithExistingQuery . $separator . 'cursor=' . $nextCursor) : null,
+            'prev_page_url' => $cursor ? ($baseUrlWithExistingQuery . $separator . 'cursor=' . null) : null, // Basit bir önceki sayfa mantığı
+            'query' => $queryParams
         ];
+
+        // Total count is not applicable for cursor pagination as it's designed for efficiency
+        // where counting all items might be expensive
+
+        return new Paginator($results, null, $perPage, 1, $options);
     }
 
     /** Get bind values only for the WHERE clause. */
@@ -614,24 +727,62 @@ class Database
     }
 
     /** Get bind values including limit/offset (use carefully). */
-    protected function getBindValues(): array { return $this->getBindValuesForWhere(); }
+    protected function getBindValues(): array
+    {
+        return $this->getBindValuesForWhere();
+    }
     /** Get PDO param type. */
-    protected function getPDOParamType($value): int { if (is_int($value)) return PDO::PARAM_INT; if (is_bool($value)) return PDO::PARAM_BOOL; if (is_null($value)) return PDO::PARAM_NULL; return PDO::PARAM_STR; }
+    protected function getPDOParamType($value): int
+    {
+        if (is_int($value)) return PDO::PARAM_INT;
+        if (is_bool($value)) return PDO::PARAM_BOOL;
+        if (is_null($value)) return PDO::PARAM_NULL;
+        return PDO::PARAM_STR;
+    }
     /** Close connection. */
-    public function close(): void { $this->connection = null; $this->connectedSuccessfully = false; }
+    public function close(): void
+    {
+        $this->connection = null;
+        $this->connectedSuccessfully = false;
+    }
 
     /** Generate pagination links array. */
     protected function generatePaginationLinks(int $currentPage, int $totalPages, string $baseUrl, string $separator): array
     {
-        $links = []; $range = 2; $onEachSide = 1; if ($totalPages <= 1) return [];
-        $links[] = ['url' => $currentPage > 1 ? ($baseUrl . $separator . 'page=' . ($currentPage - 1)) : null, 'label' => '&laquo; Previous', 'active' => false, 'disabled' => $currentPage <= 1 ];
+        $links = [];
+        $range = 2;
+        $onEachSide = 1;
+        if ($totalPages <= 1) return [];
+        $links[] = ['url' => $currentPage > 1 ? ($baseUrl . $separator . 'page=' . ($currentPage - 1)) : null, 'label' => '&laquo; Previous', 'active' => false, 'disabled' => $currentPage <= 1];
         $window = $onEachSide * 2;
-        if ($totalPages <= $window + 4) { $start = 1; $end = $totalPages; }
-        else { $start = max(1, $currentPage - $onEachSide); $end = min($totalPages, $currentPage + $onEachSide); if ($start === 1 && $end < $totalPages) { $end = min($totalPages, $start + $window); } elseif ($end === $totalPages && $start > 1) { $start = max(1, $end - $window); } }
-        if ($start > 1) { $links[] = ['url' => $baseUrl . $separator . 'page=1', 'label' => '1', 'active' => false]; if ($start > 2) { $links[] = ['url' => null, 'label' => '...', 'active' => false, 'disabled' => true]; } }
-        for ($i = $start; $i <= $end; $i++) { $links[] = ['url' => $baseUrl . $separator . 'page=' . $i, 'label' => (string)$i, 'active' => $currentPage === $i]; }
-        if ($end < $totalPages) { if ($end < $totalPages - 1) { $links[] = ['url' => null, 'label' => '...', 'active' => false, 'disabled' => true]; } $links[] = ['url' => $baseUrl . $separator . 'page=' . $totalPages, 'label' => (string)$totalPages, 'active' => false]; }
-        $links[] = ['url' => $currentPage < $totalPages ? ($baseUrl . $separator . 'page=' . ($currentPage + 1)) : null, 'label' => 'Next &raquo;', 'active' => false, 'disabled' => $currentPage >= $totalPages ];
+        if ($totalPages <= $window + 4) {
+            $start = 1;
+            $end = $totalPages;
+        } else {
+            $start = max(1, $currentPage - $onEachSide);
+            $end = min($totalPages, $currentPage + $onEachSide);
+            if ($start === 1 && $end < $totalPages) {
+                $end = min($totalPages, $start + $window);
+            } elseif ($end === $totalPages && $start > 1) {
+                $start = max(1, $end - $window);
+            }
+        }
+        if ($start > 1) {
+            $links[] = ['url' => $baseUrl . $separator . 'page=1', 'label' => '1', 'active' => false];
+            if ($start > 2) {
+                $links[] = ['url' => null, 'label' => '...', 'active' => false, 'disabled' => true];
+            }
+        }
+        for ($i = $start; $i <= $end; $i++) {
+            $links[] = ['url' => $baseUrl . $separator . 'page=' . $i, 'label' => (string)$i, 'active' => $currentPage === $i];
+        }
+        if ($end < $totalPages) {
+            if ($end < $totalPages - 1) {
+                $links[] = ['url' => null, 'label' => '...', 'active' => false, 'disabled' => true];
+            }
+            $links[] = ['url' => $baseUrl . $separator . 'page=' . $totalPages, 'label' => (string)$totalPages, 'active' => false];
+        }
+        $links[] = ['url' => $currentPage < $totalPages ? ($baseUrl . $separator . 'page=' . ($currentPage + 1)) : null, 'label' => 'Next &raquo;', 'active' => false, 'disabled' => $currentPage >= $totalPages];
         return $links;
     }
 

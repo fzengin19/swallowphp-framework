@@ -46,7 +46,27 @@ class App
             self::$container = new Container();
             self::$container->delegate(new ReflectionContainer(true));
 
+            // --- Load Environment Variables FIRST ---
+            // Ensure Env::load() is called before Config is instantiated
+            // Assuming Env::load() handles finding the .env file based on BASE_PATH or similar
+            try {
+                if (class_exists(Env::class) && method_exists(Env::class, 'load')) {
+                    Env::load();
+                } else {
+                    // Log or throw error if Env class/method is missing
+                    error_log("Warning: Env class or load method not found. Cannot load .env file.");
+                }
+            } catch (\Throwable $e) {
+                // Log error during .env loading but continue
+                error_log("Error loading .env file: " . $e->getMessage());
+            }
+            // --- End Load Environment Variables ---
+
+
             // --- Configuration Service ---
+            // Now Config can safely use env() internally if needed,
+            // although it's better if Config reads from $_ENV/$_SERVER populated by Dotenv.
+            // We assume the Config class constructor handles reading framework/app configs.
             self::$container->addShared(Config::class, function () {
                  $frameworkConfigPath = dirname(__DIR__, 2) . '/src/Config';
                  $appConfigPath = null;
@@ -220,10 +240,10 @@ class App
 
         // --- Core Application Logic ---
         try {
-            Env::load();
+            // Env::load(); // MOVED to container() method
 
-            $app = self::getInstance();
-            $container = self::container();
+            $app = self::getInstance(); // This initializes container if not already done
+            $container = self::container(); // Get the initialized container
 
             if ($earlyExceptionHandler) {
                  restore_exception_handler();

@@ -11,6 +11,7 @@ use SwallowPHP\Framework\Contracts\CacheInterface;
 use SwallowPHP\Framework\Foundation\App;
 use Psr\Log\LoggerInterface; // Import Logger
 use Psr\Log\LogLevel; // Import LogLevel
+use SwallowPHP\Framework\Http\Cookie; // Import Cookie class
 
 class Auth
 {
@@ -100,11 +101,50 @@ class Auth
                  if ($cache && $lockoutKey) $cache->delete($lockoutKey);
 
                  self::$authenticatedUser = $user;
-                 if ($logger) $logger->info("User authenticated successfully.", ['user_id' => $user->getAuthIdentifier(), 'email' => $email]);
+
+                 // --- Handle Remember Me ---
+                 if ($remember) {
+                     try {
+                         $token = bin2hex(random_bytes(32)); // Generate secure token
+                         $user->setRememberToken($token);
+                         if (!$user->save()) { // Save the token to the database
+                             throw new RuntimeException("Failed to save remember token for user ID: " . $user->getAuthIdentifier());
+                         }
+
+                         $cookieValue = $user->getAuthIdentifier() . '|' . $token;
+                         $lifetimeMinutes = config('auth.remember_lifetime', 43200); // Default: 30 days in minutes
+                         $lifetimeDays = floor($lifetimeMinutes / 1440); // Convert minutes to days for Cookie::set
+
+                         // Set the cookie directly using Cookie::set
+                         $cookieSet = Cookie::set(
+                             'remember_me', // Cookie name
+                             $cookieValue,   // Value (user_id|token)
+                             $lifetimeDays,  // Lifetime in days
+                             // Let Cookie::set use defaults from config for path, domain, secure, httpOnly, sameSite
+                         );
+
+                         if (!$cookieSet) {
+                             // Log the failure but don't necessarily fail the login
+                             if ($logger) $logger->error("Failed to set remember me cookie.", ['user_id' => $user->getAuthIdentifier()]);
+                         } elseif ($logger) {
+                             $logger->debug("Remember me cookie set.", ['user_id' => $user->getAuthIdentifier(), 'lifetime_days' => $lifetimeDays]);
+                         }
+
+                     } catch (\Throwable $rememberError) {
+                         // Log remember me token generation/save error but don't fail the login
+                         $rememberMessage = "Failed to set remember me token/cookie.";
+                         if ($logger) $logger->error($rememberMessage, ['exception' => $rememberError, 'user_id' => $user->getAuthIdentifier()]);
+                         else error_log($rememberMessage . " " . $rememberError->getMessage()); // Fallback
+                     }
+                 }
+                 // --- End Handle Remember Me ---
+
+                 if ($logger) $logger->info("User authenticated successfully.", ['user_id' => $user->getAuthIdentifier(), 'email' => $email, 'remember' => $remember]);
                  return true;
 
              } catch (\Throwable $e) {
-                  $message = "Session/Cache error during successful authentication.";
+                  // If remember me failed, it's already logged. Log other session/cache errors.
+                  $message = "Session/Cache/DB error during successful authentication.";
                   if ($logger) $logger->critical($message, ['exception' => $e, 'email' => $email]);
                   else error_log($message . " " . $e->getMessage()); // Fallback
                   try { App::container()->get(SessionManager::class)->remove(self::AUTH_SESSION_KEY); } catch (\Throwable $_){}
@@ -149,11 +189,63 @@ class Auth
              $message = "Error getting SessionManager in isAuthenticated.";
              if ($logger) $logger->error($message, ['exception' => $e]);
              else error_log($message . " " . $e->getMessage()); // Fallback
-             return false;
+              return false;
         }
 
+        // --- Check Remember Me Cookie FIRST ---
+        $rememberCookie = Cookie::get('remember_me');
+        if ($rememberCookie && is_string($rememberCookie) && str_contains($rememberCookie, '|')) {
+            list($cookieUserId, $cookieToken) = explode('|', $rememberCookie, 2);
+
+            if (!empty($cookieUserId) && !empty($cookieToken)) {
+                try {
+                    $modelClass = self::getUserModelClass();
+                    $userModelInstance = new $modelClass();
+                    if (!$userModelInstance instanceof AuthenticatableModel) {
+                         throw new \RuntimeException("Configured user model {$modelClass} does not extend AuthenticatableModel.");
+                    }
+                    $identifierName = $userModelInstance->getAuthIdentifierName();
+                    $rememberTokenName = $userModelInstance->getRememberTokenName();
+
+                    // Find user by ID from cookie
+                    $dbUser = $modelClass::query()->where($identifierName, '=', $cookieUserId)->first();
+
+                    // Verify user exists and token matches
+                    if ($dbUser instanceof AuthenticatableModel &&
+                        !empty($dbUser->getRememberToken()) &&
+                        hash_equals($dbUser->getRememberToken(), $cookieToken))
+                    {
+                        // Valid remember me cookie! Log the user in.
+                        if (!$session->regenerate(true)) {
+                             throw new RuntimeException("Failed to regenerate session ID during remember me login.");
+                        }
+                        $session->put(self::AUTH_SESSION_KEY, $dbUser->getAuthIdentifier());
+                        self::$authenticatedUser = $dbUser;
+                        if ($logger) $logger->info("User authenticated via remember me cookie.", ['user_id' => $dbUser->getAuthIdentifier()]);
+                        return true; // User is now authenticated
+                    } else {
+                        // Invalid cookie (user not found, token mismatch, or token empty in DB)
+                        if ($logger) $logger->warning("Invalid remember me cookie detected. Deleting.", ['cookie_user_id' => $cookieUserId]);
+                        Cookie::delete('remember_me'); // Delete the invalid cookie
+                    }
+                } catch (\Throwable $e) {
+                    // Error during remember me check (DB error, etc.)
+                    $message = "Error processing remember me cookie.";
+                    if ($logger) $logger->error($message, ['exception' => $e, 'cookie_user_id' => $cookieUserId ?? 'N/A']);
+                    else error_log($message . " " . $e->getMessage()); // Fallback
+                    Cookie::delete('remember_me'); // Delete potentially problematic cookie
+                }
+            } else {
+                 // Malformed cookie value
+                 if ($logger) $logger->warning("Malformed remember me cookie value detected. Deleting.", ['value' => $rememberCookie]);
+                 Cookie::delete('remember_me');
+            }
+        }
+        // --- End Check Remember Me Cookie ---
+
+        // Proceed with session check ONLY if not authenticated via cookie
         if (!$session->has(self::AUTH_SESSION_KEY)) {
-            return false;
+            return false; // No session and no valid remember me cookie
         }
         $userId = $session->get(self::AUTH_SESSION_KEY);
         if (empty($userId)) {

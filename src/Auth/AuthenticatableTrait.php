@@ -41,8 +41,39 @@ trait AuthenticatableTrait
         return $this->password ?? '';
     }
 
-    // Remember token methods can be added here if needed later
-    // public function getRememberToken(): ?string { ... }
-    // public function setRememberToken(?string $value): void { ... }
-    // public function getRememberTokenName(): string { ... }
+    /**
+     * Get the column name for the "remember me" token.
+     *
+     * @return string
+     */
+    public function getRememberTokenName(): string
+    {
+        // Assumes the column name is 'remember_token'. Override in model if different.
+        return 'remember_token';
+    }
+
+    /**
+     * Get the current value of the "remember me" token.
+     *
+     * @return string|null
+     */
+    public function getRememberToken(): ?string
+    {
+        $tokenName = $this->getRememberTokenName();
+        // Ensure the property exists before accessing
+        return property_exists($this, $tokenName) ? $this->{$tokenName} : null;
+    }
+
+    /**
+     * Set the "remember me" token value.
+     *
+     * @param  string|null  $value
+     * @return void
+     */
+    public function setRememberToken(?string $value): void
+    {
+        $tokenName = $this->getRememberTokenName();
+        // Ensure the property exists or handle appropriately if the model uses magic methods
+        $this->{$tokenName} = $value;
+    }
 }

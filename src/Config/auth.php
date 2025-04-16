@@ -25,5 +25,6 @@ return [
     */
     'max_attempts' => 5, // Default value
     'lockout_time' => 900, // Default value
+    'remember_me_lifetime' => 43200, // Default value (30 days)
 
 ];

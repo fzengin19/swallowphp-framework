@@ -51,6 +51,9 @@ class App
             // Assuming Env::load() handles finding the .env file based on BASE_PATH or similar
             try {
                 if (class_exists(Env::class) && method_exists(Env::class, 'load')) {
+                    if(defined('BASE_PATH')) {
+                        Env::setBasePath(BASE_PATH);
+                    }
                     Env::load();
                 } else {
                     // Log or throw error if Env class/method is missing

@@ -4,135 +4,142 @@ namespace SwallowPHP\Framework\Foundation;
 
 class Env
 {
+    protected static ?string $basePath = null;
+
     /**
-     * Retrieves the value of an environment variable.
+     * Set the base path for the application.
      *
-     * @param string $key The name of the environment variable to retrieve.
-     * @param mixed|null $default The default value to return if the variable is not set.
+     * @param string $path
+     * @return void
+     */
+    public static function setBasePath(string $path): void
+    {
+        self::$basePath = rtrim($path, DIRECTORY_SEPARATOR);
+    }
+
+    /**
+     * Get the base path. If not set, fallback to autodetect.
      *
-     * @return mixed The value of the environment variable, or the default value if not set.
+     * @return string
+     */
+    public static function getBasePath(): string
+    {
+        if (self::$basePath !== null) {
+            return self::$basePath;
+        }
+
+        // fallback: guess from current file location (4 levels up)
+        return dirname(__DIR__, 4);
+    }
+
+    /**
+     * Get environment variable value.
+     *
+     * @param string $key
+     * @param mixed|null $default
+     * @return mixed
      */
     public static function get($key, $default = null)
     {
-        // Check $_ENV first
         if (isset($_ENV[$key])) {
             return $_ENV[$key];
         }
 
-        // Check $_SERVER next
         if (isset($_SERVER[$key])) {
             return $_SERVER[$key];
         }
 
-        // Fallback to getenv()
         $value = getenv($key);
-
-        // getenv() returns false if variable doesn't exist
         return $value !== false ? $value : $default;
     }
 
     /**
-     * Gets the environment variables as JSON.
+     * Load environment variables from .env file inside basePath.
      *
-     * @return string JSON representation of environment variables.
+     * @return void
      */
-    public static function getAsJson($environmentFile = null) {
-        if ($environmentFile === null) {
-            // Use the same reliable path finding as load()
-            $basePath = dirname(__DIR__, 2); // src/Foundation -> src -> project_root
-            $environmentFile = $basePath . '/.env';
+    public static function load(): void
+    {
+        $envPath = self::getBasePath() . DIRECTORY_SEPARATOR . '.env';
+
+        if (!file_exists($envPath)) {
+            error_log("Warning: .env file not found at: " . $envPath);
+            return;
         }
+
+        if (!is_readable($envPath)) {
+            error_log("Warning: .env file is not readable at: " . $envPath);
+            return;
+        }
+        $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if (str_starts_with($line, '#') || !str_contains($line, '=')) {
+                continue;
+            }
+
+            [$name, $value] = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+
+            if (strlen($value) > 1 && (($value[0] === '"' && $value[-1] === '"') || ($value[0] === '\'' && $value[-1] === '\''))) {
+                $value = substr($value, 1, -1);
+            }
+
+            if (str_starts_with($name, 'export ')) {
+                $name = trim(substr($name, 7));
+            }
+
+            putenv("$name=$value");
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+
+        // Bonus: set BASE_PATH as env var
+        $base = self::getBasePath();
+        putenv("BASE_PATH=$base");
+        $_ENV['BASE_PATH'] = $base;
+        $_SERVER['BASE_PATH'] = $base;
+    }
+
+    /**
+     * Get environment variables from .env as JSON (inside basePath).
+     *
+     * @return string
+     */
+    public static function getAsJson(): string
+    {
+        $envPath = self::getBasePath() . DIRECTORY_SEPARATOR . '.env';
         $envArray = [];
 
-        if (file_exists( $environmentFile)) {
-            $lines = file($environmentFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            foreach ($lines as $line) {
-                // Skip comments and invalid lines (same logic as load())
-                if (str_starts_with(trim($line), '#') || !str_contains($line, '=')) {
-                    continue;
-                }
+        if (!file_exists($envPath)) {
+            return json_encode($envArray);
+        }
 
-                list($name, $value) = explode('=', $line, 2);
-                $name = trim($name);
-                $value = trim($value);
+        $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
 
-                // Remove surrounding quotes
-                if (strlen($value) > 1 && $value[0] === '"' && $value[strlen($value) - 1] === '"') {
-                    $value = substr($value, 1, -1);
-                } elseif (strlen($value) > 1 && $value[0] === '\'' && $value[strlen($value) - 1] === '\'') {
-                    $value = substr($value, 1, -1);
-                }
-
-                // Remove potential 'export ' prefix
-                if (str_starts_with($name, 'export ')) {
-                    $name = trim(substr($name, 7));
-                }
-
-                $envArray[$name] = $value;
+            if (str_starts_with($line, '#') || !str_contains($line, '=')) {
+                continue;
             }
+
+            [$name, $value] = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+
+            if (strlen($value) > 1 && (($value[0] === '"' && $value[-1] === '"') || ($value[0] === '\'' && $value[-1] === '\''))) {
+                $value = substr($value, 1, -1);
+            }
+
+            if (str_starts_with($name, 'export ')) {
+                $name = trim(substr($name, 7));
+            }
+
+            $envArray[$name] = $value;
         }
 
         return json_encode($envArray);
-    }
-
-
-    public static function load($environmentFile = null) {
-        if ($environmentFile === null) {
-            // Assume standard Composer structure: vendor/author/package/src/...
-            // Go 4 levels up from this file (src/Foundation/Env.php) to reach the project root.
-            // Adjust the number '4' if the framework's directory structure within vendor is different.
-            $basePath = dirname(__DIR__, 4);
-            $environmentFile = $basePath . DIRECTORY_SEPARATOR . '.env';
-        }
-
-        if (!file_exists($environmentFile)) {
-             // Log if .env file is not found at the expected location
-             error_log("Warning: .env file not found at: " . $environmentFile);
-             return; // Stop execution if .env is not found
-        }
-
-        if (is_readable($environmentFile)) { // Check if readable before trying to read
-            // Read file line by line for better parsing control
-            $lines = file($environmentFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            if ($lines === false) {
-                 error_log("Warning: Could not read .env file at: " . $environmentFile);
-                 return; // Stop if file cannot be read
-            }
-
-            foreach ($lines as $line) {
-                // Skip comments
-                if (str_starts_with(trim($line), '#')) {
-                    continue;
-                }
-
-                // Skip lines without '='
-                if (!str_contains($line, '=')) {
-                    continue;
-                }
-
-                // Split into name and value
-                list($name, $value) = explode('=', $line, 2);
-                $name = trim($name);
-                $value = trim($value);
-
-                // Remove surrounding quotes (single or double)
-                if (strlen($value) > 1 && $value[0] === '"' && $value[strlen($value) - 1] === '"') {
-                    $value = substr($value, 1, -1);
-                } elseif (strlen($value) > 1 && $value[0] === '\'' && $value[strlen($value) - 1] === '\'') {
-                    $value = substr($value, 1, -1);
-                }
-
-                // Remove potential 'export ' prefix from name
-                if (str_starts_with($name, 'export ')) {
-                    $name = trim(substr($name, 7));
-                }
-
-                // Set environment variables (putenv, $_ENV, $_SERVER)
-                // Overwrite existing values as is standard practice for .env files
-                putenv("{$name}={$value}");
-                $_ENV[$name] = $value;
-                $_SERVER[$name] = $value;
-            }
-        }
     }
 }

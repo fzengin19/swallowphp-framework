@@ -14,7 +14,20 @@ class Env
      */
     public static function get($key, $default = null)
     {
+        // Check $_ENV first
+        if (isset($_ENV[$key])) {
+            return $_ENV[$key];
+        }
+
+        // Check $_SERVER next
+        if (isset($_SERVER[$key])) {
+            return $_SERVER[$key];
+        }
+
+        // Fallback to getenv()
         $value = getenv($key);
+
+        // getenv() returns false if variable doesn't exist
         return $value !== false ? $value : $default;
     }
 
@@ -103,12 +116,10 @@ class Env
                 }
 
                 // Set environment variables (putenv, $_ENV, $_SERVER)
-                // Check if variable already exists to avoid overwriting system vars? Optional.
-                if (!getenv($name) && !isset($_ENV[$name]) && !isset($_SERVER[$name])) {
-                    putenv("{$name}={$value}");
-                    $_ENV[$name] = $value;
-                    $_SERVER[$name] = $value; // Less common, but some code might check $_SERVER
-                }
+                // Overwrite existing values as is standard practice for .env files
+                putenv("{$name}={$value}");
+                $_ENV[$name] = $value;
+                $_SERVER[$name] = $value;
             }
         }
     }

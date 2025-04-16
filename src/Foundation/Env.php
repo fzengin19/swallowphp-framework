@@ -78,14 +78,30 @@ class Env
 
     public static function load($environmentFile = null) {
         if ($environmentFile === null) {
-            // Search for .env file starting from the project root
-            $basePath = dirname(__DIR__, 2); // src/Foundation -> src -> project_root
-            $environmentFile = $basePath . '/.env';
+            // Use the globally defined BASE_PATH constant if available
+            if (!defined('BASE_PATH')) {
+                // Attempt a fallback, but log a critical error as BASE_PATH should be defined early.
+                $basePath = dirname(__DIR__, 3); // Try going up from vendor/swallowphp/framework/src
+                error_log("CRITICAL: BASE_PATH constant is not defined. Attempting fallback path for .env: " . $basePath);
+            } else {
+                $basePath = constant('BASE_PATH');
+            }
+            $environmentFile = $basePath . DIRECTORY_SEPARATOR . '.env';
         }
 
-        if (file_exists( $environmentFile)) {
+        if (!file_exists($environmentFile)) {
+             // Log if .env file is not found at the expected location
+             error_log("Warning: .env file not found at: " . $environmentFile);
+             return; // Stop execution if .env is not found
+        }
+
+        if (is_readable($environmentFile)) { // Check if readable before trying to read
             // Read file line by line for better parsing control
             $lines = file($environmentFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if ($lines === false) {
+                 error_log("Warning: Could not read .env file at: " . $environmentFile);
+                 return; // Stop if file cannot be read
+            }
 
             foreach ($lines as $line) {
                 // Skip comments

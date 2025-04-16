@@ -78,14 +78,10 @@ class Env
 
     public static function load($environmentFile = null) {
         if ($environmentFile === null) {
-            // Use the globally defined BASE_PATH constant if available
-            if (!defined('BASE_PATH')) {
-                // Attempt a fallback, but log a critical error as BASE_PATH should be defined early.
-                $basePath = dirname(__DIR__, 3); // Try going up from vendor/swallowphp/framework/src
-                error_log("CRITICAL: BASE_PATH constant is not defined. Attempting fallback path for .env: " . $basePath);
-            } else {
-                $basePath = constant('BASE_PATH');
-            }
+            // Assume standard Composer structure: vendor/author/package/src/...
+            // Go 4 levels up from this file (src/Foundation/Env.php) to reach the project root.
+            // Adjust the number '4' if the framework's directory structure within vendor is different.
+            $basePath = dirname(__DIR__, 4);
             $environmentFile = $basePath . DIRECTORY_SEPARATOR . '.env';
         }
 

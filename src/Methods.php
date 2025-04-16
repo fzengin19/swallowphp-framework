@@ -442,3 +442,30 @@ if (!function_exists('flash')) {
         session()->flash($key, $value);
     }
 }
+
+if (!function_exists('isRoute')) {
+    /**
+     * Check if the current route matches the given name.
+     *
+     * @param string $name The name of the route to check.
+     * @return bool True if the current route matches the name, false otherwise.
+     */
+    function isRoute(string $name): bool
+    {
+        try {
+            /** @var \SwallowPHP\Framework\Routing\Router $router */
+            $router = App::container()->get(Router::class);
+            // Get the currently matched route from the Router
+            $matchedRoute = $router->getCurrentRoute();
+            return $matchedRoute !== null && $matchedRoute->getName() === $name;
+        } catch (\Throwable $e) {
+            // Log error or handle cases where router/route isn't available yet (e.g., called before dispatch)
+            $logger = null;
+            try { $logger = App::container()->get(LoggerInterface::class); } catch (\Throwable $t) { /* Ignore logger resolution error */ }
+            if ($logger) {
+                $logger->warning("Could not check current route name in isRoute() helper: " . $e->getMessage(), ['exception' => $e]);
+            }
+            return false;
+        }
+    }
+}

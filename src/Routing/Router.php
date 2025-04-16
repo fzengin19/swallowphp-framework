@@ -18,6 +18,9 @@ class Router
     /** @var Route[] Route collection for storing registered routes. */
     protected static $routes = [];
 
+    /** @var Route|null The currently matched route after dispatch. */
+    protected static ?Route $matchedRoute = null;
+
     /** Creates a GET route. */
     public static function get($uri, $action): Route
     {
@@ -118,6 +121,12 @@ class Router
         throw new RouteNotFoundException("Route [{$name}] not defined.", 404);
     }
 
+    /** Gets the currently matched route object, if any. */
+    public static function getCurrentRoute(): ?Route
+    {
+        return self::$matchedRoute;
+    }
+
     /** Dispatches the request to the appropriate route. */
     public static function dispatch(Request $request): mixed
     {
@@ -165,6 +174,9 @@ class Router
                     $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
                     // Add route parameters to the request object (overwriting query/body params with same name)
                     $request->setAll(array_merge($request->all(), $params));
+
+                    // Store the matched route before executing
+                    self::$matchedRoute = $route;
 
                     // Execute the route's action (controller or closure)
                     // Route::execute handles middleware pipeline and action execution

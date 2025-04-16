@@ -123,7 +123,7 @@ class Response
         return $this;
     }
 
-    /** Sends HTTP headers. */
+    /** Sends HTTP headers, including any queued cookies. */
     public function sendHeaders(): self
     {
         if (headers_sent($file, $line)) {
@@ -132,7 +132,17 @@ class Response
              else error_log($logMsg . " in {$file}:{$line}"); // Fallback log
             return $this;
         }
+
+        // Send queued cookies BEFORE sending other headers
+        // Check if Cookie class and method exist to avoid errors if class structure changes
+        if (class_exists(Cookie::class) && method_exists(Cookie::class, 'sendQueuedCookies')) {
+            Cookie::sendQueuedCookies();
+        }
+
+        // Send status code
         http_response_code($this->statusCode);
+
+        // Send response headers
         foreach ($this->headers as $name => $values) {
             $name = str_replace(' ', '-', ucwords(str_replace('-', ' ', $name)));
             foreach ((array) $values as $value) {

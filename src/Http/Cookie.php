@@ -9,6 +9,9 @@ use Psr\Log\LogLevel; // For log levels
 
 class Cookie
 {
+    /** @var array Cookies queued to be sent with the response. */
+    protected static array $queuedCookies = [];
+
     /** Get logger instance helper */
     private static function logger(): ?LoggerInterface
     {
@@ -106,13 +109,43 @@ class Cookie
             'samesite' => $sameSite
         ];
 
-        try {
-             return setcookie($cookieName, $payload, $options);
-        } catch (\Throwable $t) {
-             $logMsg = "Failed to set cookie '{$cookieName}'";
-             if ($logger) $logger->error($logMsg, ['exception' => $t, 'options' => $options]); else error_log($logMsg . ": " . $t->getMessage());
-             return false;
+        // Queue the cookie instead of setting it directly
+        static::$queuedCookies[$cookieName] = [
+            'value' => $payload,
+            'options' => $options,
+        ];
+
+        // Log queuing success (optional)
+        // if ($logger) $logger->debug("Cookie '{$cookieName}' queued.", ['options' => $options]);
+
+        return true; // Assume queuing is always successful for now
+    }
+
+    /**
+     * Sends all queued cookies using setcookie().
+     * This should be called before any output is sent, typically by the Response class.
+     */
+    public static function sendQueuedCookies(): void
+    {
+        $logger = self::logger(); // Get logger instance
+        foreach (static::$queuedCookies as $name => $cookie) {
+            try {
+                // Check headers_sent again just in case
+                if (!headers_sent($file, $line)) {
+                    setcookie($name, $cookie['value'], $cookie['options']);
+                } else {
+                    $logMsg = "Could not send queued cookie '{$name}' because headers were already sent";
+                    if ($logger) $logger->warning($logMsg, ['output_started_at' => "{$file}:{$line}"]);
+                    else error_log($logMsg . " in {$file}:{$line}");
+                }
+            } catch (\Throwable $t) {
+                $logMsg = "Failed to set queued cookie '{$name}'";
+                if ($logger) $logger->error($logMsg, ['exception' => $t, 'options' => $cookie['options']]);
+                else error_log($logMsg . ": " . $t->getMessage());
+            }
         }
+        // Clear the queue after attempting to send
+        static::$queuedCookies = [];
     }
 
     /**

@@ -107,7 +107,9 @@ class Auth
                      try {
                          $token = bin2hex(random_bytes(32)); // Generate secure token
                          $user->setRememberToken($token);
-                         if (!$user->save()) { // Save the token to the database
+                         $saveResult = $user->save(); // Save the token to the database
+                         // Check specifically for false, as 0 affected rows on update isn't necessarily an error here.
+                         if ($saveResult === false) {
                              throw new RuntimeException("Failed to save remember token for user ID: " . $user->getAuthIdentifier());
                          }
 

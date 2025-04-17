@@ -76,9 +76,22 @@ if (!function_exists('slug')) {
 }
 
 if (!function_exists('redirectToRoute')) {
-    function redirectToRoute($urlName, $params = [])
+    function redirectToRoute(string $urlName, array $params = []): void
     {
-        header('Location: ' . App::container()->get(Router::class)->getRouteByName($urlName, $params));
+        $router = App::container()->get(Router::class);
+        $url    = $router->getRouteByName($urlName, $params);
+
+        // Queued cookie'leri gönder
+        if (class_exists(\SwallowPHP\Framework\Http\Cookie::class)
+            && method_exists(\SwallowPHP\Framework\Http\Cookie::class, 'sendQueuedCookies')
+        ) {
+            \SwallowPHP\Framework\Http\Cookie::sendQueuedCookies();
+        }
+
+        // Response sınıfını kullanarak yönlendir ve header + exit yerine send() metodunu kullan
+        \SwallowPHP\Framework\Http\Response::redirect($url)
+            ->send();
+
         exit();
     }
 }

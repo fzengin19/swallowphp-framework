@@ -131,7 +131,9 @@ if (!function_exists('mailto')) {
             $mail->Body = $message;
             $mail->CharSet = 'UTF-8';
             foreach ($headers as $key => $value) {
-                $mail->addCustomHeader($key, $value);
+                if (is_string($key) && is_string($value)) {
+                    $mail->addCustomHeader($key, $value);
+                }
             }
 
             $mail->send();

@@ -210,13 +210,24 @@ class Auth
                     // Find user by ID from cookie
                     $dbUser = $modelClass::query()->where($identifierName, '=', $cookieUserId)->first();
 
+                    // --- DEBUG LOGGING ---
+                    $dbTokenHash = $dbUser ? $dbUser->getRememberToken() : 'USER_NOT_FOUND';
+                    $cookieTokenHash = hash('sha256', $cookieToken);
+                    if ($logger) $logger->debug('Comparing remember me tokens', [
+                        'db_token_hash' => $dbTokenHash,
+                        'cookie_token_hash' => $cookieTokenHash,
+                        'cookie_user_id' => $cookieUserId,
+                        'db_user_found' => ($dbUser instanceof AuthenticatableModel)
+                    ]);
+                    // --- END DEBUG LOGGING ---
+
                     // Verify user exists and token matches
                     // Compare the HASHED token from DB with the HASH of the RAW token from cookie
                     if (
                         $dbUser instanceof AuthenticatableModel &&
-                        !empty($dbUser->getRememberToken()) && // Ensure DB token is not empty
+                        !empty($dbTokenHash) && $dbTokenHash !== 'USER_NOT_FOUND' && // Check if user was found and token exists
                         !empty($cookieToken) && // Ensure cookie token is not empty
-                        hash_equals($dbUser->getRememberToken(), hash('sha256', $cookieToken)) // Compare HASHES
+                        hash_equals($dbTokenHash, $cookieTokenHash) // Compare HASHES using variables from debug log
                     ) {
                         // Valid remember me cookie! Log the user in.
                         if (!$session->regenerate(true)) {

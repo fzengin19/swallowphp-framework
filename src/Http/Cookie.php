@@ -195,20 +195,38 @@ class Cookie
     ): bool
     {
         $path = $path ?? config('session.path', '/');
-        $domain = $domain ?? config('session.domain', '');
+        // Ensure domain is explicitly an empty string if null or empty from config
+        $domain = $domain ?? config('session.domain'); // Get config value or null
+        $domain = $domain ?: ''; // If null or empty string, make it empty string
+
         $deleted = false;
         $cookieName = $name;
         $prefixedCookieName = '__Secure-' . $name;
 
+        // Use options array for setcookie (PHP 7.3+)
+        $options = [
+            'expires' => time() - 3600,
+            'path' => $path,
+            'domain' => $domain,
+            // secure, httponly, samesite are not strictly needed for deletion cookie
+            // but matching them might be safer in some edge cases. Let's omit for simplicity.
+        ];
+
+        // Attempt to delete both prefixed and non-prefixed versions
+        $deletedNonPrefixed = false;
         if (isset($_COOKIE[$cookieName])) {
             unset($_COOKIE[$cookieName]);
-            $deleted = setcookie($cookieName, '', time() - 3600, $path, $domain);
+            $deletedNonPrefixed = setcookie($cookieName, '', $options);
         }
+
+        $deletedPrefixed = false;
         if (isset($_COOKIE[$prefixedCookieName])) {
              unset($_COOKIE[$prefixedCookieName]);
-             $deleted = setcookie($prefixedCookieName, '', time() - 3600, $path, $domain) || $deleted;
+             $deletedPrefixed = setcookie($prefixedCookieName, '', $options);
         }
-        return $deleted;
+
+        // Return true if either deletion cookie was successfully set
+        return $deletedNonPrefixed || $deletedPrefixed;
     }
 
     /**

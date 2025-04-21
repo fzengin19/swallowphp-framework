@@ -33,7 +33,7 @@ class AddContentSecurityPolicyHeader
             if (!empty($policyString)) {
                 // Add the header. Use setHeader to overwrite if already exists.
                 // Avoid using addHeader as it might append multiple CSP headers which is invalid.
-                $response->setHeader('Content-Security-Policy', $policyString);
+                $response->header('Content-Security-Policy', $policyString);
 
                 // Optional: Add Content-Security-Policy-Report-Only for testing
                 // $response->setHeader('Content-Security-Policy-Report-Only', $policyString);

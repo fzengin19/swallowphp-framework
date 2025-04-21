@@ -14,6 +14,7 @@ use Psr\Log\LoggerInterface; // Import PSR-3 Logger Interface
 use Psr\Log\LogLevel; // Import LogLevel constants
 use SwallowPHP\Framework\Session\SessionManager; // Import SessionManager
 use SwallowPHP\Framework\Foundation\Config;
+use SwallowPHP\Framework\Http\Middleware\AddContentSecurityPolicyHeader; // Import CSP Middleware
 
 class App
 {
@@ -328,6 +329,17 @@ class App
                 $logger->error("Middleware pipeline did not return a Response object. Got: " . gettype($response));
                 $response = \SwallowPHP\Framework\Http\Response::html('Internal Server Error', 500);
             }
+
+            // --- Apply Content Security Policy Header ---
+            // Instantiate the middleware directly or get from container if registered
+            $cspMiddleware = new AddContentSecurityPolicyHeader();
+            // Since the response is already generated, we call handle with a dummy $next
+            // that just returns the existing response.
+            $response = $cspMiddleware->handle($request, function ($req) use ($response) {
+                return $response;
+            });
+            // --- End Apply CSP Header ---
+
             $response->send();
 
             ob_end_flush();

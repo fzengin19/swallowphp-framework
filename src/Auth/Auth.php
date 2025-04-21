@@ -234,8 +234,14 @@ class Auth
                 } catch (\Throwable $e) {
                     // Error during remember me check (DB error, etc.)
                     $message = "Error processing remember me cookie.";
-                    if ($logger) $logger->error($message, ['exception' => $e, 'cookie_user_id' => $cookieUserId ?? 'N/A']);
-                    else error_log($message . " " . $e->getMessage()); // Fallback
+                    // Log more details about the exception
+                    $errorContext = [
+                        'exception_message' => $e->getMessage(),
+                        'exception_trace' => mb_substr($e->getTraceAsString(), 0, 2000), // Log first 2000 chars of trace
+                        'cookie_user_id' => $cookieUserId ?? 'N/A'
+                    ];
+                    if ($logger) $logger->error($message, $errorContext);
+                    else error_log($message . " Exception: " . $e->getMessage() . " Trace: " . $e->getTraceAsString()); // Fallback with more details
                     Cookie::delete('remember_me'); // Delete potentially problematic cookie
                 }
             } else {

@@ -265,17 +265,16 @@ class App
 
             date_default_timezone_set($config->get('app.timezone', 'UTC'));
             setlocale(LC_TIME, ($config->get('app.locale', 'en') ?? 'en') . '.UTF-8');
-            set_time_limit((int)$config->get('app.max_execution_time', 30));
+            set_time_limit((int)$config->get('max_execution_time', 30));
 
-            $isDebug = $config->get('app.debug', false);
-            if (!$isDebug) {
-                error_reporting(0);
-                ini_set('display_errors', 0);
-            } else {
-                error_reporting(E_ALL);
-                // display_errors should always be 0 to let the error handler work
-                ini_set('display_errors', 0);
-            }
+            // --- Configure PHP Error Reporting based on Config ---
+            // Get the desired level from config, default to E_ALL if not set
+            $errorLevel = $config->get('app.error_reporting_level', E_ALL);
+            error_reporting($errorLevel);
+            // display_errors should always be 0 to let the ExceptionHandler manage display
+            ini_set('display_errors', 0);
+
+            $isDebug = $config->get('app.debug', false); // Keep debug flag for other potential uses
 
             // SSL Redirect
             if ($config->get('app.ssl_redirect', false) === true && empty($_SERVER['HTTPS'])) {

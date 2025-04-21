@@ -118,6 +118,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Error Reporting Level
+    |--------------------------------------------------------------------------
+    |
+    | Determine which PHP errors are reported. By default, report all errors
+    | when in debug mode, and report all except deprecated and notice
+    | errors when not in debug mode. You can set this specifically using
+    | PHP constants like E_ALL, E_ERROR | E_WARNING, etc.
+    | Use 0 to turn off reporting completely (not recommended unless handled).
+    |
+    */
+    // 'error_reporting_level' => env('APP_DEBUG', false) ? E_ALL : (E_ALL & ~E_DEPRECATED & ~E_NOTICE),
+    'error_reporting_level' => E_ALL, // Framework default, app should override based on env('APP_DEBUG')
+
+    /*
+    |--------------------------------------------------------------------------
     | Logging Configuration
     |--------------------------------------------------------------------------
     */

@@ -98,15 +98,19 @@ class Auth
                 // --- Handle Remember Me ---
                 if ($remember) {
                     try {
-                        $token = bin2hex(random_bytes(32)); // Generate secure token
-                        $user->setRememberToken($token);
-                        $saveResult = $user->save(); // Save the token to the database
+                        $rawToken = bin2hex(random_bytes(32)); // Generate secure RAW token
+                        $hashedToken = hash('sha256', $rawToken); // Hash the token for DB storage
+
+                        $user->setRememberToken($hashedToken); // Set the HASHED token on the model
+                        $saveResult = $user->save(); // Save the HASHED token to the database
+
                         // Check specifically for false, as 0 affected rows on update isn't necessarily an error here.
                         if ($saveResult === false) {
                             throw new RuntimeException("Failed to save remember token for user ID: " . $user->getAuthIdentifier());
                         }
 
-                        $cookieValue = $user->getAuthIdentifier() . '|' . $token;
+                        // Cookie value still contains the RAW token
+                        $cookieValue = $user->getAuthIdentifier() . '|' . $rawToken;
                         $lifetimeMinutes = config('auth.remember_lifetime', 43200); // Default: 30 days in minutes
                         $lifetimeDays = floor($lifetimeMinutes / 1440); // Convert minutes to days for Cookie::set
 
@@ -207,10 +211,12 @@ class Auth
                     $dbUser = $modelClass::query()->where($identifierName, '=', $cookieUserId)->first();
 
                     // Verify user exists and token matches
+                    // Compare the HASHED token from DB with the HASH of the RAW token from cookie
                     if (
                         $dbUser instanceof AuthenticatableModel &&
-                        !empty($dbUser->getRememberToken()) &&
-                        hash_equals($dbUser->getRememberToken(), $cookieToken)
+                        !empty($dbUser->getRememberToken()) && // Ensure DB token is not empty
+                        !empty($cookieToken) && // Ensure cookie token is not empty
+                        hash_equals($dbUser->getRememberToken(), hash('sha256', $cookieToken)) // Compare HASHES
                     ) {
                         // Valid remember me cookie! Log the user in.
                         if (!$session->regenerate(true)) {

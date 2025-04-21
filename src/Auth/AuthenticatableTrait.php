@@ -60,8 +60,11 @@ trait AuthenticatableTrait
     public function getRememberToken(): ?string
     {
         $tokenName = $this->getRememberTokenName();
-        // Ensure the property exists before accessing
-        return property_exists($this, $tokenName) ? $this->{$tokenName} : null;
+        // Access the attribute using the model's magic __get method
+        // which correctly retrieves from the $attributes array and applies casts.
+        return $this->__get($tokenName);
+        // Alternative (less ideal as it bypasses casting):
+        // return $this->attributes[$tokenName] ?? null;
     }
 
     /**

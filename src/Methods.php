@@ -24,9 +24,13 @@ if (!function_exists('config')) {
     function config($key = null, $default = null)
     {
         $config = App::container()->get(\SwallowPHP\Framework\Foundation\Config::class);
-        if (is_null($key)) { return $config; }
+        if (is_null($key)) {
+            return $config;
+        }
         if (is_array($key)) {
-            foreach ($key as $k => $v) { $config->set($k, $v); }
+            foreach ($key as $k => $v) {
+                $config->set($k, $v);
+            }
             return null;
         }
         return $config->get($key, $default);
@@ -64,7 +68,7 @@ if (!function_exists('route')) {
 if (!function_exists('slug')) {
     function slug($value)
     {
-        $trMap = ['ç' => 'c','Ç' => 'C','ğ' => 'g','Ğ' => 'G','ı' => 'i','İ' => 'I','ö' => 'o','Ö' => 'O','ş' => 's','Ş' => 'S','ü' => 'u','Ü' => 'U'];
+        $trMap = ['ç' => 'c', 'Ç' => 'C', 'ğ' => 'g', 'Ğ' => 'G', 'ı' => 'i', 'İ' => 'I', 'ö' => 'o', 'Ö' => 'O', 'ş' => 's', 'Ş' => 'S', 'ü' => 'u', 'Ü' => 'U'];
         $value = strtr($value, $trMap);
         $value = preg_replace('/[\p{P}+]/u', '-', $value);
         $value = preg_replace('/\s+/', '-', $value);
@@ -82,7 +86,8 @@ if (!function_exists('redirectToRoute')) {
         $url    = $router->getRouteByName($urlName, $params);
 
         // Queued cookie'leri gönder
-        if (class_exists(\SwallowPHP\Framework\Http\Cookie::class)
+        if (
+            class_exists(\SwallowPHP\Framework\Http\Cookie::class)
             && method_exists(\SwallowPHP\Framework\Http\Cookie::class, 'sendQueuedCookies')
         ) {
             \SwallowPHP\Framework\Http\Cookie::sendQueuedCookies();
@@ -97,58 +102,150 @@ if (!function_exists('redirectToRoute')) {
 }
 
 if (!function_exists('mailto')) {
-    function mailto($to, $subject, $message, $headers = []): bool // Added return type hint
+    function mailto($to, $subject, $message, $headers = []): bool
     {
-        // Get logger instance early, handle potential failure
-        $logger = null;
+        // Logger setup
         try {
             $logger = App::container()->get(LoggerInterface::class);
         } catch (\Throwable $e) {
-            error_log("Failed to get Logger in mailto() helper: " . $e->getMessage());
-            // Decide if mail sending should proceed without logging, or fail? Fail for safety.
+            error_log("Failed to get Logger in mailto(): " . $e->getMessage());
             return false;
         }
 
-        $mail = new PHPMailer(true);
-        try {
-            // Get configuration from config('mail.mailers.smtp.*') and config('mail.from')
-            $smtpConfig = config('mail.mailers.smtp', []);
-            $fromConfig = config('mail.from', []);
+        // Convert recipients to array
+        $recipients = is_array($to) ? $to : [$to];
+        $total = count($recipients);
+        $logger->info("Mailto started", ['total_recipients' => $total, 'subject' => $subject]);
 
-            $mail->Timeout = config('mail.timeout', 10);
-            $mail->SMTPAutoTLS = $smtpConfig['autotls'] ?? false;
+        // Validate recipients
+        $validRecipients = [];
+        foreach ($recipients as $email) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $validRecipients[] = $email;
+            } else {
+                $logger->warning("Invalid email address: $email");
+            }
+        }
+
+        $validTotal = count($validRecipients);
+        if ($validTotal === 0) {
+            $logger->error("No valid recipients found");
+            return false;
+        }
+        $logger->info('Found ' . $validTotal . ' valid email address');
+
+
+        // Load configuration
+        $smtpConfig  = config('mail.mailers.smtp', []);
+        $fromConfig  = config('mail.from', []);
+        $timeout     = config('mail.timeout', 10);
+        $batchSize   = config('mail.max_recipients_per_mail', 50);
+
+        $logger->info("SMTP configuration loaded", [
+            'host'       => $smtpConfig['host'] ?? '',
+            'port'       => $smtpConfig['port'] ?? 587,
+            'encryption' => $smtpConfig['encryption'] ?? false,
+            'auth'       => isset($smtpConfig['username']),
+            'autotls'    => $smtpConfig['autotls'] ?? false,
+            'timeout'    => $timeout,
+            'batch_size' => $batchSize,
+        ]);
+
+        // Mail sending closure
+        $sendMail = function ($mail, $batch) use ($logger, &$batchNo) {
+            try {
+                $mail->send();
+                $logger->info("Batch #{$batchNo} sent successfully", ['batch_recipients' => $batch]);
+                return true;
+            } catch (PHPMailerException $e) {
+                $logger->error("Batch #{$batchNo} failed (PHPMailer): " . $e->errorMessage(), ['exception' => $e]);
+                return false;
+            } catch (\Exception $e) {
+                $logger->error("Batch #{$batchNo} failed (General): " . $e->getMessage(), ['exception' => $e]);
+                return false;
+            }
+        };
+
+        // Single recipient case
+        if ($validTotal === 1) {
+            $mail = new PHPMailer(true);
+            $mail->Timeout      = $timeout;
+            $mail->SMTPAutoTLS  = $smtpConfig['autotls'] ?? false;
             $mail->isSMTP();
-            $mail->Host = $smtpConfig['host'] ?? null;
-            $mail->SMTPAuth = ($smtpConfig['username'] ?? null) !== null; // Enable auth if username is set
-            $mail->Username = $smtpConfig['username'] ?? null;
-            $mail->Password = $smtpConfig['password'] ?? null;
-            $mail->SMTPSecure = $smtpConfig['encryption'] ?? false; // false, 'tls', 'ssl'
-            $mail->Port = $smtpConfig['port'] ?? 587;
-            $mail->setFrom($fromConfig['address'] ?? 'hello@example.com', $fromConfig['name'] ?? 'Example');
-            $mail->addAddress($to);
+            $mail->Host         = $smtpConfig['host'] ?? '';
+            $mail->SMTPAuth     = isset($smtpConfig['username']);
+            $mail->Username     = $smtpConfig['username'] ?? '';
+            $mail->Password     = $smtpConfig['password'] ?? '';
+            $mail->SMTPSecure   = $smtpConfig['encryption'] ?? false;
+            $mail->Port         = $smtpConfig['port'] ?? 587;
+            $mail->setFrom(
+                $fromConfig['address'] ?? 'hello@example.com',
+                $fromConfig['name']    ?? 'Example'
+            );
+            $mail->addAddress($validRecipients[0]);
             $mail->isHTML(true);
             $mail->Subject = $subject;
-            $mail->Body = $message;
+            $mail->Body    = $message;
             $mail->CharSet = 'UTF-8';
+
             foreach ($headers as $key => $value) {
                 if (is_string($key) && is_string($value)) {
                     $mail->addCustomHeader($key, $value);
                 }
             }
 
-            $mail->send();
-            // No need to check ErrorInfo, PHPMailer throws Exception on error when constructed with true
-
-            return true;
-        } catch (PHPMailerException $e) { // Catch specific PHPMailer exception
-            $logger->error("Mail sending failed (PHPMailer): " . $e->errorMessage(), ['exception' => $e]);
-            return false;
-        } catch (\Exception $e) { // Catch other potential exceptions
-            $logger->error("Mail sending failed (General): " . $e->getMessage(), ['exception' => $e]);
-            return false;
+            $batchNo = 1;
+            return $sendMail($mail, [$validRecipients[0]]);
         }
+
+        // Bulk recipient case
+        $batches = array_chunk($validRecipients, $batchSize);
+        $allSent = true;
+        $batchNo = 0;
+
+        foreach ($batches as $batch) {
+            $batchNo++;
+            $logger->info("Preparing batch #{$batchNo}", ['batch_recipients' => $batch]);
+
+            $mail = new PHPMailer(true);
+            $mail->Timeout      = $timeout;
+            $mail->SMTPAutoTLS  = $smtpConfig['autotls'] ?? false;
+            $mail->isSMTP();
+            $mail->Host         = $smtpConfig['host'] ?? '';
+            $mail->SMTPAuth     = isset($smtpConfig['username']);
+            $mail->Username     = $smtpConfig['username'] ?? '';
+            $mail->Password     = $smtpConfig['password'] ?? '';
+            $mail->SMTPSecure   = $smtpConfig['encryption'] ?? false;
+            $mail->Port         = $smtpConfig['port'] ?? 587;
+            $mail->setFrom(
+                $fromConfig['address'] ?? 'hello@example.com',
+                $fromConfig['name']    ?? 'Example'
+            );
+
+            foreach ($batch as $address) {
+                $mail->addBCC($address);
+            }
+
+            $mail->isHTML(true);
+            $mail->Subject = $subject;
+            $mail->Body    = $message;
+            $mail->CharSet = 'UTF-8';
+
+            foreach ($headers as $key => $value) {
+                if (is_string($key) && is_string($value)) {
+                    $mail->addCustomHeader($key, $value);
+                }
+            }
+
+            if (!$sendMail($mail, $batch)) {
+                $allSent = false;
+            }
+        }
+
+        return $allSent;
     }
 }
+
 
 if (!function_exists('request')) {
     function request(): Request // Add return type hint
@@ -174,11 +271,17 @@ if (!function_exists('formatDateForHumans')) {
         }
         $thenTimestamp = $then->getTimestamp();
         $diff = $now - $thenTimestamp;
-        if ($diff < 60) { return "$diff saniye önce"; }
-        elseif ($diff < 3600) { return floor($diff / 60) . ' dakika önce'; }
-        elseif ($diff < 86400) { return floor($diff / 3600) . ' saat önce'; }
-        elseif ($diff < 604800) { return floor($diff / 86400) . ' gün önce'; }
-        else { return $then->format('d F Y'); } // Consider localizing format
+        if ($diff < 60) {
+            return "$diff saniye önce";
+        } elseif ($diff < 3600) {
+            return floor($diff / 60) . ' dakika önce';
+        } elseif ($diff < 86400) {
+            return floor($diff / 3600) . ' saat önce';
+        } elseif ($diff < 604800) {
+            return floor($diff / 86400) . ' gün önce';
+        } else {
+            return $then->format('d F Y');
+        } // Consider localizing format
     }
 }
 
@@ -211,8 +314,14 @@ if (!function_exists('webpImage')) {
     function webpImage($source, $quality = 75, $removeOld = false, $fileName = null): string // Added return type hint
     {
         // Needs error handling and potentially configuration for destination path
-        if (!extension_loaded('gd')) { error_log('GD extension is not loaded for webpImage'); return $source; }
-        if (!file_exists($source) || !is_readable($source)) { error_log("Source file not found or not readable: {$source}"); return $source; }
+        if (!extension_loaded('gd')) {
+            error_log('GD extension is not loaded for webpImage');
+            return $source;
+        }
+        if (!file_exists($source) || !is_readable($source)) {
+            error_log("Source file not found or not readable: {$source}");
+            return $source;
+        }
 
         $destinationDir = defined('BASE_PATH') ? constant('BASE_PATH') . '/public/files' : 'files';
         // Attempt to create directory if it doesn't exist
@@ -225,26 +334,42 @@ if (!function_exists('webpImage')) {
         }
         // Check writability after ensuring directory exists
         if (!is_writable($destinationDir)) {
-             error_log("Destination directory not writable: {$destinationDir}");
-             return $source;
+            error_log("Destination directory not writable: {$destinationDir}");
+            return $source;
         }
 
         $name = $fileName ?? pathinfo($source, PATHINFO_FILENAME) . '_' . uniqid() . '.webp'; // Use original filename base
         $destination = $destinationDir . '/' . $name;
 
         $info = getimagesize($source); // Remove error suppression
-        if (!$info) { error_log("Could not get image size: {$source}"); return $source; }
+        if (!$info) {
+            error_log("Could not get image size: {$source}");
+            return $source;
+        }
 
         $image = null;
         switch ($info['mime']) {
             // Remove error suppression, check return values
-            case 'image/jpeg': $image = imagecreatefromjpeg($source); break;
-            case 'image/gif': $image = imagecreatefromgif($source); break;
-            case 'image/png': $image = imagecreatefrompng($source); break;
-            case 'image/webp': $image = imagecreatefromwebp($source); break; // Already webp? Maybe just return?
-            default: error_log("Unsupported image type: {$info['mime']}"); return $source;
+            case 'image/jpeg':
+                $image = imagecreatefromjpeg($source);
+                break;
+            case 'image/gif':
+                $image = imagecreatefromgif($source);
+                break;
+            case 'image/png':
+                $image = imagecreatefrompng($source);
+                break;
+            case 'image/webp':
+                $image = imagecreatefromwebp($source);
+                break; // Already webp? Maybe just return?
+            default:
+                error_log("Unsupported image type: {$info['mime']}");
+                return $source;
         }
-        if (!$image) { error_log("Could not create image resource from: {$source}"); return $source; }
+        if (!$image) {
+            error_log("Could not create image resource from: {$source}");
+            return $source;
+        }
 
         // Handle transparency for PNG and GIF (WebP supports alpha)
         if ($info['mime'] === 'image/png' || $info['mime'] === 'image/gif') {
@@ -314,7 +439,7 @@ if (!function_exists('cache')) {
         // Use CacheManager to resolve the specific or default driver
         // Need to ensure CacheManager class exists
         if (!class_exists(\SwallowPHP\Framework\Cache\CacheManager::class)) {
-             throw new \RuntimeException('CacheManager class not found.');
+            throw new \RuntimeException('CacheManager class not found.');
         }
         return \SwallowPHP\Framework\Cache\CacheManager::driver($driver);
     }
@@ -337,8 +462,9 @@ if (!function_exists('csrf_field')) {
         try {
             $logger = App::container()->get(LoggerInterface::class); // Get logger for errors
             if (!class_exists(\SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::class)) {
-                 if ($logger) $logger->error('CSRF Middleware Class Not Found');
-                 echo '<!-- CSRF Middleware Class Not Found -->'; return;
+                if ($logger) $logger->error('CSRF Middleware Class Not Found');
+                echo '<!-- CSRF Middleware Class Not Found -->';
+                return;
             }
             $token = \SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::getToken();
             echo '<input type="hidden" name="_token" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
@@ -348,10 +474,10 @@ if (!function_exists('csrf_field')) {
             else error_log("CSRF Field Error (Logger unavailable): " . $e->getMessage()); // Fallback
             echo '<!-- CSRF Token Error -->';
         } catch (\Throwable $t) {
-             // Catch any other error during container access or token generation
-             if ($logger) $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
-             else error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
-             echo '<!-- CSRF Token Error -->';
+            // Catch any other error during container access or token generation
+            if ($logger) $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
+            else error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
+            echo '<!-- CSRF Token Error -->';
         }
     }
 }
@@ -375,22 +501,22 @@ if (!function_exists('view')) {
         // error_log('Framework View Path: ' . $frameworkViewPath); // DEBUGGING - Remove after confirmation
 
         // Function to find the view file in given paths
-        $findViewFile = function(string $viewName, ?string $primaryPath, string $fallbackPath): ?string {
+        $findViewFile = function (string $viewName, ?string $primaryPath, string $fallbackPath): ?string {
             $viewFilePath = str_replace('.', '/', $viewName) . '.php';
 
             // Check primary (app) path first
             if ($primaryPath && is_dir($primaryPath)) {
-                 $fullPath = rtrim($primaryPath, '/\\') . '/' . $viewFilePath;
-                 if (file_exists($fullPath)) {
-                     return $fullPath;
-                 }
+                $fullPath = rtrim($primaryPath, '/\\') . '/' . $viewFilePath;
+                if (file_exists($fullPath)) {
+                    return $fullPath;
+                }
             }
             // Check fallback (framework) path
             if (is_dir($fallbackPath)) {
-                 $fullPath = rtrim($fallbackPath, '/\\') . '/' . $viewFilePath;
-                 if (file_exists($fullPath)) {
-                     return $fullPath;
-                 }
+                $fullPath = rtrim($fallbackPath, '/\\') . '/' . $viewFilePath;
+                if (file_exists($fullPath)) {
+                    return $fullPath;
+                }
             }
             return null;
         };
@@ -404,7 +530,12 @@ if (!function_exists('view')) {
         // Render the main view content
         extract($data);
         ob_start();
-        try { include $viewFile; } catch (\Throwable $e) { ob_end_clean(); throw $e; }
+        try {
+            include $viewFile;
+        } catch (\Throwable $e) {
+            ob_end_clean();
+            throw $e;
+        }
         $content = ob_get_clean();
 
         // Handle layout if specified
@@ -416,7 +547,13 @@ if (!function_exists('view')) {
             $slot = $content; // Make view content available as $slot in layout
             ob_start();
             // Extract data again for layout scope
-            try { extract($data); include $layoutFile; } catch (\Throwable $e) { ob_end_clean(); throw $e; }
+            try {
+                extract($data);
+                include $layoutFile;
+            } catch (\Throwable $e) {
+                ob_end_clean();
+                throw $e;
+            }
             $finalContent = ob_get_clean();
         } else {
             $finalContent = $content;
@@ -436,9 +573,13 @@ if (!function_exists('session')) {
     function session(string|array|null $key = null, mixed $default = null)
     {
         $session = App::container()->get(SessionManager::class);
-        if (is_null($key)) { return $session; }
+        if (is_null($key)) {
+            return $session;
+        }
         if (is_array($key)) {
-            foreach ($key as $k => $v) { $session->put($k, $v); }
+            foreach ($key as $k => $v) {
+                $session->put($k, $v);
+            }
             return null;
         }
         return $session->get((string)$key, $default);
@@ -476,7 +617,10 @@ if (!function_exists('isRoute')) {
         } catch (\Throwable $e) {
             // Log error or handle cases where router/route isn't available yet (e.g., called before dispatch)
             $logger = null;
-            try { $logger = App::container()->get(LoggerInterface::class); } catch (\Throwable $t) { /* Ignore logger resolution error */ }
+            try {
+                $logger = App::container()->get(LoggerInterface::class);
+            } catch (\Throwable $t) { /* Ignore logger resolution error */
+            }
             if ($logger) {
                 $logger->warning("Could not check current route name in isRoute() helper: " . $e->getMessage(), ['exception' => $e]);
             }

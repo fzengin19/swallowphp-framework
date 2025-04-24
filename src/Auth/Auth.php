@@ -137,7 +137,6 @@ class Auth
                 }
                 // --- End Handle Remember Me ---
 
-                if ($logger) $logger->info("User authenticated successfully.", ['user_id' => $user->getAuthIdentifier(), 'email' => $email, 'remember' => $remember]);
                 return true;
             } catch (\Throwable $e) {
                 // If remember me failed, it's already logged. Log other session/cache errors.
@@ -213,12 +212,7 @@ class Auth
                     // --- DEBUG LOGGING ---
                     $dbTokenHash = $dbUser ? $dbUser->getRememberToken() : 'USER_NOT_FOUND';
                     $cookieTokenHash = hash('sha256', $cookieToken);
-                    if ($logger) $logger->debug('Comparing remember me tokens', [
-                        'db_token_hash' => $dbTokenHash,
-                        'cookie_token_hash' => $cookieTokenHash,
-                        'cookie_user_id' => $cookieUserId,
-                        'db_user_found' => ($dbUser instanceof AuthenticatableModel)
-                    ]);
+
                     // --- END DEBUG LOGGING ---
 
                     // Verify user exists and token matches
@@ -235,7 +229,6 @@ class Auth
                         }
                         $session->put(self::AUTH_SESSION_KEY, $dbUser->getAuthIdentifier());
                         self::$authenticatedUser = $dbUser;
-                        if ($logger) $logger->info("User authenticated via remember me cookie.", ['user_id' => $dbUser->getAuthIdentifier()]);
                         return true; // User is now authenticated
                     } else {
                         // Invalid cookie (user not found, token mismatch, or token empty in DB)

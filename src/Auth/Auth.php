@@ -36,6 +36,8 @@ class Auth
             $session = App::container()->get(SessionManager::class);
             $session->remove(self::AUTH_SESSION_KEY);
             $session->regenerate(true);
+            $cookie = App::container()->get(Cookie::class);
+            $cookie->delete('remember_me');
         } catch (\Throwable $e) {
             $message = "Logout error: Failed to access session manager or regenerate ID.";
             if ($logger) $logger->error($message, ['exception' => $e]);

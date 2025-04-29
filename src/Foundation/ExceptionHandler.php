@@ -135,11 +135,11 @@ class ExceptionHandler
                          // Try specific status code view first
                          try {
                               // Pass status code to view() helper
-                              return view("errors.{$statusCode}", $data, null, $statusCode);
+                              return view("errors.{$statusCode}", $data, 'layouts.error', $statusCode);
                          } catch (ViewNotFoundException $e) {
                               // Fallback to default error view
                               // Pass status code to view() helper
-                              return view("errors.default", $data, null, $statusCode);
+                              return view("errors.default", $data, 'layouts.error', $statusCode);
                          }
                     } else {
                          throw new \RuntimeException('view() helper function not available.');

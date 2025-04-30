@@ -482,6 +482,60 @@ if (!function_exists('csrf_field')) {
     }
 }
 
+if (!function_exists('minifyHtml')) {
+    /**
+     * Basic HTML minification.
+     * Removes HTML comments (except conditional), trims whitespace around tags,
+     * and collapses multiple whitespace characters into one.
+     * Note: This is a basic implementation and might not handle all edge cases
+     * perfectly, especially within <pre>, <textarea>, <script>, or <style> tags.
+     *
+     * @param string $buffer The HTML content to minify.
+     * @return string The minified HTML content.
+     */
+    function minifyHtml(string $buffer): string {
+        // Pattern to capture content within <pre>, <textarea>, <script>, <style>
+        $preservePattern = '/(<(pre|textarea|script|style)[^>]*>)(.*?)(<\/\2>)/si';
+        $preservedBlocks = [];
+        $i = 0;
+
+        // Temporarily replace preserved blocks with placeholders
+        $buffer = preg_replace_callback($preservePattern, function($matches) use (&$preservedBlocks, &$i) {
+            $placeholder = "___PRESERVED_BLOCK_{$i}___";
+            $preservedBlocks[$placeholder] = $matches[0]; // Store the whole block including tags
+            $i++;
+            return $placeholder;
+        }, $buffer);
+
+        // Perform minification on the rest of the content
+        $search = [
+            '/<!--(?!\s*(?:\[if [^\]]+]|<!|>))(?:(?!-->).)*-->/s', // Remove HTML comments (except conditional IE comments)
+            '/\>[^\S ]+/s',      // Remove whitespace after tags, except space
+            '/[^\S ]+\</s',      // Remove whitespace before tags, except space
+            '/(\s)+/s',          // Collapse multiple whitespace sequences to a single space
+            '/;(?=\s*})/'        // Remove semicolons before closing braces in CSS etc. (basic)
+        ];
+        $replace = [
+            '',
+            '>',
+            '<',
+            '\\1',
+            ''
+        ];
+
+        $minified = preg_replace($search, $replace, $buffer);
+
+        // Restore preserved blocks
+        if ($minified !== null && !empty($preservedBlocks)) {
+            $minified = str_replace(array_keys($preservedBlocks), array_values($preservedBlocks), $minified);
+        }
+
+        // Fallback in case of preg_replace error
+        return $minified !== null ? trim($minified) : $buffer;
+    }
+}
+
+
 if (!function_exists('view')) {
     /**
      * Render a view file, optionally using a layout, and return an HTML response.
@@ -557,6 +611,11 @@ if (!function_exists('view')) {
             $finalContent = ob_get_clean();
         } else {
             $finalContent = $content;
+        }
+
+        // Conditionally minify the final HTML content
+        if (config('app.minify_html', false)) {
+            $finalContent = minifyHtml($finalContent);
         }
 
         return \SwallowPHP\Framework\Http\Response::html($finalContent, $status);

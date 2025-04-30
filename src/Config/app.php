@@ -140,4 +140,15 @@ return [
     // 'log_path' => null, // Default is null (disabled), app should define it in its config/app.php using env()
     'log_path' => null, // Framework default is disabled
 
+    /*
+    |--------------------------------------------------------------------------
+    | HTML Minification
+    |--------------------------------------------------------------------------
+    |
+    | Enable or disable automatic HTML minification for views.
+    | Set APP_MINIFY_HTML=true in your .env file to enable.
+    |
+    */
+    'minify_html' => env('APP_MINIFY_HTML', false), // Default is disabled
+
 ];

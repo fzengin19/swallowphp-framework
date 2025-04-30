@@ -148,8 +148,10 @@ class ExceptionHandler
                      if ($logger) $logger->warning("Error views not found (errors.{$statusCode} or errors.default). Falling back to basic HTML.", ['exception' => $e]);
                      // Fallback to basic HTML if no views found
                      return self::renderFallbackHtml($statusCode, $data['statusText'], $data['message'], $debug, $data);
-                } catch (\Throwable $viewError) {
-                     if ($logger) $logger->critical("Error rendering error view.", ['exception' => $viewError]);
+                } 
+                catch (\Throwable $e) {
+                    dd($e);
+                     if ($logger) $logger->critical("Error rendering error view.", ['exception' => $e]);
                      // Fallback to basic HTML if view rendering fails
                      return self::renderFallbackHtml($statusCode, $data['statusText'], 'An error occurred while rendering the error page.', $debug, $data);
                 }

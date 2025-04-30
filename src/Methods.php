@@ -482,56 +482,55 @@ if (!function_exists('csrf_field')) {
     }
 }
 
+
 if (!function_exists('minifyHtml')) {
     /**
-     * Basic HTML minification.
-     * Removes HTML comments (except conditional), trims whitespace around tags,
-     * and collapses multiple whitespace characters into one.
-     * Note: This is a basic implementation and might not handle all edge cases
-     * perfectly, especially within <pre>, <textarea>, <script>, or <style> tags.
+     * Gelişmiş HTML minify işlemi.
+     * HTML yorumlarını, fazla boşlukları, inline style/js alanlarını da optimize eder.
+     * <pre>, <textarea>, <script>, <style> bloklarını korur.
      *
-     * @param string $buffer The HTML content to minify.
-     * @return string The minified HTML content.
+     * @param string $buffer HTML içeriği
+     * @return string Minify edilmiş içerik
      */
     function minifyHtml(string $buffer): string {
-        // Pattern to capture content within <pre>, <textarea>, <script>, <style>
         $preservePattern = '/(<(pre|textarea|script|style)[^>]*>)(.*?)(<\/\2>)/si';
         $preservedBlocks = [];
         $i = 0;
 
-        // Temporarily replace preserved blocks with placeholders
         $buffer = preg_replace_callback($preservePattern, function($matches) use (&$preservedBlocks, &$i) {
             $placeholder = "___PRESERVED_BLOCK_{$i}___";
-            $preservedBlocks[$placeholder] = $matches[0]; // Store the whole block including tags
+            $preservedBlocks[$placeholder] = $matches[0];
             $i++;
             return $placeholder;
         }, $buffer);
 
-        // Perform minification on the rest of the content
-        $search = [
-            '/<!--(?!\s*(?:\[if [^\]]+]|<!|>))(?:(?!-->).)*-->/s', // Remove HTML comments (except conditional IE comments)
-            '/\>[^\S ]+/s',      // Remove whitespace after tags, except space
-            '/[^\S ]+\</s',      // Remove whitespace before tags, except space
-            '/(\s)+/s',          // Collapse multiple whitespace sequences to a single space
-            '/;(?=\s*})/'        // Remove semicolons before closing braces in CSS etc. (basic)
-        ];
-        $replace = [
+        // Tag içi boşlukları da temizle
+        $buffer = preg_replace([
+            '/<!--(?!\[if).*?-->/',             // HTML yorumlarını kaldır (IE koşullu hariç)
+            '/\s{2,}/',                         // Birden fazla boşluğu teke indir
+            '/>\s+</',                          // Taglar arası boşlukları kaldır
+            '/\s*(\/?>)/',                      // Tag sonlarındaki boşluklar
+            '/(<[a-z0-9\-]+)\s+([^>]+)>/i',     // Tag içi boşlukları düzelt
+            '/\s*=\s*/',                        // Eşittir etrafındaki boşluklar
+            '/;(?=\s*})/',                      // Gereksiz noktalı virgül
+        ], [
             '',
-            '>',
-            '<',
-            '\\1',
-            ''
-        ];
+            ' ',
+            '><',
+            '$1',
+            '$1 $2>',
+            '=',
+            '',
+        ], $buffer);
 
-        $minified = preg_replace($search, $replace, $buffer);
+        // class="" içindeki fazla boşlukları temizle
+        $buffer = preg_replace_callback('/class="([^"]+)"/i', function ($matches) {
+            $classes = preg_split('/\s+/', trim($matches[1]));
+            return 'class="' . implode(' ', array_filter($classes)) . '"';
+        }, $buffer);
 
-        // Restore preserved blocks
-        if ($minified !== null && !empty($preservedBlocks)) {
-            $minified = str_replace(array_keys($preservedBlocks), array_values($preservedBlocks), $minified);
-        }
-
-        // Fallback in case of preg_replace error
-        return $minified !== null ? trim($minified) : $buffer;
+        // Korumalı alanları geri yükle
+        return str_replace(array_keys($preservedBlocks), array_values($preservedBlocks), trim($buffer));
     }
 }
 

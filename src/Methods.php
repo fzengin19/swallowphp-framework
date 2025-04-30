@@ -481,58 +481,71 @@ if (!function_exists('csrf_field')) {
         }
     }
 }
-
-
 if (!function_exists('minifyHtml')) {
     /**
-     * Gelişmiş HTML minify işlemi.
-     * HTML yorumlarını, fazla boşlukları, inline style/js alanlarını da optimize eder.
-     * <pre>, <textarea>, <script>, <style> bloklarını korur.
+     * Güvenli HTML + inline JS/CSS minify.
+     * <pre>, <textarea> bloklarını korur; <style> ve <script> içeriğini güvenli şekilde minify eder.
      *
-     * @param string $buffer HTML içeriği
-     * @return string Minify edilmiş içerik
+     * @param string $html
+     * @return string
      */
-    function minifyHtml(string $buffer): string {
-        $preservePattern = '/(<(pre|textarea|script|style)[^>]*>)(.*?)(<\/\2>)/si';
-        $preservedBlocks = [];
-        $i = 0;
-
-        $buffer = preg_replace_callback($preservePattern, function($matches) use (&$preservedBlocks, &$i) {
-            $placeholder = "___PRESERVED_BLOCK_{$i}___";
-            $preservedBlocks[$placeholder] = $matches[0];
+    function minifyHtml(string $html): string {
+        // Preserve <pre> ve <textarea>
+        $preservePattern = '/(<(pre|textarea)[^>]*>)(.*?)(<\/\2>)/si';
+        $preserved = []; $i = 0;
+        $html = preg_replace_callback($preservePattern, function($m) use (&$preserved, &$i) {
+            $ph = "___PRESERVE_{$i}___";
+            $preserved[$ph] = $m[0];
             $i++;
-            return $placeholder;
-        }, $buffer);
+            return $ph;
+        }, $html);
 
-        // Tag içi boşlukları da temizle
-        $buffer = preg_replace([
-            '/<!--(?!\[if).*?-->/',             // HTML yorumlarını kaldır (IE koşullu hariç)
-            '/\s{2,}/',                         // Birden fazla boşluğu teke indir
-            '/>\s+</',                          // Taglar arası boşlukları kaldır
-            '/\s*(\/?>)/',                      // Tag sonlarındaki boşluklar
-            '/(<[a-z0-9\-]+)\s+([^>]+)>/i',     // Tag içi boşlukları düzelt
-            '/\s*=\s*/',                        // Eşittir etrafındaki boşluklar
-            '/;(?=\s*})/',                      // Gereksiz noktalı virgül
-        ], [
+        // Extract ve minify <style>
+        $html = preg_replace_callback('/<style\b[^>]*>(.*?)<\/style>/si', function($m) {
+            $css = $m[1];
+            // Remove comments
+            $css = preg_replace('/\/\*.*?\*\//s', '', $css);
+            // Collapse whitespace
+            $css = preg_replace('/\s+/', ' ', $css);
+            // Remove space around symbols
+            $css = preg_replace(['/ *([{};:,]) */', '/;}/'], ['$1', '}'], $css);
+            return '<style>'.$css.'</style>';
+        }, $html);
+
+        // Extract ve minify <script>
+        $html = preg_replace_callback('/<script\b[^>]*>(.*?)<\/script>/si', function($m) {
+            $js = $m[1];
+            // Remove block comments
+            $js = preg_replace('/\/\*[\s\S]*?\*\//', '', $js);
+            // Remove line comments (//) - güvenli şekilde, satır başındaki ve satır sonundaki
+            $js = preg_replace('/(^|\s)\/\/[^\n\r]*/m', '', $js);
+            // Collapse whitespace
+            $js = preg_replace('/\s+/', ' ', $js);
+            return '<script>'.$js.'</script>';
+        }, $html);
+
+        // Genel HTML minify
+        $search = [
+            '/<!--(?!\[if).*?-->/s',  // HTML yorumları
+            '/>\s+</',               // Tag arası boşluk
+            '/\s*(\/?>)/',           // Tag sonu
+            '/\s{2,}/',              // Çoklu boşluk
+        ];
+        $replace = [
             '',
-            ' ',
             '><',
             '$1',
-            '$1 $2>',
-            '=',
-            '',
-        ], $buffer);
+            ' ',
+        ];
+        $html = preg_replace($search, $replace, $html);
 
-        // class="" içindeki fazla boşlukları temizle
-        $buffer = preg_replace_callback('/class="([^"]+)"/i', function ($matches) {
-            $classes = preg_split('/\s+/', trim($matches[1]));
-            return 'class="' . implode(' ', array_filter($classes)) . '"';
-        }, $buffer);
-
-        // Korumalı alanları geri yükle
-        return str_replace(array_keys($preservedBlocks), array_values($preservedBlocks), trim($buffer));
+        // Geri restore
+        return str_replace(array_keys($preserved), array_values($preserved), trim($html));
     }
 }
+
+
+
 
 
 if (!function_exists('view')) {

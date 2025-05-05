@@ -489,11 +489,13 @@ if (!function_exists('minifyHtml')) {
      * @param string $html
      * @return string
      */
-    function minifyHtml(string $html): string {
+    function minifyHtml(string $html): string
+    {
         // Preserve <pre> ve <textarea>
         $preservePattern = '/(<(pre|textarea)[^>]*>)(.*?)(<\/\2>)/si';
-        $preserved = []; $i = 0;
-        $html = preg_replace_callback($preservePattern, function($m) use (&$preserved, &$i) {
+        $preserved = [];
+        $i = 0;
+        $html = preg_replace_callback($preservePattern, function ($m) use (&$preserved, &$i) {
             $ph = "___PRESERVE_{$i}___";
             $preserved[$ph] = $m[0];
             $i++;
@@ -501,7 +503,7 @@ if (!function_exists('minifyHtml')) {
         }, $html);
 
         // Extract ve minify <style>
-        $html = preg_replace_callback('/<style\b[^>]*>(.*?)<\/style>/si', function($m) {
+        $html = preg_replace_callback('/<style\b[^>]*>(.*?)<\/style>/si', function ($m) {
             $css = $m[1];
             // Remove comments
             $css = preg_replace('/\/\*.*?\*\//s', '', $css);
@@ -509,11 +511,11 @@ if (!function_exists('minifyHtml')) {
             $css = preg_replace('/\s+/', ' ', $css);
             // Remove space around symbols
             $css = preg_replace(['/ *([{};:,]) */', '/;}/'], ['$1', '}'], $css);
-            return '<style>'.$css.'</style>';
+            return '<style>' . $css . '</style>';
         }, $html);
 
         // Extract ve minify <script>
-        $html = preg_replace_callback('/<script\b[^>]*>(.*?)<\/script>/si', function($m) {
+        $html = preg_replace_callback('/<script\b[^>]*>(.*?)<\/script>/si', function ($m) {
             $js = $m[1];
             // Remove block comments
             $js = preg_replace('/\/\*[\s\S]*?\*\//', '', $js);
@@ -521,7 +523,7 @@ if (!function_exists('minifyHtml')) {
             $js = preg_replace('/(^|\s)\/\/[^\n\r]*/m', '', $js);
             // Collapse whitespace
             $js = preg_replace('/\s+/', ' ', $js);
-            return '<script>'.$js.'</script>';
+            return '<script>' . $js . '</script>';
         }, $html);
 
         // Genel HTML minify
@@ -672,29 +674,48 @@ if (!function_exists('flash')) {
 
 if (!function_exists('isRoute')) {
     /**
-     * Check if the current route matches the given name.
+     * Check if the current route matches the given name or one of the given names in the array.
      *
-     * @param string $name The name of the route to check.
-     * @return bool True if the current route matches the name, false otherwise.
+     * @param string|string[] $name The name of the route or an array of route names to check.
+     * @return bool True if the current route matches the name or any of the names in the array, false otherwise.
      */
-    function isRoute(string $name): bool
+    function isRoute(string|array $name): bool // PHP 8.0+ Union Type
     {
         try {
             /** @var \SwallowPHP\Framework\Routing\Router $router */
             $router = App::container()->get(Router::class);
             // Get the currently matched route from the Router
             $matchedRoute = $router->getCurrentRoute();
-            return $matchedRoute !== null && $matchedRoute->getName() === $name;
+
+            // If no route is matched yet, or route has no name, return false
+            if ($matchedRoute === null || $matchedRoute->getName() === null) {
+                return false;
+            }
+
+            $currentRouteName = $matchedRoute->getName();
+
+            if (is_array($name)) {
+                // Check if the current route name exists in the provided array of names
+                return in_array($currentRouteName, $name, true); // Use strict comparison
+            } else {
+                // Original behavior: Check if the current route name matches the single provided name
+                return $currentRouteName === $name;
+            }
         } catch (\Throwable $e) {
-            // Log error or handle cases where router/route isn't available yet (e.g., called before dispatch)
+            // Log error or handle cases where router/route isn't available yet
             $logger = null;
-            try {
-                $logger = App::container()->get(LoggerInterface::class);
-            } catch (\Throwable $t) { /* Ignore logger resolution error */
-            }
+            // Attempt to get logger, but don't fail if it's not available
+            $logger = App::container()->get(LoggerInterface::class);
+
+
             if ($logger) {
-                $logger->warning("Could not check current route name in isRoute() helper: " . $e->getMessage(), ['exception' => $e]);
+                $logger->warning(
+                    "Could not check current route name in isRoute() helper: " . $e->getMessage(),
+                    ['exception' => $e]
+                );
             }
+
+            // Return false if any error occurred during the check
             return false;
         }
     }

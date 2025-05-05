@@ -38,6 +38,9 @@ class Model
     /** @var array Guarded attributes */
     protected array $guarded = ['id'];
 
+    /** @var array Loaded relations cache */
+    protected array $relations = [];
+
     /** @var array Event callbacks */
     protected static array $eventCallbacks = [];
 
@@ -58,20 +61,48 @@ class Model
     /**
      * Get attribute value
      *
-     * @param string $attribute Attribute name
-     * @return mixed Attribute value
+     * Get an attribute from the model or a relation.
+     * Handles attribute casting and lazy loading of relations.
+     *
+     * @param string $key The attribute or relation name.
+     * @return mixed
      */
-    public function __get(string $attribute): mixed
+    public function __get(string $key): mixed
     {
-        if (array_key_exists($attribute, $this->attributes)) {
-            return $this->castAttribute($attribute, $this->attributes[$attribute]);
+        // 1. Check attributes
+        if (array_key_exists($key, $this->attributes)) {
+            return $this->castAttribute($key, $this->attributes[$key]);
         }
-        if (method_exists($this, $attribute)) {
-            return $this->$attribute();
+
+        // 2. Check loaded relations cache
+        if (array_key_exists($key, $this->relations)) {
+            return $this->relations[$key];
         }
-        if (property_exists($this, $attribute)) {
-            return $this->$attribute;
+
+        // 3. Check if a method exists for the relation
+        if (method_exists($this, $key)) {
+            $relation = $this->$key(); // Call the relation method (e.g., comments())
+
+            // 4. Check if the method returned a Relation instance
+            if ($relation instanceof Relation) {
+                // 5. Fetch the results based on relation type and cache them
+                $results = ($relation->getType() === 'one') ? $relation->first() : $relation->get();
+                $this->relations[$key] = $results;
+                return $results;
+            }
+            // If the method exists but doesn't return a Relation, maybe it's a regular method?
+            // Let's return null for now to avoid unexpected behavior, or potentially call it if needed.
+            // For strict relation handling, returning null is safer.
+            return null;
         }
+
+        // 6. Check public properties (less common for models, but was in original code)
+        if (property_exists($this, $key)) {
+            // Ensure it's public? PHP handles visibility.
+            return $this->$key;
+        }
+
+        // 7. Not found
         return null;
     }
 
@@ -544,20 +575,31 @@ class Model
         } else {
              $builder = $relatedModel::query()->where($foreignKey, '=', $localValue);
         }
-        return new \SwallowPHP\Framework\Database\Relation($builder);
+        // Pass 'many' as the relation type
+        return new \SwallowPHP\Framework\Database\Relation($builder, 'many');
     }
 
-    /** Define a belongs-to relationship */
-    public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): ?Model
+    /**
+     * Define an inverse one-to-one or many-to-one relationship.
+     *
+     * @param string $relatedModel The related model class name.
+     * @param string $foreignKey The foreign key on the current model's table.
+     * @param string $ownerKey The primary key on the related model's table.
+     * @return \SwallowPHP\Framework\Database\Relation
+     */
+    public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): \SwallowPHP\Framework\Database\Relation
     {
          if (!class_exists($relatedModel)) {
              throw new \RuntimeException("Related model not found: {$relatedModel}");
          }
          $foreignValue = $this->attributes[$foreignKey] ?? null;
-         if ($foreignValue === null) {
-              return null;
-         }
-        return $relatedModel::query()->where($ownerKey, '=', $foreignValue)->first();
+
+         // Build the query regardless of whether the foreign key is set.
+         // The Relation object can handle fetching (or not fetching) later.
+         $builder = $relatedModel::query()->where($ownerKey, '=', $foreignValue);
+
+         // Pass 'one' as the relation type
+         return new \SwallowPHP\Framework\Database\Relation($builder, 'one');
     }
 
 

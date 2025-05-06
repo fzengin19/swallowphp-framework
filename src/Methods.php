@@ -310,92 +310,141 @@ if (!function_exists('send')) {
     }
 }
 
+
 if (!function_exists('webpImage')) {
-    function webpImage($source, $quality = 75, $removeOld = false, $fileName = null): string // Added return type hint
+    /**
+     * Attempts to convert a source image to AVIF format.
+     * If it fails or AVIF support is not available, it attempts to convert to WebP format.
+     *
+     * @param string $source Path to the source file.
+     * @param int $quality Compression quality (0-100, default 75). Used for both AVIF and WebP.
+     * @param bool $removeOld Whether to delete the old file after conversion (default false).
+     * @param string|null $fileName Optional destination file name (without extension).
+     * If not specified, a unique ID will be generated.
+     * @param string $destinationDir Directory where images will be saved (default 'files/').
+     * @return string The new file name (with extension) if successful,
+     * or the original source file path if it fails.
+     */
+    function webpImage(string $source, int $quality = 75, bool $removeOld = false, ?string $fileName = null, string $destinationDir = 'files/'): string
     {
-        // Needs error handling and potentially configuration for destination path
-        if (!extension_loaded('gd')) {
-            error_log('GD extension is not loaded for webpImage');
-            return $source;
-        }
+        // 1. Basic file and directory checks
         if (!file_exists($source) || !is_readable($source)) {
-            error_log("Source file not found or not readable: {$source}");
             return $source;
         }
 
-        $destinationDir = defined('BASE_PATH') ? constant('BASE_PATH') . '/public/files' : 'files';
-        // Attempt to create directory if it doesn't exist
         if (!is_dir($destinationDir)) {
-            // Check mkdir result and existence after attempt
-            if (!mkdir($destinationDir, 0755, true) && !is_dir($destinationDir)) {
-                error_log("Failed to create destination directory: {$destinationDir}");
-                return $source; // Return original source on directory creation failure
-            }
+            @mkdir($destinationDir, 0755, true); // Attempt to create the directory if it doesn't exist
         }
-        // Check writability after ensuring directory exists
+
         if (!is_writable($destinationDir)) {
-            error_log("Destination directory not writable: {$destinationDir}");
             return $source;
         }
 
-        $name = $fileName ?? pathinfo($source, PATHINFO_FILENAME) . '_' . uniqid() . '.webp'; // Use original filename base
-        $destination = $destinationDir . '/' . $name;
-
-        $info = getimagesize($source); // Remove error suppression
-        if (!$info) {
-            error_log("Could not get image size: {$source}");
+        // 2. Get image information and load
+        $imageInfo = @getimagesize($source);
+        if (!$imageInfo) {
             return $source;
         }
 
+        $mime = $imageInfo['mime'] ?? null;
         $image = null;
-        switch ($info['mime']) {
-            // Remove error suppression, check return values
+
+        switch ($mime) {
             case 'image/jpeg':
-                $image = imagecreatefromjpeg($source);
+                $image = @imagecreatefromjpeg($source);
                 break;
             case 'image/gif':
-                $image = imagecreatefromgif($source);
+                $image = @imagecreatefromgif($source);
                 break;
             case 'image/png':
-                $image = imagecreatefrompng($source);
+                $image = @imagecreatefrompng($source);
                 break;
             case 'image/webp':
-                $image = imagecreatefromwebp($source);
-                break; // Already webp? Maybe just return?
+                if (function_exists('imagecreatefromwebp')) {
+                    $image = @imagecreatefromwebp($source);
+                }
+                break;
+            case 'image/avif': // If source is already AVIF, we can still reprocess (quality change, etc.)
+                if (function_exists('imagecreatefromavif')) {
+                    $image = @imagecreatefromavif($source);
+                }
+                break;
             default:
-                error_log("Unsupported image type: {$info['mime']}");
-                return $source;
+                return $source; // Unsupported type
         }
+
         if (!$image) {
-            error_log("Could not create image resource from: {$source}");
-            return $source;
+            return $source; // Image could not be loaded
         }
 
-        // Handle transparency for PNG and GIF (WebP supports alpha)
-        if ($info['mime'] === 'image/png' || $info['mime'] === 'image/gif') {
-            imagepalettetotruecolor($image);
-            imagealphablending($image, false); // Important: disable blending
-            imagesavealpha($image, true); // Important: save alpha channel
+        // 3. Alpha channel (transparency) management
+        // For formats that can support transparency like PNG, GIF, WebP, AVIF
+        if (in_array($mime, ['image/gif', 'image/png', 'image/webp', 'image/avif'])) {
+            if (!imageistruecolor($image)) {
+                @imagepalettetotruecolor($image); // Convert to true color if it's palette-based
+            }
+            @imagealphablending($image, false); // Disable alpha blending
+            @imagesavealpha($image, true);    // Save the full alpha channel
         }
 
-        $success = imagewebp($image, $destination, $quality); // Remove error suppression
-        imagedestroy($image);
-
-        if (!$success) {
-            error_log("Failed to create webp image at: {$destination}");
-            return $source;
+        // 4. Determine the base name for the target file
+        $baseOutputName = $fileName ? preg_replace('/[^A-Za-z0-9\-_]/', '', basename($fileName)) : null;
+        if (empty($baseOutputName)) { // If $fileName is null or becomes empty after cleaning
+            $baseOutputName = uniqid();
         }
 
-        if ($removeOld) {
-            if (!unlink($source)) { // Check unlink result
-                error_log("Failed to remove original image: {$source}");
+        $convertedFileName = null; // Name of the successfully converted file
+
+        // 5. Attempt to convert to AVIF
+        if (function_exists('imageavif')) {
+            $avifFileName = $baseOutputName . '.avif';
+            $destinationPath = rtrim($destinationDir, '/') . '/' . $avifFileName;
+
+            // Remove the @ sign (This comment was in the original code)
+            $avifSaveResult = imageavif($image, $destinationPath, $quality);
+            if ($avifSaveResult) {
+                $convertedFileName = $avifFileName;
+            } else {
+                $lastError = error_get_last();
+                if ($lastError) { // Check if logger exists to prevent fatal error
+                    logger()->warning("webpImage AVIF Conversion Error: " . htmlspecialchars($lastError['message']));
+                }
+            }
+        } else {
+                logger()->warning("imageavif function not found.");
+        }
+
+        // 6. If AVIF failed or is not supported, try to convert to WebP
+        if (!$convertedFileName && function_exists('imagewebp')) {
+            $webpFileName = $baseOutputName . '.webp'; // Use the same base name
+            $destinationPath = rtrim($destinationDir, '/') . '/' . $webpFileName;
+            if (@imagewebp($image, $destinationPath, $quality)) {
+                $convertedFileName = $webpFileName;
             }
         }
-        // Return the relative path or just the filename? Returning filename for now.
-        return $name;
+
+        // 7. Free up resources
+        @imagedestroy($image);
+
+        // 8. Result
+        if ($convertedFileName) {
+            if ($removeOld) {
+                if (file_exists($source)) { // Re-check existence before deleting
+                    @unlink($source);
+                }
+            }
+            return $convertedFileName; // Return only the file name
+        } else {
+            return $source; // Return the original source if no conversion was successful
+        }
     }
 }
-
+if (!function_exists('logger')) {
+    function logger()
+    {
+        return App::container()->get(LoggerInterface::class);
+    }
+}
 if (!function_exists('getFile')) {
     function getFile($name): string // Added return type hint
     {

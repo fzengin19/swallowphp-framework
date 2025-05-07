@@ -566,18 +566,61 @@ if (!function_exists('minifyHtml')) {
         // Extract ve minify <script>
         $html = preg_replace_callback('/<script\b[^>]*>(.*?)<\/script>/si', function ($m) {
             $js = $m[1];
-            // Remove block comments
+
+            // --- JavaScript Minification Düzeltmeleri ---
+            // UYARI: Regex tabanlı JavaScript küçültme doğası gereği sınırlıdır ve riskli olabilir.
+            // Kodun yapısını özel bir ayrıştırıcı (parser) gibi anlayamaz.
+            // Bu değişiklikler, orijinaline göre daha güvenli olmayı ve kodu bozmamayı hedefler.
+
+            // 1. Blok yorumlarını kaldır (/* ... */)
+            // Genellikle güvenlidir, ancak string literalleri içinde /* veya */ varsa dikkatli olunmalıdır.
             $js = preg_replace('/\/\*[\s\S]*?\*\//', '', $js);
-            // Remove line comments (//) - güvenli şekilde, satır başındaki ve satır sonundaki
-            $js = preg_replace('/(^|\s)\/\/[^\n\r]*/m', '', $js);
-            // Collapse whitespace
-            $js = preg_replace('/\s+/', ' ', $js);
+
+            // 2. Satır yorumlarını kaldır (// ...)
+            // Orijinal regex: $js = preg_replace('/(^|\s)\/\/[^\n\r]*/m', '', $js);
+            // Bu, önemli yeni satırları veya boşlukları kaldırabilir.
+            // Daha güvenli bir yaklaşım:
+            //    a) Sadece yorum içeren satırları (başında isteğe bağlı boşluk olabilir) tamamen kaldırır (yeni satırı dahil).
+            //    b) Kodun sonundaki yorumları (öncesindeki boşluk/tablarla birlikte) kaldırır. 'http://' gibi kullanımları bozmamak için (?<![:\'"]) kullanılır.
+            $js = preg_replace(
+                [
+                    '/^\s*\/\/[^\r\n]*(\r\n|\r|\n)?/m', // Tamamen yorum satırlarını (newline dahil) kaldır
+                    '/(?<![:\'"])[ \t]*\/\/[^\r\n]*/'    // Satır sonu yorumlarını (öncesindeki boşluklarla) kaldır
+                ],
+                '',
+                $js
+            );
+
+            // 3. Yeni satır karakterlerini normalize et (Windows, Mac, Linux uyumu)
+            $js = str_replace(["\r\n", "\r"], "\n", $js);
+
+            // 4. Her satırın başındaki ve sonundaki yatay boşlukları (space, tab) kaldır
+            $js = preg_replace('/^[ \t]+|[ \t]+$/m', '', $js);
+
+            // 5. Birden fazla yatay boşluğu (space, tab) tek bir boşluğa indirge
+            // Örn: "  " -> " " (Yeni satırlara dokunmaz)
+            $js = preg_replace('/[ \t]{2,}/', ' ', $js);
+
+            // 6. Art arda gelen boş yeni satırları tek bir yeni satıra indirge
+            // Bu, kodun okunabilirliğini biraz korurken gereksiz boşlukları azaltır.
+            $js = preg_replace('/\n\s*\n/', "\n", $js);
+            
+            // 7. İsteğe bağlı: Bazı özel karakterlerin etrafındaki boşlukları kaldırma (; , () {} vb.)
+            // Bu adım JS için risklidir ve dikkatli yapılmalıdır. Şimdilik devre dışı bırakılmıştır.
+            // Örneğin:
+            // $js = preg_replace('/\s*([;,(]){1}\s*/', '$1', $js);
+            // $js = preg_replace('/\s*([)]){1}\s*/', '$1', $js);
+            // Bu tür agresif değişiklikler genellikle JS kodunu bozar.
+
+            // 8. Script bloğunun tamamının başındaki ve sonundaki genel boşlukları (yeni satırlar dahil) temizle
+            $js = trim($js);
+
             return '<script>' . $js . '</script>';
         }, $html);
 
         // Genel HTML minify
         $search = [
-            '/<!--(?!\[if).*?-->/s',  // HTML yorumları
+            '//s',  // HTML yorumları (IE conditional comments hariç)
             '/>\s+</',               // Tag arası boşluk
             '/\s*(\/?>)/',           // Tag sonu
             '/\s{2,}/',              // Çoklu boşluk
@@ -594,7 +637,6 @@ if (!function_exists('minifyHtml')) {
         return str_replace(array_keys($preserved), array_values($preserved), trim($html));
     }
 }
-
 
 
 

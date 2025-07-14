@@ -530,6 +530,37 @@ if (!function_exists('csrf_field')) {
         }
     }
 }
+
+
+if (!function_exists('csrf_token')) {
+    /**
+     * Generate a CSRF token hidden input field.
+     */
+    function csrf_token()
+    {
+        $logger = null;
+        try {
+            $logger = App::container()->get(LoggerInterface::class); // Get logger for errors
+            if (!class_exists(\SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::class)) {
+                if ($logger) $logger->error('CSRF Middleware Class Not Found');
+                echo '<!-- CSRF Middleware Class Not Found -->';
+                return;
+            }
+            $token = \SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::getToken();
+            return htmlspecialchars($token, ENT_QUOTES, 'UTF-8');
+        } catch (\RuntimeException $e) {
+            // Log session start error using PSR-3 logger
+            if ($logger) $logger->error("CSRF Field Error: " . $e->getMessage(), ['exception' => $e]);
+            else error_log("CSRF Field Error (Logger unavailable): " . $e->getMessage()); // Fallback
+            echo '<!-- CSRF Token Error -->';
+        } catch (\Throwable $t) {
+            // Catch any other error during container access or token generation
+            if ($logger) $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
+            else error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
+            echo '<!-- CSRF Token Error -->';
+        }
+    }
+}
 if (!function_exists('minifyHtml')) {
     /**
      * Güvenli HTML + inline JS/CSS minify.

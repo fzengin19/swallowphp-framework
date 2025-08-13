@@ -332,111 +332,147 @@ if (!function_exists('webpImage')) {
             return $source;
         }
 
+        // Dosya boyutu kontrolü (isteğe bağlı, 10MB sınırı)
+        $maxFileSize = 20 * 1024 * 1024; // 10MB
+        if (filesize($source) > $maxFileSize) {
+            logger()->warning("File too large: " . $source);
+            return $source;
+        }
+
+        // Dizin güvenlik kontrolleri
+        $destinationDir = rtrim($destinationDir, '/') . '/';
         if (!is_dir($destinationDir)) {
-            @mkdir($destinationDir, 0755, true); // Attempt to create the directory if it doesn't exist
+            if (!@mkdir($destinationDir, 0755, true)) {
+                logger()->error("Failed to create directory: " . $destinationDir);
+                return $source;
+            }
         }
-
         if (!is_writable($destinationDir)) {
+            logger()->error("Directory not writable: " . $destinationDir);
             return $source;
         }
 
-        // 2. Get image information and load
-        $imageInfo = @getimagesize($source);
-        if (!$imageInfo) {
+        // 2. Gelişmiş dosya türü doğrulama
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if (!$finfo) {
+            logger()->error("Failed to open fileinfo database");
             return $source;
         }
 
-        $mime = $imageInfo['mime'] ?? null;
+        $mime = finfo_file($finfo, $source);
+        finfo_close($finfo);
+
+        $allowedMimes = [
+            'image/jpeg',
+            'image/gif',
+            'image/png',
+            'image/webp',
+            'image/avif'
+        ];
+
+        if (!$mime || !in_array($mime, $allowedMimes)) {
+            logger()->warning("Unsupported or invalid MIME type: " . ($mime ?? 'unknown'));
+            return $source;
+        }
+
+        // 3. Resmi yükleme
         $image = null;
-
         switch ($mime) {
             case 'image/jpeg':
-                $image = @imagecreatefromjpeg($source);
+                $image = imagecreatefromjpeg($source);
                 break;
             case 'image/gif':
-                $image = @imagecreatefromgif($source);
+                $image = imagecreatefromgif($source);
                 break;
             case 'image/png':
-                $image = @imagecreatefrompng($source);
+                $image = imagecreatefrompng($source);
                 break;
             case 'image/webp':
                 if (function_exists('imagecreatefromwebp')) {
-                    $image = @imagecreatefromwebp($source);
+                    $image = imagecreatefromwebp($source);
                 }
                 break;
-            case 'image/avif': // If source is already AVIF, we can still reprocess (quality change, etc.)
+            case 'image/avif':
                 if (function_exists('imagecreatefromavif')) {
-                    $image = @imagecreatefromavif($source);
+                    $image = imagecreatefromavif($source);
                 }
                 break;
-            default:
-                return $source; // Unsupported type
         }
 
         if (!$image) {
-            return $source; // Image could not be loaded
+            logger()->error("Failed to create image resource from: " . $source);
+            return $source;
         }
 
-        // 3. Alpha channel (transparency) management
-        // For formats that can support transparency like PNG, GIF, WebP, AVIF
+        // 4. Alfa kanal yönetimi
         if (in_array($mime, ['image/gif', 'image/png', 'image/webp', 'image/avif'])) {
             if (!imageistruecolor($image)) {
-                @imagepalettetotruecolor($image); // Convert to true color if it's palette-based
+                imagepalettetotruecolor($image);
             }
-            @imagealphablending($image, false); // Disable alpha blending
-            @imagesavealpha($image, true);    // Save the full alpha channel
+            imagealphablending($image, false);
+            imagesavealpha($image, true);
         }
 
-        // 4. Determine the base name for the target file
+        // 5. Güvenli dosya adı oluşturma
         $baseOutputName = $fileName ? preg_replace('/[^A-Za-z0-9\-_]/', '', basename($fileName)) : null;
-        if (empty($baseOutputName)) { // If $fileName is null or becomes empty after cleaning
-            $baseOutputName = uniqid();
+        if (empty($baseOutputName)) {
+            $baseOutputName = bin2hex(random_bytes(16)); // uniqid() yerine daha güvenli
         }
 
-        $convertedFileName = null; // Name of the successfully converted file
+        $convertedFileName = null;
+        $destinationPath = '';
 
-        // 5. Attempt to convert to AVIF
+        // 6. AVIF dönüşümü dene
         if (function_exists('imageavif')) {
             $avifFileName = $baseOutputName . '.avif';
-            $destinationPath = rtrim($destinationDir, '/') . '/' . $avifFileName;
+            $destinationPath = $destinationDir . $avifFileName;
 
-            // Remove the @ sign (This comment was in the original code)
-            $avifSaveResult = imageavif($image, $destinationPath, $quality);
-            if ($avifSaveResult) {
+            if (imageavif($image, $destinationPath, $quality)) {
                 $convertedFileName = $avifFileName;
             } else {
                 $lastError = error_get_last();
-                if ($lastError) { // Check if logger exists to prevent fatal error
-                    logger()->warning("webpImage AVIF Conversion Error: " . htmlspecialchars($lastError['message']));
-                }
+                logger()->warning("AVIF conversion failed: " . ($lastError['message'] ?? 'unknown error'));
             }
         } else {
-                logger()->warning("imageavif function not found.");
+            logger()->warning("imageavif function not available");
         }
 
-        // 6. If AVIF failed or is not supported, try to convert to WebP
+        // 7. WebP dönüşümü dene (AVIF başarısız olursa)
         if (!$convertedFileName && function_exists('imagewebp')) {
-            $webpFileName = $baseOutputName . '.webp'; // Use the same base name
-            $destinationPath = rtrim($destinationDir, '/') . '/' . $webpFileName;
-            if (@imagewebp($image, $destinationPath, $quality)) {
+            $webpFileName = $baseOutputName . '.webp';
+            $destinationPath = $destinationDir . $webpFileName;
+
+            if (imagewebp($image, $destinationPath, $quality)) {
                 $convertedFileName = $webpFileName;
+            } else {
+                $lastError = error_get_last();
+                logger()->warning("WebP conversion failed: " . ($lastError['message'] ?? 'unknown error'));
             }
         }
 
-        // 7. Free up resources
-        @imagedestroy($image);
+        // 8. Kaynakları temizle
+        imagedestroy($image);
 
-        // 8. Result
+        // 9. Sonuçları kontrol et
         if ($convertedFileName) {
-            if ($removeOld) {
-                if (file_exists($source)) { // Re-check existence before deleting
-                    @unlink($source);
-                }
+            // Dönüştürülen dosyanın varlığını ve boyutunu kontrol et
+            $fullPath = $destinationDir . $convertedFileName;
+            if (!file_exists($fullPath) || filesize($fullPath) === 0) {
+                logger()->error("Conversion created invalid file: " . $fullPath);
+                return $source;
             }
-            return $convertedFileName; // Return only the file name
-        } else {
-            return $source; // Return the original source if no conversion was successful
+
+            // Orijinal dosyayı sil
+            if ($removeOld && file_exists($source)) {
+                unlink($source);
+            }
+
+            return $convertedFileName;
         }
+
+        // Dönüşüm başarısız oldu
+        logger()->error("All conversion attempts failed for: " . $source);
+        return $source;
     }
 }
 if (!function_exists('logger')) {
@@ -618,7 +654,7 @@ if (!function_exists('minifyHtml')) {
             // Sadece satırın tamamı yorumsa (başında isteğe bağlı boşluklarla) o satırı (newline dahil) kaldırır.
             // Regex sonuna '$' eklendi, böylece script bloğunun sonundaki yorum satırları da yakalanır.
             $js = preg_replace('/^\s*\/\/[^\r\n]*(\r\n|\r|\n|$)/m', '', $js);
-            
+
             // DİĞER HİÇBİR BOŞLUK VEYA YAPI DEĞİŞİKLİĞİ YAPILMAYACAK.
             // Özellikle, $js içeriği burada trim() fonksiyonu ile kırpılmayacak.
             // Bu, orijinal script içeriğindeki olası baştaki/sondaki yeni satırları korur.

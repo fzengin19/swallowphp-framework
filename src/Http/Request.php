@@ -49,42 +49,39 @@ class Request
         $server = $_SERVER;
         $uri = $server['REQUEST_URI'] ?? '/';
         $method = $server['REQUEST_METHOD'] ?? 'GET';
-        // Suppress errors in case php://input is not available (e.g., CLI without stdin)
         $rawInput = @file_get_contents('php://input') ?: '';
 
         $headers = static::parseHeadersFromServer($server);
 
-        // Parse Query String
         $queryString = parse_url($uri, PHP_URL_QUERY);
         $query = [];
         if ($queryString) {
             parse_str($queryString, $query);
         }
 
-        // Parse Request Body
         $requestData = [];
         $contentType = strtolower($headers['content-type'] ?? '');
-        
-        // Parse body for POST, PUT, PATCH etc.
-        // This part relies on $_POST being populated for multipart/form-data and urlencoded.
-        if (in_array($method, ['POST', 'PUT', 'PATCH'])) {
-            // If $_POST array is not empty (which is true for urlencoded and multipart/form-data)
-            if (!empty($_POST)) {
+        $files = $_FILES ?? []; // Get uploaded file data
+
+        // POST, PUT, PATCH, DELETE gibi yöntemler için body'yi parse et.
+        if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
+            // multipart/form-data veya application/x-www-form-urlencoded için $_POST'u doğrudan kullan.
+            // Bu, PHP'nin otomatik ayrıştırmasının başarısız olduğu durumu telafi eder.
+            // !empty($_POST) yerine, $_POST'un geçerli bir dizi olduğunu kontrol ediyoruz.
+            if (is_array($_POST) && !empty($_POST)) {
                 $requestData = $_POST;
-            } elseif (str_contains($contentType, 'application/json')) {
-                // If POST data is empty but content-type is JSON
+            } elseif (str_contains($contentType, 'application/json') && !empty($rawInput)) {
+                // Eğer content-type JSON ise raw input'u decode et.
                 $jsonData = json_decode($rawInput, true);
                 if (json_last_error() === JSON_ERROR_NONE) {
                     $requestData = $jsonData;
                 }
-            } elseif (!empty($rawInput)) {
-                // Try to parse raw input in other cases (e.g., urlencoded)
+            } elseif (str_contains($contentType, 'application/x-www-form-urlencoded') && !empty($rawInput)) {
+                // Eğer urlencoded ise raw input'u parse et.
                 parse_str($rawInput, $requestData);
             }
         }
         
-        $files = $_FILES ?? []; // Get uploaded file data
-
         return new static($uri, $method, $query, $requestData, $files, $headers, $server, $rawInput);
     }
 

@@ -37,7 +37,7 @@ class VerifyCsrfToken extends Middleware
     {
 
         logger()->info("Gelen istek: " . $request->getMethod() . " " . $request->getUri());
-        logger()->info("Gelen POST verisi: " . print_r($request->request(), true));
+        logger()->info("Gelen POST verisi: " . print_r($request->all(), true));
         logger()->info("Gelen dosya verisi: " . print_r($request->files(), true));
 
 

@@ -81,6 +81,8 @@ class Request
                 parse_str($rawInput, $requestData);
             }
         }
+        logger()->info("Gelen POST verisi: " . print_r($requestData, true));
+        logger()->info("Gelen dosya verisi: " . print_r($files, true));
         
         return new static($uri, $method, $query, $requestData, $files, $headers, $server, $rawInput);
     }

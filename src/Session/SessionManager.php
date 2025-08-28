@@ -7,6 +7,7 @@ use SwallowPHP\Framework\Session\Handler\FileSessionHandler; // Import FileSessi
 use SwallowPHP\Framework\Foundation\App; // Needed for config/logger access
 use SwallowPHP\Framework\Foundation\Config; // Import Config for type hint
 use Psr\Log\LoggerInterface; // Import LoggerInterface
+use SwallowPHP\Framework\Http\Request; // Import Request for HTTPS check
 
 /**
  * Manages session data, including flash messages and custom handlers.
@@ -141,29 +142,41 @@ class SessionManager
     protected function configureSessionCookie(): void
     {
         $config = App::container()->get(Config::class); // Use Config::class
+        $request = App::container()->get(Request::class); // Get the request instance
+
         session_name($config->get('session.cookie', 'swallow_session'));
 
         $lifetime = (int) $config->get('session.lifetime', 120) * 60;
         $path = $config->get('session.path', '/');
         $domain = $config->get('session.domain', null);
-        $secure = $config->get('session.secure', null);
         $httpOnly = $config->get('session.http_only', true);
         $sameSite = $config->get('session.same_site', 'Lax');
 
-        $cookieLifetime = ($lifetime === 0 || $config->get('session.expire_on_close', false)) ? 0 : $lifetime;
+        // Determine the 'secure' flag based on both config and the current request protocol.
+        $secureConfig = $config->get('session.secure', null);
+        $secureDefault = ($config->get('app.env') === 'production');
+        $secure = $secureConfig ?? $secureDefault;
 
-        $secureDefault = ($config->get('app.env') === 'production'); // Get env from config service
+        // If the cookie is configured to be secure, but the current request is not HTTPS,
+        // we must override the flag to false to prevent cookie loss.
+        if ($secure && $request->getScheme() !== 'https') {
+            $secure = false;
+             if ($this->logger) {
+                 $this->logger->warning('Session cookie security flag was overridden to FALSE because the current request is not HTTPS. Check your `session.secure` and `app.env` configurations.');
+             }
+        }
+
+        $cookieLifetime = ($lifetime === 0 || $config->get('session.expire_on_close', false)) ? 0 : $lifetime;
 
         session_set_cookie_params([
             'lifetime' => $cookieLifetime,
             'path' => $path,
             'domain' => $domain ?? '',
-            'secure' => $secure ?? $secureDefault,
+            'secure' => $secure,
             'httponly' => $httpOnly,
             'samesite' => ucfirst(strtolower($sameSite))
         ]);
     }
-
 
 
     /** Get an item from the session. */

@@ -14,11 +14,6 @@ class Request
     public string $rawInput = '';
     public array $files = []; // Added property for uploaded files ($_FILES)
 
-    // Removed original data properties as main properties will hold raw data now
-    // protected array $originalQuery = [];
-    // protected array $originalRequest = [];
-    // protected array $originalHeaders = [];
-
     /**
      * Protected constructor. Use createFromGlobals() to instantiate.
      */
@@ -39,11 +34,6 @@ class Request
         $this->query = $query;
         $this->request = $request;
         $this->headers = $headers; // Headers are already parsed by parseHeadersFromServer
-
-        // Removed sanitization calls for query, request, headers
-        // $this->query = $this->sanitizeData($query);
-        // $this->request = $this->sanitizeData($request);
-        // $this->headers = $this->sanitizeData($headers);
 
         $this->files = $files; // Assign files data (no sanitization)
         $this->server = $server;
@@ -74,37 +64,25 @@ class Request
         // Parse Request Body
         $requestData = [];
         $contentType = strtolower($headers['content-type'] ?? '');
-
-        // Handle form-urlencoded data
-        if (($method === 'POST' || $method === 'PUT' || $method === 'PATCH') && str_contains($contentType, 'application/x-www-form-urlencoded')) {
-             // If rawInput is empty but method is POST/PUT/PATCH, PHP might have already parsed into $_POST
-             if (empty($rawInput) && !empty($_POST)) {
-                  $requestData = $_POST;
-             } elseif(!empty($rawInput)) {
-                 // Try parsing raw input if $_POST is empty (might happen with some server configs)
-                 parse_str($rawInput, $requestData);
-             }
-        }
-        // Handle JSON data
-        elseif (str_contains($contentType, 'application/json') && !empty($rawInput)) {
-            $jsonData = json_decode($rawInput, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $requestData = $jsonData;
-            } else {
-                // Invalid JSON received. Do not log here as logger might not be available.
-                // Controller or middleware should handle the empty $requestData if needed.
-                // Removed: error_log("Request creation: Invalid JSON received.");
+        
+        // Parse body for POST, PUT, PATCH etc.
+        // This part relies on $_POST being populated for multipart/form-data and urlencoded.
+        if (in_array($method, ['POST', 'PUT', 'PATCH'])) {
+            // If $_POST array is not empty (which is true for urlencoded and multipart/form-data)
+            if (!empty($_POST)) {
+                $requestData = $_POST;
+            } elseif (str_contains($contentType, 'application/json')) {
+                // If POST data is empty but content-type is JSON
+                $jsonData = json_decode($rawInput, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $requestData = $jsonData;
+                }
+            } elseif (!empty($rawInput)) {
+                // Try to parse raw input in other cases (e.g., urlencoded)
+                parse_str($rawInput, $requestData);
             }
         }
-        // Handle multipart/form-data ($_FILES)
-        // Note: PHP might place POST fields in $_POST even for multipart
-        if ($method === 'POST' && str_contains($contentType, 'multipart/form-data')) {
-             if (!empty($_POST)) {
-                  // Merge $_POST data into requestData if not already handled by urlencoded check
-                  // This might overwrite fields if name conflicts exist, consider strategy
-                  $requestData = array_merge($requestData, $_POST);
-             }
-        }
+        
         $files = $_FILES ?? []; // Get uploaded file data
 
         return new static($uri, $method, $query, $requestData, $files, $headers, $server, $rawInput);

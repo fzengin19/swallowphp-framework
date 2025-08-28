@@ -62,13 +62,28 @@ class Request
         $requestData = [];
         $contentType = strtolower($headers['content-type'] ?? '');
         $files = $_FILES ?? []; // Get uploaded file data
-
+        
         // POST, PUT, PATCH, DELETE gibi yöntemler için body'yi parse et.
         if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'])) {
-            // multipart/form-data veya application/x-www-form-urlencoded için $_POST'u doğrudan kullan.
-            // Bu, PHP'nin otomatik ayrıştırmasının başarısız olduğu durumu telafi eder.
-            // !empty($_POST) yerine, $_POST'un geçerli bir dizi olduğunu kontrol ediyoruz.
-            if (is_array($_POST) && !empty($_POST)) {
+            // İsteğin multipart/form-data olup olmadığını ve $_POST'un boş gelip gelmediğini kontrol et.
+            // $_POST'un boş gelmesi, dosya boyut limitinin aşıldığının bir göstergesi olabilir.
+            $isMultipart = str_contains($contentType, 'multipart/form-data');
+            $isPostEmpty = empty($_POST);
+
+            if ($isMultipart && $isPostEmpty && !empty($rawInput)) {
+                // Eğer multipart istek gelmiş ve $_POST boşsa, ham veriyi manuel olarak parse et.
+                // Bu, PHP'nin dahili ayrıştırma hatasını bypass eder.
+                $boundary = static::getBoundaryFromContentType($contentType);
+                if ($boundary) {
+                    $requestData = static::parseMultipartBody($rawInput, $boundary);
+                } else {
+                    // Sınır bulunamazsa, $_FILES'daki hatalı dosyayı logla ve devam et.
+                    // CSRF token'ı bulunamaz, 419 hatasına yol açar.
+                    // Bu, bilinçli bir güvenlik mekanizmasıdır.
+                    // logger()->warning("Multipart boundary not found in Content-Type header.");
+                }
+            } elseif (!empty($_POST) && is_array($_POST)) {
+                // Normal POST verisi (multipart veya urlencoded) düzgün geldiğinde
                 $requestData = $_POST;
             } elseif (str_contains($contentType, 'application/json') && !empty($rawInput)) {
                 // Eğer content-type JSON ise raw input'u decode et.
@@ -76,15 +91,61 @@ class Request
                 if (json_last_error() === JSON_ERROR_NONE) {
                     $requestData = $jsonData;
                 }
-            } elseif (str_contains($contentType, 'application/x-www-form-urlencoded') && !empty($rawInput)) {
-                // Eğer urlencoded ise raw input'u parse et.
+            } elseif (!empty($rawInput)) {
+                // Diğer durumlarda raw input'u parse etmeyi dene (ör: urlencoded)
                 parse_str($rawInput, $requestData);
             }
         }
-        logger()->info("Gelen POST verisi: " . print_r($requestData, true));
-        logger()->info("Gelen dosya verisi: " . print_r($files, true));
         
         return new static($uri, $method, $query, $requestData, $files, $headers, $server, $rawInput);
+    }
+    
+    /**
+     * Parses the boundary from the Content-Type header.
+     * @param string $contentType
+     * @return string|null
+     */
+    private static function getBoundaryFromContentType(string $contentType): ?string
+    {
+        if (preg_match('/boundary=(?:"?)([^" ]*)(?:"?)/i', $contentType, $matches)) {
+            return '--' . $matches[1];
+        }
+        return null;
+    }
+
+    /**
+     * Parses a multipart/form-data request body from raw input.
+     * This is a fallback method for when PHP's internal parsing fails.
+     * @param string $rawBody
+     * @param string $boundary
+     * @return array
+     */
+    private static function parseMultipartBody(string $rawBody, string $boundary): array
+    {
+        $parts = explode($boundary, $rawBody);
+        $data = [];
+        foreach ($parts as $part) {
+            if (empty(trim($part))) {
+                continue;
+            }
+            $part = ltrim($part, "\r\n");
+            
+            $headersEndPos = strpos($part, "\r\n\r\n");
+            if ($headersEndPos === false) {
+                continue;
+            }
+            
+            $headers = substr($part, 0, $headersEndPos);
+            $body = substr($part, $headersEndPos + 4);
+            
+            if (preg_match('/name="([^"]+)"/i', $headers, $matches)) {
+                $name = $matches[1];
+                if (strpos($headers, 'filename=') === false) {
+                     $data[$name] = trim($body);
+                }
+            }
+        }
+        return $data;
     }
 
     /**

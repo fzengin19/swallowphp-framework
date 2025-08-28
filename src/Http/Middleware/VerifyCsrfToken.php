@@ -35,14 +35,24 @@ class VerifyCsrfToken extends Middleware
      */
     public function handle(Request $request, Closure $next): mixed
     {
+
+        logger()->info("Gelen istek: " . $request->getMethod() . " " . $request->getUri());
+        logger()->info("Gelen POST verisi: " . print_r($request->request(), true));
+        logger()->info("Gelen dosya verisi: " . print_r($request->files(), true));
+
+
+
         // CSRF check should only be done if session is started and exists.
         // Assuming session is started in App::run().
         if (!isset($_SESSION) && !$this->isReading($request)) {
-             $logMsg = "Session is not available for CSRF check. Check App::run() and headers_sent() errors.";
-             // We don't bypass CSRF check, because this is a critical security issue.
-             // We log it and continue, because this might have been logged in App.
-             // However, `tokensMatch` will return false, so the next line will throw an exception.
-             try { App::container()->get(LoggerInterface::class)->critical($logMsg); } catch (\Throwable $_) {}
+            $logMsg = "Session is not available for CSRF check. Check App::run() and headers_sent() errors.";
+            // We don't bypass CSRF check, because this is a critical security issue.
+            // We log it and continue, because this might have been logged in App.
+            // However, `tokensMatch` will return false, so the next line will throw an exception.
+            try {
+                App::container()->get(LoggerInterface::class)->critical($logMsg);
+            } catch (\Throwable $_) {
+            }
         }
 
         // Check conditions to bypass CSRF check or validate token
@@ -80,10 +90,9 @@ class VerifyCsrfToken extends Middleware
             if (str_ends_with($except, '/*')) {
                 $pattern = rtrim($except, '*');
                 if ($pattern === '/' || str_starts_with($requestPath, $pattern)) {
-                     return true;
+                    return true;
                 }
-            }
-            elseif ($requestPath === $except) {
+            } elseif ($requestPath === $except) {
                 return true;
             }
         }
@@ -94,15 +103,18 @@ class VerifyCsrfToken extends Middleware
     protected function tokensMatch(Request $request): bool
     {
         if (!isset($_SESSION) || !is_array($_SESSION)) {
-             try { App::container()->get(LoggerInterface::class)->error("CSRF tokensMatch() called but session is not initialized."); } catch (\Throwable $_) {}
-             return false;
+            try {
+                App::container()->get(LoggerInterface::class)->error("CSRF tokensMatch() called but session is not initialized.");
+            } catch (\Throwable $_) {
+            }
+            return false;
         }
 
         $sessionToken = $_SESSION['_token'] ?? null;
         $token = $request->get('_token') ?: $request->header('X-CSRF-TOKEN') ?: $request->header('X-XSRF-TOKEN');
 
         if (!is_string($sessionToken) || $sessionToken === '' || !is_string($token) || $token === '') {
-             return false;
+            return false;
         }
 
         return hash_equals($sessionToken, $token);
@@ -122,16 +134,15 @@ class VerifyCsrfToken extends Middleware
 
             if (!$session->has('_token') || !is_string($session->get('_token'))) {
                 try {
-                     $newToken = bin2hex(random_bytes(32));
-                     $session->put('_token', $newToken);
-                     return $newToken;
+                    $newToken = bin2hex(random_bytes(32));
+                    $session->put('_token', $newToken);
+                    return $newToken;
                 } catch (\Exception $e) {
-                     if ($logger) $logger->critical("CSRF getToken error: Failed to generate random bytes.", ['exception' => $e]);
-                     throw new \RuntimeException("Could not generate CSRF token.", 0, $e);
+                    if ($logger) $logger->critical("CSRF getToken error: Failed to generate random bytes.", ['exception' => $e]);
+                    throw new \RuntimeException("Could not generate CSRF token.", 0, $e);
                 }
             }
             return $session->get('_token');
-
         } catch (\Throwable $e) {
             $logMsg = "CSRF getToken error: Failed to get services or start session.";
             if ($logger) $logger->critical($logMsg, ['exception' => $e]);
@@ -151,9 +162,9 @@ class VerifyCsrfToken extends Middleware
             // App::run() in session is already started.
             $session->put('_token', bin2hex(random_bytes(32)));
         } catch (\Throwable $e) {
-             $logMsg = "CSRF refreshToken error.";
-             if ($logger) $logger->error($logMsg, ['exception' => $e]);
-             else error_log($logMsg . " " . $e->getMessage());
+            $logMsg = "CSRF refreshToken error.";
+            if ($logger) $logger->error($logMsg, ['exception' => $e]);
+            else error_log($logMsg . " " . $e->getMessage());
         }
     }
 }

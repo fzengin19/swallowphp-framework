@@ -33,8 +33,10 @@ class SessionManager
      */
     public function __construct()
     {
-         try { $this->logger = App::container()->get(LoggerInterface::class); }
-         catch (\Throwable $e) { /* Ignore if logger cannot be resolved */ }
+        try {
+            $this->logger = App::container()->get(LoggerInterface::class);
+        } catch (\Throwable $e) { /* Ignore if logger cannot be resolved */
+        }
     }
 
 
@@ -45,37 +47,38 @@ class SessionManager
      */
     public function start(): bool
     {
-        if ($this->sessionStarted) {
-            return true;
-        }
-
+        // If session is already active, no need to do anything.
+        // It's important to check if session_start() has been called before.
         if (session_status() === PHP_SESSION_ACTIVE) {
-            $this->sessionStarted = true;
-            $this->ageFlashData(); // Age flash if already active
+            if (!$this->sessionStarted) {
+                $this->sessionStarted = true;
+                $this->ageFlashData();
+            }
             return true;
         }
 
-        if (headers_sent($file, $line)) { // Get file and line where output started
+        // If headers have already been sent, session cannot be started.
+        if (headers_sent($file, $line)) {
             $logMsg = "Session could not be started because headers are already sent.";
             if ($this->logger) $this->logger->warning($logMsg, ['output_started_at' => "{$file}:{$line}"]);
-            else error_log("Warning: " . $logMsg); // Fallback
+            else error_log("Warning: " . $logMsg);
             return false;
         }
 
         try {
-            // Register the custom handler before starting the session
+            // Only once, register the custom handler before session starts.
             if (!$this->handlerRegistered) {
                 $this->registerSaveHandler();
                 $this->handlerRegistered = true;
             }
 
-            // Set session cookie parameters from config
+            // Set session cookie parameters from config.
             $this->configureSessionCookie();
 
             // Start the session
             if (session_start()) {
                 $this->sessionStarted = true;
-                $this->ageFlashData(); // Age flash data immediately after starting
+                $this->ageFlashData(); // Age flash data immediately.
                 return true;
             } else {
                  $logMsg = "session_start() failed to initiate session.";
@@ -85,7 +88,7 @@ class SessionManager
         } catch (\Throwable $e) {
              $logMsg = "Exception during session start process.";
              if ($this->logger) $this->logger->critical($logMsg, ['exception' => $e]);
-             else error_log($logMsg . " " . $e->getMessage()); // Fallback
+             else error_log($logMsg . " " . $e->getMessage());
              return false;
         }
     }
@@ -105,7 +108,7 @@ class SessionManager
         };
 
         if (!session_set_save_handler($this->handler, true)) {
-             throw new \RuntimeException("Failed to register session save handler for driver [{$driver}].");
+            throw new \RuntimeException("Failed to register session save handler for driver [{$driver}].");
         }
 
         // Register shutdown function to write session data
@@ -122,9 +125,9 @@ class SessionManager
         $path = $config->get('session.files');
         if (!$path) {
             $logMsg = "Session 'file' driver path not configured.";
-             if ($this->logger) $this->logger->critical($logMsg, ['config_key' => 'session.files']);
-             else error_log("CRITICAL: " . $logMsg); // Fallback
-             throw new \RuntimeException("Session 'file' driver path not configured in config/session.php (session.files).");
+            if ($this->logger) $this->logger->critical($logMsg, ['config_key' => 'session.files']);
+            else error_log("CRITICAL: " . $logMsg); // Fallback
+            throw new \RuntimeException("Session 'file' driver path not configured in config/session.php (session.files).");
         }
         // Permissions could also be configurable via session.php
         $permissions = $config->get('session.file_permission', 0600);
@@ -137,29 +140,30 @@ class SessionManager
      */
     protected function configureSessionCookie(): void
     {
-         $config = App::container()->get(Config::class); // Use Config::class
-         session_name($config->get('session.cookie', 'swallow_session'));
+        $config = App::container()->get(Config::class); // Use Config::class
+        session_name($config->get('session.cookie', 'swallow_session'));
 
-         $lifetime = (int) $config->get('session.lifetime', 120) * 60;
-         $path = $config->get('session.path', '/');
-         $domain = $config->get('session.domain', null);
-         $secure = $config->get('session.secure', null);
-         $httpOnly = $config->get('session.http_only', true);
-         $sameSite = $config->get('session.same_site', 'Lax');
+        $lifetime = (int) $config->get('session.lifetime', 120) * 60;
+        $path = $config->get('session.path', '/');
+        $domain = $config->get('session.domain', null);
+        $secure = $config->get('session.secure', null);
+        $httpOnly = $config->get('session.http_only', true);
+        $sameSite = $config->get('session.same_site', 'Lax');
 
-         $cookieLifetime = ($lifetime === 0 || $config->get('session.expire_on_close', false)) ? 0 : $lifetime;
+        $cookieLifetime = ($lifetime === 0 || $config->get('session.expire_on_close', false)) ? 0 : $lifetime;
 
-         $secureDefault = ($config->get('app.env') === 'production'); // Get env from config service
+        $secureDefault = ($config->get('app.env') === 'production'); // Get env from config service
 
-         session_set_cookie_params([
-             'lifetime' => $cookieLifetime,
-             'path' => $path,
-             'domain' => $domain ?? '',
-             'secure' => $secure ?? $secureDefault,
-             'httponly' => $httpOnly,
-             'samesite' => ucfirst(strtolower($sameSite))
-         ]);
+        session_set_cookie_params([
+            'lifetime' => $cookieLifetime,
+            'path' => $path,
+            'domain' => $domain ?? '',
+            'secure' => $secure ?? $secureDefault,
+            'httponly' => $httpOnly,
+            'samesite' => ucfirst(strtolower($sameSite))
+        ]);
     }
+
 
 
     /** Get an item from the session. */
@@ -204,12 +208,12 @@ class SessionManager
         return $_SESSION[self::FLASH_OLD_KEY][$key] ?? $default;
     }
 
-     /** Check if an old flashed item exists. */
-     public function hasFlash(string $key): bool
-     {
-         $this->ensureSessionStarted();
-         return isset($_SESSION[self::FLASH_OLD_KEY][$key]);
-     }
+    /** Check if an old flashed item exists. */
+    public function hasFlash(string $key): bool
+    {
+        $this->ensureSessionStarted();
+        return isset($_SESSION[self::FLASH_OLD_KEY][$key]);
+    }
 
     /** Reflash all existing flash messages. */
     public function reflash(): void
@@ -241,7 +245,9 @@ class SessionManager
     /** Age the flash data. Should be called ONCE per request. */
     public function ageFlashData(): void
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) { return; }
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return;
+        }
         $this->remove(self::FLASH_OLD_KEY);
         if (isset($_SESSION[self::FLASH_NEW_KEY])) {
             $_SESSION[self::FLASH_OLD_KEY] = $_SESSION[self::FLASH_NEW_KEY];
@@ -273,9 +279,14 @@ class SessionManager
             $_SESSION = [];
             if (ini_get("session.use_cookies")) {
                 $params = session_get_cookie_params();
-                setcookie(session_name(), '', time() - 42000,
-                    $params["path"], $params["domain"],
-                    $params["secure"], $params["httponly"]
+                setcookie(
+                    session_name(),
+                    '',
+                    time() - 42000,
+                    $params["path"],
+                    $params["domain"],
+                    $params["secure"],
+                    $params["httponly"]
                 );
             }
             $destroyed = session_destroy();
@@ -284,16 +295,17 @@ class SessionManager
         }
         return false;
     }
-
     /** Ensures session is started before performing operations. */
     protected function ensureSessionStarted(): void
     {
-        if (!$this->sessionStarted) {
+        // If session object (i.e., $_SESSION) doesn't exist, try to start the session.
+        // This checks if session_id() exists even if session_status() is PHP_SESSION_ACTIVE.
+        if (!isset($_SESSION) || !is_array($_SESSION)) {
             if (!$this->start()) {
-                 // Log error using the instance logger if available
-                 $logMsg = "Session could not be started. Headers may already be sent or handler registration failed.";
-                 if ($this->logger) $this->logger->error($logMsg); else error_log($logMsg); // Fallback
-                 throw new \RuntimeException($logMsg);
+                $logMsg = "Session could not be started. Headers may already be sent or handler registration failed.";
+                if ($this->logger) $this->logger->error($logMsg);
+                else error_log($logMsg);
+                throw new \RuntimeException($logMsg);
             }
         }
     }

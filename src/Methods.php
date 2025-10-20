@@ -23,7 +23,20 @@ if (!function_exists('config')) {
      */
     function config($key = null, $default = null)
     {
-        $config = App::container()->get(\SwallowPHP\Framework\Foundation\Config::class);
+        try {
+            $config = App::container()->get(\SwallowPHP\Framework\Foundation\Config::class);
+        } catch (\Throwable $e) {
+            // Container hazır değilse, statik cache veya fallback kullan
+            static $fallbackConfig = null;
+            if ($fallbackConfig === null) {
+                $fallbackConfig = new \SwallowPHP\Framework\Foundation\Config(
+                    dirname(__DIR__, 2) . '/src/Config',
+                    defined('BASE_PATH') ? constant('BASE_PATH') . '/config' : null
+                );
+            }
+            $config = $fallbackConfig;
+        }
+        
         if (is_null($key)) {
             return $config;
         }

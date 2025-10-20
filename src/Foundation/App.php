@@ -22,6 +22,7 @@ class App
     private static Router $router;
     private static ?string $viewDirectory;
     private static ?Container $container = null;
+    private static array $pendingServiceProviders = [];
 
     private function __construct()
     {
@@ -202,6 +203,12 @@ class App
             self::$container->addShared(VerifyCsrfToken::class, function () {
                 return new VerifyCsrfToken();
             });
+            
+            // Register pending service providers
+            foreach (self::$pendingServiceProviders as $provider) {
+                self::$container->addServiceProvider($provider);
+            }
+            self::$pendingServiceProviders = [];
         }
         return self::$container;
     }
@@ -227,6 +234,15 @@ class App
     public static function handleRequest(Request $request): mixed
     {
         return self::getRouter()->dispatch($request);
+    }
+
+    public static function registerServiceProvider($provider): void
+    {
+        if (self::$container === null) {
+            self::$pendingServiceProviders[] = $provider;
+        } else {
+            self::$container->addServiceProvider($provider);
+        }
     }
 
     public static function run(): void

@@ -150,7 +150,6 @@ class ExceptionHandler
                      return self::renderFallbackHtml($statusCode, $data['statusText'], $data['message'], $debug, $data);
                 } 
                 catch (\Throwable $e) {
-                    dd($e);
                      if ($logger) $logger->critical("Error rendering error view.", ['exception' => $e]);
                      // Fallback to basic HTML if view rendering fails
                      return self::renderFallbackHtml($statusCode, $data['statusText'], 'An error occurred while rendering the error page.', $debug, $data);

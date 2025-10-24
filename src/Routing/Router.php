@@ -172,6 +172,8 @@ class Router
 
                     // Extract named parameters from matches
                     $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+                    // URL-decode all parameters
+                    $params = array_map('urldecode', $params);
                     // Add route parameters to the request object (overwriting query/body params with same name)
                     $request->setAll(array_merge($request->all(), $params));
 

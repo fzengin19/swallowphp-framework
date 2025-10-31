@@ -36,12 +36,6 @@ class VerifyCsrfToken extends Middleware
     public function handle(Request $request, Closure $next): mixed
     {
 
-        logger()->info("Gelen istek: " . $request->getMethod() . " " . $request->getUri());
-        logger()->info("Gelen POST verisi: " . print_r($request->all(), true));
-        logger()->info("Gelen dosya verisi: " . print_r($request->files(), true));
-
-
-
         // CSRF check should only be done if session is started and exists.
         // Assuming session is started in App::run().
         if (!isset($_SESSION) && !$this->isReading($request)) {

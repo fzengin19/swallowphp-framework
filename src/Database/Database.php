@@ -137,7 +137,8 @@ class Database
             ];
             $pdoOptions = array_replace($defaultOptions, $options);
 
-            $this->connection = new PDO($dsn, $username, $password, $pdoOptions);
+            // Use LoggedPDO to enable global query logging at PDO level
+            $this->connection = new \SwallowPHP\Framework\Database\Instrumentation\LoggedPDO($dsn, $username, $password, $pdoOptions);
             $this->connectedSuccessfully = true;
 
             if ($driver === 'sqlite') {
@@ -389,13 +390,17 @@ class Database
             $statement = $this->connection->prepare($sql);
             $paramIndex = 1;
             $whereBindings = $this->getBindValuesForWhere();
+            $allBindings = [];
             foreach ($whereBindings as $value) {
                 $statement->bindValue($paramIndex++, $value, $this->getPDOParamType($value));
+                $allBindings[] = $value;
             }
             if ($this->limit !== null) {
                 $statement->bindValue($paramIndex++, $this->limit, PDO::PARAM_INT);
+                $allBindings[] = $this->limit;
                 if ($this->offset !== null) {
                     $statement->bindValue($paramIndex++, $this->offset, PDO::PARAM_INT);
+                    $allBindings[] = $this->offset;
                 }
             }
             $statement->execute();

@@ -49,4 +49,16 @@ return [
             'engine' => null,
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Query Logging (Optional)
+    |--------------------------------------------------------------------------
+    | database.log_queries: true/false -> Tüm çalıştırılan sorguları loglar.
+    | database.slow_threshold_ms: int  -> Bu eşik üzerindeki sorgular "slow" olarak warning seviyesinde loglanır.
+    | database.log_bindings: true/false -> Log mesajına bound parametreleri dahil eder.
+    */
+    'log_queries' => false,
+    'slow_threshold_ms' => 500,
+    'log_bindings' => true,
 ];

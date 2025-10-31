@@ -54,38 +54,38 @@ class LoggedPDOStatement extends PDOStatement
 
     public function execute($params = null): bool
     {
-        $t0 = microtime(true);
+        $t0 = hrtime(true);
         $ok = false;
         try {
             if (is_array($params)) {
-                // also reflect provided params
                 foreach ($params as $k => $v) { $this->bindings[$k] = $v; }
             }
             $ok = parent::execute($params ?? null);
         } catch (\PDOException $e) {
             if ($this->logger && $this->logQueries) {
-                $ctx = [
-                    'sql' => $this->queryString ?? '',
-                    'exception' => $e,
-                    'driver' => $this->driverName,
-                ];
-                if ($this->logBindings) { $ctx['bindings'] = $this->collectBindings(); }
-                $this->logger->error('EXECUTE FAILED', $ctx);
+                $sql = $this->queryString ?? '';
+                $binds = $this->logBindings ? $this->collectBindings() : null;
+                $msg = $sql;
+                if ($binds !== null && !empty($binds)) {
+                    $msg .= ' | ' . json_encode($binds, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                $this->logger->error("SQL ERROR: {$msg}", ['exception' => $e]);
             }
             throw $e;
         } finally {
-            $elapsedMs = (int) round((microtime(true) - $t0) * 1000);
+            $elapsedMs = (hrtime(true) - $t0) / 1e6;
             if ($this->logger && $this->logQueries) {
-                $ctx = [
-                    'sql' => $this->queryString ?? '',
-                    'ms' => $elapsedMs,
-                    'driver' => $this->driverName,
-                ];
-                if ($this->logBindings) { $ctx['bindings'] = $this->collectBindings(); }
+                $sql = $this->queryString ?? '';
+                $binds = $this->logBindings ? $this->collectBindings() : null;
+                $dur = number_format($elapsedMs, 3, '.', '');
+                $msg = "[{$dur}ms] {$sql}";
+                if ($binds !== null && !empty($binds)) {
+                    $msg .= ' | ' . json_encode($binds, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
                 if ($elapsedMs >= $this->slowThresholdMs) {
-                    $this->logger->warning('[SLOW QUERY] PREPARED EXEC', $ctx);
+                    $this->logger->warning("[SLOW] {$msg}");
                 } else {
-                    $this->logger->info('PREPARED EXEC', $ctx);
+                    $this->logger->info($msg);
                 }
             }
         }

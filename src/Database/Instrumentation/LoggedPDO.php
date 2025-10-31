@@ -39,38 +39,48 @@ class LoggedPDO extends PDO
 
     public function query(string $query, ?int $fetchMode = null, ...$fetchModeArgs)
     {
-        $t0 = microtime(true);
+        $t0 = hrtime(true);
         try {
             $stmt = $fetchMode === null ? parent::query($query) : parent::query($query, $fetchMode, ...$fetchModeArgs);
         } catch (PDOException $e) {
             if ($this->logger && $this->logQueries) {
-                $this->logger->error('QUERY FAILED', ['sql' => $query, 'exception' => $e, 'driver' => $this->driverName]);
+                $this->logger->error("SQL ERROR: {$query}", ['exception' => $e]);
             }
             throw $e;
         }
-        $elapsedMs = (int) round((microtime(true) - $t0) * 1000);
+        $elapsedMs = (hrtime(true) - $t0) / 1e6;
         if ($this->logger && $this->logQueries) {
-            $ctx = ['sql' => $query, 'ms' => $elapsedMs, 'driver' => $this->driverName];
-            if ($elapsedMs >= $this->slowThresholdMs) $this->logger->warning('[SLOW QUERY] QUERY', $ctx); else $this->logger->info('QUERY', $ctx);
+            $dur = number_format($elapsedMs, 3, '.', '');
+            $msg = "[{$dur}ms] {$query}";
+            if ($elapsedMs >= $this->slowThresholdMs) {
+                $this->logger->warning("[SLOW] {$msg}");
+            } else {
+                $this->logger->info($msg);
+            }
         }
         return $stmt;
     }
 
     public function exec(string $statement): int|false
     {
-        $t0 = microtime(true);
+        $t0 = hrtime(true);
         try {
             $result = parent::exec($statement);
         } catch (PDOException $e) {
             if ($this->logger && $this->logQueries) {
-                $this->logger->error('EXEC FAILED', ['sql' => $statement, 'exception' => $e, 'driver' => $this->driverName]);
+                $this->logger->error("SQL ERROR: {$statement}", ['exception' => $e]);
             }
             throw $e;
         }
-        $elapsedMs = (int) round((microtime(true) - $t0) * 1000);
+        $elapsedMs = (hrtime(true) - $t0) / 1e6;
         if ($this->logger && $this->logQueries) {
-            $ctx = ['sql' => $statement, 'ms' => $elapsedMs, 'driver' => $this->driverName, 'affected' => $result];
-            if ($elapsedMs >= $this->slowThresholdMs) $this->logger->warning('[SLOW QUERY] EXEC', $ctx); else $this->logger->info('EXEC', $ctx);
+            $dur = number_format($elapsedMs, 3, '.', '');
+            $msg = "[{$dur}ms] {$statement}";
+            if ($elapsedMs >= $this->slowThresholdMs) {
+                $this->logger->warning("[SLOW] {$msg}");
+            } else {
+                $this->logger->info($msg);
+            }
         }
         return $result;
     }

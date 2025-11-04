@@ -4,6 +4,7 @@ namespace SwallowPHP\Framework\Database\Instrumentation;
 
 use PDO;
 use PDOException;
+use PDOStatement;
 use Psr\Log\LoggerInterface;
 use SwallowPHP\Framework\Foundation\App;
 
@@ -37,7 +38,16 @@ class LoggedPDO extends PDO
         ]);
     }
 
-    public function query(string $query, ?int $fetchMode = null, ...$fetchModeArgs)
+    /**
+     * Executes a SQL statement, returning a result set as a PDOStatement object.
+     *
+     * @param string $query The SQL statement to prepare and execute.
+     * @param ?int $fetchMode The fetch mode to use.
+     * @param mixed ...$fetchModeArgs Arguments for the fetch mode.
+     * @return PDOStatement|false Returns a PDOStatement object on success, or false on failure.
+     * @throws PDOException
+     */
+    public function query(string $query, ?int $fetchMode = null, ...$fetchModeArgs): PDOStatement|false
     {
         $t0 = hrtime(true);
         try {
@@ -61,6 +71,13 @@ class LoggedPDO extends PDO
         return $stmt;
     }
 
+    /**
+     * Execute an SQL statement and return the number of affected rows.
+     *
+     * @param string $statement The SQL statement to prepare and execute.
+     * @return int|false Returns the number of rows affected by the statement, or false on failure.
+     * @throws PDOException
+     */
     public function exec(string $statement): int|false
     {
         $t0 = hrtime(true);
@@ -85,5 +102,3 @@ class LoggedPDO extends PDO
         return $result;
     }
 }
-
-

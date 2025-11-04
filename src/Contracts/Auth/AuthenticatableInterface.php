@@ -26,24 +26,24 @@ interface AuthenticatableInterface
     public function getAuthPassword(): string;
 
     /**
-     * Get the "remember me" token value. (Optional for remember me functionality)
+     * Get the "remember me" token value.
      *
      * @return string|null
      */
-    // public function getRememberToken(): ?string;
+    public function getRememberToken(): ?string;
 
     /**
-     * Set the "remember me" token value. (Optional)
+     * Set the "remember me" token value.
      *
      * @param  string|null  $value
      * @return void
      */
-    // public function setRememberToken(?string $value): void;
+    public function setRememberToken(?string $value): void;
 
     /**
-     * Get the name of the "remember me" token column. (Optional)
+     * Get the name of the "remember me" token column.
      *
      * @return string
      */
-    // public function getRememberTokenName(): string;
+    public function getRememberTokenName(): string;
 }

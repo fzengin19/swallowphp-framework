@@ -9,50 +9,78 @@ use RuntimeException;
 use SwallowPHP\Framework\Exceptions\AuthenticationLockoutException;
 use SwallowPHP\Framework\Contracts\CacheInterface;
 use SwallowPHP\Framework\Foundation\App;
-use Psr\Log\LoggerInterface; // Import Logger
-use Psr\Log\LogLevel; // Import LogLevel
-use SwallowPHP\Framework\Http\Cookie; // Import Cookie class
+use Psr\Log\LoggerInterface;
+use SwallowPHP\Framework\Http\Cookie;
 
 class Auth
 {
+    /**
+     * The currently authenticated user instance.
+     * @var AuthenticatableModel|null
+     */
     private static ?AuthenticatableModel $authenticatedUser = null;
+
+    /**
+     * The session key used to store the authenticated user's ID.
+     */
     private const AUTH_SESSION_KEY = 'auth_user_id';
 
-    /** Get logger instance */
-    private static function logger(): ?LoggerInterface
+    /**
+     * The cached shared logger instance.
+     * @var LoggerInterface|null
+     */
+    private static ?LoggerInterface $loggerInstance = null;
+
+    /**
+     * Get the shared logger instance from the container.
+     *
+     * The DI container (App.php) is responsible for guaranteeing
+     * that this method *always* returns a valid LoggerInterface.
+     *
+     * @return LoggerInterface
+     */
+    private static function logger(): LoggerInterface
     {
-        try {
-            return App::container()->get(LoggerInterface::class);
-        } catch (\Throwable $e) {
-            error_log("CRITICAL: Could not resolve LoggerInterface in Auth class: " . $e->getMessage());
-            return null; // Return null if logger fails
+        // Cache the instance locally to avoid repeated container 'get' calls.
+        if (self::$loggerInstance === null) {
+            self::$loggerInstance = App::container()->get(LoggerInterface::class);
         }
+        return self::$loggerInstance;
     }
 
+    /**
+     * Log the current user out.
+     */
     public static function logout(): void
     {
-        $logger = self::logger();
         try {
             $session = App::container()->get(SessionManager::class);
             $session->remove(self::AUTH_SESSION_KEY);
             $session->regenerate(true);
-            $cookie = App::container()->get(Cookie::class);
-            $cookie->delete('remember_me');
+            
+            Cookie::delete('remember_me');
+
         } catch (\Throwable $e) {
-            $message = "Logout error: Failed to access session manager or regenerate ID.";
-            if ($logger) $logger->error($message, ['exception' => $e]);
-            else error_log($message . " " . $e->getMessage()); // Fallback
+            $message = "Logout error: Failed to access session, regenerate ID, or delete cookie.";
+            self::logger()->error($message, ['exception' => $e]);
         }
         self::$authenticatedUser = null;
     }
 
+    /**
+     * Attempt to authenticate a user using the given credentials.
+     *
+     * @param string $email
+     * @param string $password
+     * @param bool $remember
+     * @return bool
+     */
     public static function authenticate(string $email, string $password, bool $remember = false): bool
     {
-        $logger = self::logger();
         $cache = null;
         $lockoutKey = null;
         $attemptKey = null;
-        $rawIp = 'unknown_ip'; // Default IP
+        $rawIp = 'unknown_ip';
 
         // --- Brute-Force Check ---
         try {
@@ -64,17 +92,15 @@ class Auth
 
             if ($cache->has($lockoutKey)) {
                 $logContext = ['email' => $email, 'ip' => $rawIp];
-                if ($logger) $logger->warning("Authentication lockout: Too many attempts.", $logContext);
+                self::logger()->warning("Authentication lockout: Too many attempts.", $logContext);
                 throw new AuthenticationLockoutException("Too many login attempts for {$email} from {$rawIp}. Account locked.");
             }
         } catch (AuthenticationLockoutException $e) {
-            throw $e; // Re-throw lockout exception
+            throw $e; // Re-throw lockout
         } catch (\Throwable $e) {
             $message = "Brute-force check failed during authentication.";
-            if ($logger) $logger->error($message, ['exception' => $e, 'email' => $email, 'ip' => $rawIp]);
-            else error_log($message . " " . $e->getMessage()); // Fallback
-            // Proceed without throttling but log the error
-            $cache = null; // Ensure cache is not used later if check failed
+            self::logger()->error($message, ['exception' => $e, 'email' => $email, 'ip' => $rawIp]);
+            $cache = null; // Continue without cache
         }
 
         // Find user by email
@@ -92,71 +118,71 @@ class Auth
                 }
                 $session->put(self::AUTH_SESSION_KEY, $user->getAuthIdentifier());
 
-                if ($cache && $attemptKey) $cache->delete($attemptKey);
-                if ($cache && $lockoutKey) $cache->delete($lockoutKey);
+                // Clear login attempts on success
+                if ($cache) {
+                    if ($attemptKey) $cache->delete($attemptKey);
+                    if ($lockoutKey) $cache->delete($lockoutKey);
+                }
 
                 self::$authenticatedUser = $user;
 
                 // --- Handle Remember Me ---
                 if ($remember) {
                     try {
-                        $rawToken = bin2hex(random_bytes(32)); // Generate secure RAW token
-                        $hashedToken = hash('sha256', $rawToken); // Hash the token for DB storage
+                        $rawToken = bin2hex(random_bytes(32)); // Secure RAW token for cookie
+                        $hashedToken = hash('sha256', $rawToken); // HASHED token for DB
 
-                        $user->setRememberToken($hashedToken); // Set the HASHED token on the model
-                        $saveResult = $user->save(); // Save the HASHED token to the database
+                        $user->setRememberToken($hashedToken);
+                        $saveResult = $user->save();
 
-                        // Check specifically for false, as 0 affected rows on update isn't necessarily an error here.
                         if ($saveResult === false) {
                             throw new RuntimeException("Failed to save remember token for user ID: " . $user->getAuthIdentifier());
                         }
 
-                        // Cookie value still contains the RAW token
                         $cookieValue = $user->getAuthIdentifier() . '|' . $rawToken;
-                        $lifetimeMinutes = config('auth.remember_lifetime', 43200); // Default: 30 days in minutes
-                        $lifetimeDays = floor($lifetimeMinutes / 1440); // Convert minutes to days for Cookie::set
+                        $lifetimeMinutes = config('auth.remember_lifetime', 43200);
 
-                        // Set the cookie directly using Cookie::set
+                        // Set secure cookie options from config
                         $cookieSet = Cookie::set(
-                            'remember_me', // Cookie name
-                            $cookieValue,   // Value (user_id|token)
-                            $lifetimeDays,  // Lifetime in days
-                            // Let Cookie::set use defaults from config for path, domain, secure, httpOnly, sameSite
+                            'remember_me',
+                            $cookieValue,
+                            $lifetimeMinutes, // Pass minutes directly
+                            config('cookie.path', '/'),
+                            config('cookie.domain', null),
+                            config('cookie.secure', false),
+                            true, // httpOnly: Force true for security
+                            false, // raw
+                            config('cookie.samesite', 'Lax')
                         );
 
                         if (!$cookieSet) {
-                            // Log the failure but don't necessarily fail the login
-                            if ($logger) $logger->error("Failed to set remember me cookie.", ['user_id' => $user->getAuthIdentifier()]);
-                        } elseif ($logger) {
-                            $logger->debug("Remember me cookie set.", ['user_id' => $user->getAuthIdentifier(), 'lifetime_days' => $lifetimeDays]);
+                            self::logger()->error("Failed to set remember me cookie.", ['user_id' => $user->getAuthIdentifier()]);
+                        } else {
+                            self::logger()->debug("Remember me cookie set.", ['user_id' => $user->getAuthIdentifier(), 'lifetime_minutes' => $lifetimeMinutes]);
                         }
                     } catch (\Throwable $rememberError) {
-                        // Log remember me token generation/save error but don't fail the login
                         $rememberMessage = "Failed to set remember me token/cookie.";
-                        if ($logger) $logger->error($rememberMessage, ['exception' => $rememberError, 'user_id' => $user->getAuthIdentifier()]);
-                        else error_log($rememberMessage . " " . $rememberError->getMessage()); // Fallback
+                        self::logger()->error($rememberMessage, ['exception' => $rememberError, 'user_id' => $user->getAuthIdentifier()]);
                     }
                 }
                 // --- End Handle Remember Me ---
 
                 return true;
             } catch (\Throwable $e) {
-                // If remember me failed, it's already logged. Log other session/cache errors.
                 $message = "Session/Cache/DB error during successful authentication.";
-                if ($logger) $logger->critical($message, ['exception' => $e, 'email' => $email]);
-                else error_log($message . " " . $e->getMessage()); // Fallback
+                self::logger()->critical($message, ['exception' => $e, 'email' => $email]);
+                
                 try {
                     App::container()->get(SessionManager::class)->remove(self::AUTH_SESSION_KEY);
-                } catch (\Throwable $_) {
-                }
+                } catch (\Throwable $_) {} // Ignore cleanup errors
+                
                 self::$authenticatedUser = null;
                 throw new RuntimeException("Session or Cache error prevented login completion.", 0, $e);
             }
         } else {
             // --- Failed Login ---
             $logContext = ['email' => $email, 'ip' => $rawIp];
-            if ($logger) $logger->warning("Login attempt failed: Invalid credentials.", $logContext);
-            else error_log("Login attempt failed for {$email} from {$rawIp}: Invalid credentials."); // Fallback
+            self::logger()->warning("Login attempt failed: Invalid credentials.", $logContext);
 
             if ($cache && $attemptKey && $lockoutKey) {
                 $attempts = (int) $cache->get($attemptKey, 0);
@@ -167,8 +193,7 @@ class Auth
                 $maxAttempts = config('auth.max_attempts', 5);
                 if ($attempts >= $maxAttempts) {
                     $lockContext = ['email' => $email, 'ip' => $rawIp, 'lockout_time' => $lockoutTime];
-                    if ($logger) $logger->warning("Account locked due to too many failed login attempts.", $lockContext);
-                    else error_log("Locking account for {$email} from {$rawIp} for " . $lockoutTime . " seconds."); // Fallback
+                    self::logger()->warning("Account locked due to too many failed login attempts.", $lockContext);
                     $cache->set($lockoutKey, time(), $lockoutTime);
                 }
             }
@@ -176,83 +201,77 @@ class Auth
         }
     }
 
+    /**
+     * Check if the user is currently authenticated.
+     *
+     * @return bool
+     */
     public static function isAuthenticated(): bool
     {
         if (self::$authenticatedUser !== null) {
             return true;
         }
 
-        $logger = self::logger();
         $session = null;
         try {
             $session = App::container()->get(SessionManager::class);
         } catch (\Throwable $e) {
             $message = "Error getting SessionManager in isAuthenticated.";
-            if ($logger) $logger->error($message, ['exception' => $e]);
-            else error_log($message . " " . $e->getMessage()); // Fallback
+            self::logger()->error($message, ['exception' => $e]);
             return false;
         }
 
         // --- Check Remember Me Cookie FIRST ---
         $rememberCookie = Cookie::get('remember_me');
         if ($rememberCookie && is_string($rememberCookie) && str_contains($rememberCookie, '|')) {
-            list($cookieUserId, $cookieToken) = explode('|', $rememberCookie, 2);
+            list($cookieIdentifier, $cookieToken) = explode('|', $rememberCookie, 2);
 
-            if (!empty($cookieUserId) && !empty($cookieToken)) {
+            if (!empty($cookieIdentifier) && !empty($cookieToken)) {
                 try {
                     $modelClass = self::getUserModelClass();
+                    
+                    // Create an instance to call the identifier method for flexibility
                     $userModelInstance = new $modelClass();
-                    if (!$userModelInstance instanceof AuthenticatableModel) {
-                        throw new \RuntimeException("Configured user model {$modelClass} does not extend AuthenticatableModel.");
-                    }
                     $identifierName = $userModelInstance->getAuthIdentifierName();
-                    $rememberTokenName = $userModelInstance->getRememberTokenName();
 
                     // Find user by ID from cookie
-                    $dbUser = $modelClass::query()->where($identifierName, '=', $cookieUserId)->first();
+                    $dbUser = $modelClass::query()->where($identifierName, '=', $cookieIdentifier)->first();
 
-                    // --- DEBUG LOGGING ---
-                    $dbTokenHash = $dbUser ? $dbUser->getRememberToken() : 'USER_NOT_FOUND';
+                    // Compare the HASHED token from DB with the HASH of the RAW token from cookie
+                    $dbTokenHash = $dbUser ? $dbUser->getRememberToken() : null;
                     $cookieTokenHash = hash('sha256', $cookieToken);
 
-                    // --- END DEBUG LOGGING ---
-
-                    // Verify user exists and token matches
-                    // Compare the HASHED token from DB with the HASH of the RAW token from cookie
                     if (
                         $dbUser instanceof AuthenticatableModel &&
-                        !empty($dbTokenHash) && $dbTokenHash !== 'USER_NOT_FOUND' && // Check if user was found and token exists
-                        !empty($cookieToken) && // Ensure cookie token is not empty
-                        hash_equals($dbTokenHash, $cookieTokenHash) // Compare HASHES using variables from debug log
+                        !empty($dbTokenHash) &&
+                        !empty($cookieToken) &&
+                        hash_equals($dbTokenHash, $cookieTokenHash) // Timing-attack-safe comparison
                     ) {
-                        // Valid remember me cookie! Log the user in.
+                        // Valid remember me cookie. Log the user in.
                         if (!$session->regenerate(true)) {
                             throw new RuntimeException("Failed to regenerate session ID during remember me login.");
                         }
                         $session->put(self::AUTH_SESSION_KEY, $dbUser->getAuthIdentifier());
                         self::$authenticatedUser = $dbUser;
-                        return true; // User is now authenticated
+                        return true;
                     } else {
-                        // Invalid cookie (user not found, token mismatch, or token empty in DB)
-                        if ($logger) $logger->warning("Invalid remember me cookie detected. Deleting.", ['cookie_user_id' => $cookieUserId]);
-                        Cookie::delete('remember_me'); // Delete the invalid cookie
+                        // Invalid cookie (user not found, token mismatch, or token empty)
+                        self::logger()->warning("Invalid remember me cookie detected. Deleting.", ['cookie_identifier' => $cookieIdentifier]);
+                        Cookie::delete('remember_me');
                     }
                 } catch (\Throwable $e) {
-                    // Error during remember me check (DB error, etc.)
+                    // Error during remember me check (e.g., DB error)
                     $message = "Error processing remember me cookie.";
-                    // Log more details about the exception
                     $errorContext = [
                         'exception_message' => $e->getMessage(),
-                        'exception_trace' => mb_substr($e->getTraceAsString(), 0, 2000), // Log first 2000 chars of trace
-                        'cookie_user_id' => $cookieUserId ?? 'N/A'
+                        'cookie_identifier' => $cookieIdentifier ?? 'N/A'
                     ];
-                    if ($logger) $logger->error($message, $errorContext);
-                    else error_log($message . " Exception: " . $e->getMessage() . " Trace: " . $e->getTraceAsString()); // Fallback with more details
-                    Cookie::delete('remember_me'); // Delete potentially problematic cookie
+                    self::logger()->error($message, $errorContext);
+                    Cookie::delete('remember_me'); // Delete problematic cookie
                 }
             } else {
-                // Malformed cookie value
-                if ($logger) $logger->warning("Malformed remember me cookie value detected. Deleting.", ['value' => $rememberCookie]);
+                // Malformed cookie value (e.g., missing '|')
+                self::logger()->warning("Malformed remember me cookie value detected. Deleting.", ['value' => substr($rememberCookie, 0, 10) . '...']);
                 Cookie::delete('remember_me');
             }
         }
@@ -260,8 +279,9 @@ class Auth
 
         // Proceed with session check ONLY if not authenticated via cookie
         if (!$session->has(self::AUTH_SESSION_KEY)) {
-            return false; // No session and no valid remember me cookie
+            return false;
         }
+        
         $userId = $session->get(self::AUTH_SESSION_KEY);
         if (empty($userId)) {
             $session->remove(self::AUTH_SESSION_KEY);
@@ -270,56 +290,63 @@ class Auth
 
         try {
             $modelClass = self::getUserModelClass();
+            
+            // Create an instance to call the identifier method for flexibility
             $userModelInstance = new $modelClass();
-            if (!$userModelInstance instanceof AuthenticatableModel) {
-                throw new \RuntimeException("Configured user model {$modelClass} does not extend AuthenticatableModel.");
-            }
             $identifierName = $userModelInstance->getAuthIdentifierName();
             $dbUser = $modelClass::query()->where($identifierName, '=', $userId)->first();
         } catch (\Throwable $e) {
-            $message = "Error fetching user during isAuthenticated check.";
-            if ($logger) $logger->error($message, ['exception' => $e, 'user_id' => $userId]);
-            else error_log($message . " (ID: {$userId}): " . $e->getMessage()); // Fallback
+            $message = "Error fetching user from session ID during isAuthenticated check.";
+            self::logger()->error($message, ['exception' => $e, 'user_id' => $userId]);
             return false;
         }
 
         if ($dbUser instanceof AuthenticatableModel) {
-            self::$authenticatedUser = $dbUser;
+            self::$authenticatedUser = $dbUser; // Cache user instance
             return true;
         } else {
-            if ($logger) $logger->warning("User ID found in session but user not found in DB.", ['user_id' => $userId]);
+            // User ID was in session, but no longer in database
+            self::logger()->warning("User ID found in session but user not found in DB.", ['user_id' => $userId]);
             $session->remove(self::AUTH_SESSION_KEY);
             return false;
         }
     }
 
+    /**
+     * Get the currently authenticated user.
+     *
+     * @return AuthenticatableModel|null
+     */
     public static function user(): ?AuthenticatableModel
     {
         if (self::$authenticatedUser === null) {
-            self::isAuthenticated();
+            self::isAuthenticated(); // Attempt to load user if not already loaded
         }
         return self::$authenticatedUser;
     }
 
-    public static function isAdmin(): bool
-    {
-        $user = self::user();
-        // Use correct logical AND operator '&&'
-        return ($user && ($user->role ?? null) === 'admin');
-    }
+    // Note: isAdmin() method was removed.
+    // Authorization checks (like 'isAdmin') do not belong in the
+    // Authentication class; they belong in the User model or a dedicated Policy/Gate class.
 
+    /**
+     * Get the configured user model class name.
+     *
+     * @return string
+     * @throws \RuntimeException
+     */
     protected static function getUserModelClass(): string
     {
-        // Check new structure first, fallback to old 'auth.model' if needed
-        $modelClass = config('auth.providers.users.model', config('auth.model'));
+        // Standardize on a single config key
+        $modelClass = config('auth.model');
 
         if (empty($modelClass)) {
-            throw new \RuntimeException("Authenticatable model class is not configured in config/auth.php (providers.users.model).");
+            throw new \RuntimeException("Authenticatable model class is not configured in config/auth.php (auth.model).");
         }
         if (!class_exists($modelClass)) {
             throw new \RuntimeException("Authenticatable model class '{$modelClass}' configured not found.");
         }
-        // Use correct logical AND operator '&&'
+        // Ensure the model is the base class or a subclass of it
         if ($modelClass !== AuthenticatableModel::class && !is_subclass_of($modelClass, AuthenticatableModel::class)) {
             throw new \RuntimeException("Authenticatable model class '{$modelClass}' must extend AuthenticatableModel.");
         }

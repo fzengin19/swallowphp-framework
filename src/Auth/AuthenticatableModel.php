@@ -3,22 +3,25 @@
 namespace SwallowPHP\Framework\Auth;
 
 use SwallowPHP\Framework\Database\Model;
-use SwallowPHP\Framework\Contracts\Auth\AuthenticatableInterface; // Add back
-use SwallowPHP\Framework\Auth\AuthenticatableTrait; // Add back
+use SwallowPHP\Framework\Contracts\Auth\AuthenticatableInterface;
+use SwallowPHP\Framework\Auth\AuthenticatableTrait;
 
 /**
  * Base model class for authenticatable entities.
  * Provides default implementation via AuthenticatableTrait.
  */
-abstract class AuthenticatableModel extends Model implements AuthenticatableInterface // Add back implements
+abstract class AuthenticatableModel extends Model implements AuthenticatableInterface
 {
-    use AuthenticatableTrait; // Add back use
+    use AuthenticatableTrait;
 
     // The trait provides the default implementations for:
     // getAuthIdentifierName()
     // getAuthIdentifier()
     // getAuthPassword()
+    // getRememberTokenName()
+    // getRememberToken()
+    // setRememberToken()
 
-    // Application-specific user models will extend this class.
-    // They can override methods from the trait if needed.
+    // Application-specific user models (e.g., App\Models\User)
+    // will extend this class and can override trait methods if needed.
 }

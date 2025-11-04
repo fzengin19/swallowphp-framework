@@ -37,7 +37,6 @@ trait AuthenticatableTrait
     public function getAuthPassword(): string
     {
         // Assumes the password column is 'password'. Override in model if different.
-        // Ensure the property exists or handle appropriately
         return $this->password ?? '';
     }
 
@@ -61,10 +60,7 @@ trait AuthenticatableTrait
     {
         $tokenName = $this->getRememberTokenName();
         // Access the attribute using the model's magic __get method
-        // which correctly retrieves from the $attributes array and applies casts.
         return $this->__get($tokenName);
-        // Alternative (less ideal as it bypasses casting):
-        // return $this->attributes[$tokenName] ?? null;
     }
 
     /**
@@ -76,7 +72,6 @@ trait AuthenticatableTrait
     public function setRememberToken(?string $value): void
     {
         $tokenName = $this->getRememberTokenName();
-        // Ensure the property exists or handle appropriately if the model uses magic methods
         $this->{$tokenName} = $value;
     }
 }

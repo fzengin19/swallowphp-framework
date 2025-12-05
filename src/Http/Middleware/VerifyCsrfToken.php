@@ -96,22 +96,63 @@ class VerifyCsrfToken extends Middleware
     /** Determine if the session and input csrf tokens match. */
     protected function tokensMatch(Request $request): bool
     {
+        $logger = null;
+        try {
+            $logger = App::container()->get(LoggerInterface::class);
+        } catch (\Throwable $_) {
+        }
+
         if (!isset($_SESSION) || !is_array($_SESSION)) {
-            try {
-                App::container()->get(LoggerInterface::class)->error("CSRF tokensMatch() called but session is not initialized.");
-            } catch (\Throwable $_) {
-            }
+            if ($logger) $logger->error("CSRF tokensMatch() called but session is not initialized.");
             return false;
         }
 
         $sessionToken = $_SESSION['_token'] ?? null;
-        $token = $request->get('_token') ?: $request->header('X-CSRF-TOKEN') ?: $request->header('X-XSRF-TOKEN');
+        $requestToken = $request->get('_token');
+        $headerToken = $request->header('X-CSRF-TOKEN') ?: $request->header('X-XSRF-TOKEN');
+        $token = $requestToken ?: $headerToken;
 
-        if (!is_string($sessionToken) || $sessionToken === '' || !is_string($token) || $token === '') {
+        // Debug logging - bu logları production'da kaldırın!
+        if ($logger) {
+            $logger->debug("CSRF Debug", [
+                'session_id' => session_id(),
+                'session_token_exists' => isset($_SESSION['_token']),
+                'session_token_preview' => $sessionToken ? substr($sessionToken, 0, 10) . '...' : 'NULL',
+                'request_token_preview' => $requestToken ? substr($requestToken, 0, 10) . '...' : 'NULL',
+                'header_token_preview' => $headerToken ? substr($headerToken, 0, 10) . '...' : 'NULL',
+                'tokens_match' => ($sessionToken && $token) ? ($sessionToken === $token ? 'YES' : 'NO') : 'CANNOT_COMPARE',
+                'session_keys' => array_keys($_SESSION ?? []),
+            ]);
+        }
+
+        if (!is_string($sessionToken) || $sessionToken === '') {
+            if ($logger) $logger->warning("CSRF: Session token is empty or not a string", [
+                'session_token_type' => gettype($sessionToken),
+            ]);
             return false;
         }
 
-        return hash_equals($sessionToken, $token);
+        if (!is_string($token) || $token === '') {
+            if ($logger) $logger->warning("CSRF: Request token is empty or not a string", [
+                'request_token_from_body' => $requestToken,
+                'request_token_from_header' => $headerToken,
+                'all_request_data_keys' => array_keys($request->all()),
+            ]);
+            return false;
+        }
+
+        $result = hash_equals($sessionToken, $token);
+        
+        if (!$result && $logger) {
+            $logger->warning("CSRF: Token mismatch!", [
+                'session_token' => $sessionToken,
+                'request_token' => $token,
+                'length_session' => strlen($sessionToken),
+                'length_request' => strlen($token),
+            ]);
+        }
+
+        return $result;
     }
 
     /** Get or generate the CSRF token in the session. */

@@ -164,20 +164,66 @@ class VerifyCsrfToken extends Middleware
             $container = App::container();
             $logger = $container->get(LoggerInterface::class);
             $session = $container->get(SessionManager::class);
-            // App::run() in session is already started.
-            // This prevents unnecessary and potentially faulty session start.
+
+            // DEBUG: Session durumunu kontrol et
+            if ($logger) {
+                $logger->debug("CSRF getToken: Checking session state", [
+                    'session_status' => session_status(),
+                    'session_id' => session_id(),
+                    'session_has_token' => $session->has('_token'),
+                    'raw_session_token' => $_SESSION['_token'] ?? 'NOT_SET',
+                    'session_keys' => array_keys($_SESSION ?? []),
+                ]);
+            }
 
             if (!$session->has('_token') || !is_string($session->get('_token'))) {
                 try {
                     $newToken = bin2hex(random_bytes(32));
+                    
+                    // DEBUG: Token oluşturuldu
+                    if ($logger) {
+                        $logger->info("CSRF getToken: Generated NEW token", [
+                            'token_preview' => substr($newToken, 0, 10) . '...',
+                            'session_id' => session_id(),
+                        ]);
+                    }
+                    
                     $session->put('_token', $newToken);
+                    
+                    // KRITIK: Session'ı hemen dosyaya yaz (race condition'ı önle)
+                    // Bu, concurrent AJAX isteklerinin session'ı override etmesini engeller
+                    if (session_status() === PHP_SESSION_ACTIVE) {
+                        session_write_close();
+                        session_start(); // Tekrar aç ki diğer işlemler çalışsın
+                    }
+                    
+                    // DEBUG: Token session'a yazıldı mı kontrol et
+                    if ($logger) {
+                        $logger->debug("CSRF getToken: After put() - verifying", [
+                            'raw_session_token_after' => $_SESSION['_token'] ?? 'STILL_NOT_SET',
+                            'session_get_token' => $session->get('_token'),
+                            'match' => ($_SESSION['_token'] ?? '') === $newToken ? 'YES' : 'NO',
+                            'session_written' => 'FORCED',
+                        ]);
+                    }
+                    
                     return $newToken;
                 } catch (\Exception $e) {
                     if ($logger) $logger->critical("CSRF getToken error: Failed to generate random bytes.", ['exception' => $e]);
                     throw new \RuntimeException("Could not generate CSRF token.", 0, $e);
                 }
             }
-            return $session->get('_token');
+            
+            // DEBUG: Mevcut token döndürülüyor
+            $existingToken = $session->get('_token');
+            if ($logger) {
+                $logger->debug("CSRF getToken: Returning EXISTING token", [
+                    'token_preview' => substr($existingToken, 0, 10) . '...',
+                    'session_id' => session_id(),
+                ]);
+            }
+            
+            return $existingToken;
         } catch (\Throwable $e) {
             $logMsg = "CSRF getToken error: Failed to get services or start session.";
             if ($logger) $logger->critical($logMsg, ['exception' => $e]);

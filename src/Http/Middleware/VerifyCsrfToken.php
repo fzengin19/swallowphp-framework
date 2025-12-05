@@ -190,20 +190,12 @@ class VerifyCsrfToken extends Middleware
                     
                     $session->put('_token', $newToken);
                     
-                    // KRITIK: Session'ı hemen dosyaya yaz (race condition'ı önle)
-                    // Bu, concurrent AJAX isteklerinin session'ı override etmesini engeller
-                    if (session_status() === PHP_SESSION_ACTIVE) {
-                        session_write_close();
-                        session_start(); // Tekrar aç ki diğer işlemler çalışsın
-                    }
-                    
                     // DEBUG: Token session'a yazıldı mı kontrol et
                     if ($logger) {
                         $logger->debug("CSRF getToken: After put() - verifying", [
                             'raw_session_token_after' => $_SESSION['_token'] ?? 'STILL_NOT_SET',
                             'session_get_token' => $session->get('_token'),
                             'match' => ($_SESSION['_token'] ?? '') === $newToken ? 'YES' : 'NO',
-                            'session_written' => 'FORCED',
                         ]);
                     }
                     

@@ -248,10 +248,17 @@ class Auth
                         hash_equals($dbTokenHash, $cookieTokenHash) // Timing-attack-safe comparison
                     ) {
                         // Valid remember me cookie. Log the user in.
-                        if (!$session->regenerate(true)) {
-                            throw new RuntimeException("Failed to regenerate session ID during remember me login.");
+                        // SADECE session'da henüz user yoksa session regenerate et
+                        // Bu, her sayfa yüklemesinde session ID'nin değişmesini önler
+                        $currentSessionUserId = $session->get(self::AUTH_SESSION_KEY);
+                        if ($currentSessionUserId !== $dbUser->getAuthIdentifier()) {
+                            // Session'da farklı user var veya hiç yok, regenerate et
+                            if (!$session->regenerate(true)) {
+                                throw new RuntimeException("Failed to regenerate session ID during remember me login.");
+                            }
+                            $session->put(self::AUTH_SESSION_KEY, $dbUser->getAuthIdentifier());
                         }
-                        $session->put(self::AUTH_SESSION_KEY, $dbUser->getAuthIdentifier());
+                        // Session zaten doğru user'ı içeriyorsa regenerate etmiyoruz
                         self::$authenticatedUser = $dbUser;
                         return true;
                     } else {

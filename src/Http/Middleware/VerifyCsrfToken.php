@@ -96,63 +96,23 @@ class VerifyCsrfToken extends Middleware
     /** Determine if the session and input csrf tokens match. */
     protected function tokensMatch(Request $request): bool
     {
-        $logger = null;
-        try {
-            $logger = App::container()->get(LoggerInterface::class);
-        } catch (\Throwable $_) {
-        }
-
         if (!isset($_SESSION) || !is_array($_SESSION)) {
-            if ($logger) $logger->error("CSRF tokensMatch() called but session is not initialized.");
+            try {
+                App::container()->get(LoggerInterface::class)->error("CSRF tokensMatch() called but session is not initialized.");
+            } catch (\Throwable $_) {
+            }
             return false;
         }
 
         $sessionToken = $_SESSION['_token'] ?? null;
-        $requestToken = $request->get('_token');
-        $headerToken = $request->header('X-CSRF-TOKEN') ?: $request->header('X-XSRF-TOKEN');
-        $token = $requestToken ?: $headerToken;
+        $token = $request->get('_token') ?: $request->header('X-CSRF-TOKEN') ?: $request->header('X-XSRF-TOKEN');
 
-        // Debug logging - bu logları production'da kaldırın!
-        if ($logger) {
-            $logger->debug("CSRF Debug", [
-                'session_id' => session_id(),
-                'session_token_exists' => isset($_SESSION['_token']),
-                'session_token_preview' => $sessionToken ? substr($sessionToken, 0, 10) . '...' : 'NULL',
-                'request_token_preview' => $requestToken ? substr($requestToken, 0, 10) . '...' : 'NULL',
-                'header_token_preview' => $headerToken ? substr($headerToken, 0, 10) . '...' : 'NULL',
-                'tokens_match' => ($sessionToken && $token) ? ($sessionToken === $token ? 'YES' : 'NO') : 'CANNOT_COMPARE',
-                'session_keys' => array_keys($_SESSION ?? []),
-            ]);
-        }
-
-        if (!is_string($sessionToken) || $sessionToken === '') {
-            if ($logger) $logger->warning("CSRF: Session token is empty or not a string", [
-                'session_token_type' => gettype($sessionToken),
-            ]);
+        if (!is_string($sessionToken) || $sessionToken === '' || !is_string($token) || $token === '') {
             return false;
         }
 
-        if (!is_string($token) || $token === '') {
-            if ($logger) $logger->warning("CSRF: Request token is empty or not a string", [
-                'request_token_from_body' => $requestToken,
-                'request_token_from_header' => $headerToken,
-                'all_request_data_keys' => array_keys($request->all()),
-            ]);
-            return false;
-        }
-
-        $result = hash_equals($sessionToken, $token);
+        return hash_equals($sessionToken, $token);
         
-        if (!$result && $logger) {
-            $logger->warning("CSRF: Token mismatch!", [
-                'session_token' => $sessionToken,
-                'request_token' => $token,
-                'length_session' => strlen($sessionToken),
-                'length_request' => strlen($token),
-            ]);
-        }
-
-        return $result;
     }
 
     /** Get or generate the CSRF token in the session. */
@@ -164,58 +124,19 @@ class VerifyCsrfToken extends Middleware
             $container = App::container();
             $logger = $container->get(LoggerInterface::class);
             $session = $container->get(SessionManager::class);
-
-            // DEBUG: Session durumunu kontrol et
-            if ($logger) {
-                $logger->debug("CSRF getToken: Checking session state", [
-                    'session_status' => session_status(),
-                    'session_id' => session_id(),
-                    'session_has_token' => $session->has('_token'),
-                    'raw_session_token' => $_SESSION['_token'] ?? 'NOT_SET',
-                    'session_keys' => array_keys($_SESSION ?? []),
-                ]);
-            }
+            // App::run() in session is already started.
 
             if (!$session->has('_token') || !is_string($session->get('_token'))) {
                 try {
                     $newToken = bin2hex(random_bytes(32));
-                    
-                    // DEBUG: Token oluşturuldu
-                    if ($logger) {
-                        $logger->info("CSRF getToken: Generated NEW token", [
-                            'token_preview' => substr($newToken, 0, 10) . '...',
-                            'session_id' => session_id(),
-                        ]);
-                    }
-                    
                     $session->put('_token', $newToken);
-                    
-                    // DEBUG: Token session'a yazıldı mı kontrol et
-                    if ($logger) {
-                        $logger->debug("CSRF getToken: After put() - verifying", [
-                            'raw_session_token_after' => $_SESSION['_token'] ?? 'STILL_NOT_SET',
-                            'session_get_token' => $session->get('_token'),
-                            'match' => ($_SESSION['_token'] ?? '') === $newToken ? 'YES' : 'NO',
-                        ]);
-                    }
-                    
                     return $newToken;
                 } catch (\Exception $e) {
                     if ($logger) $logger->critical("CSRF getToken error: Failed to generate random bytes.", ['exception' => $e]);
                     throw new \RuntimeException("Could not generate CSRF token.", 0, $e);
                 }
             }
-            
-            // DEBUG: Mevcut token döndürülüyor
-            $existingToken = $session->get('_token');
-            if ($logger) {
-                $logger->debug("CSRF getToken: Returning EXISTING token", [
-                    'token_preview' => substr($existingToken, 0, 10) . '...',
-                    'session_id' => session_id(),
-                ]);
-            }
-            
-            return $existingToken;
+            return $session->get('_token');
         } catch (\Throwable $e) {
             $logMsg = "CSRF getToken error: Failed to get services or start session.";
             if ($logger) $logger->critical($logMsg, ['exception' => $e]);

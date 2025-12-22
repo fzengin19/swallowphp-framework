@@ -1,15 +1,20 @@
 {
     "name": "swallowphp/framework",
-    "version": "0.0.2",
+    "version": "1.0.0",
     "description": "Swallow PHP framework",
     "type": "library",
-    "keywords": ["SwallowPHP", "framework"],
+    "keywords": [
+        "SwallowPHP",
+        "framework"
+    ],
     "license": "MIT",
     "autoload": {
         "psr-4": {
             "SwallowPHP\\Framework\\": "src/"
         },
-        "files": ["src/Methods.php"]
+        "files": [
+            "src/Methods.php"
+        ]
     },
     "authors": [
         {

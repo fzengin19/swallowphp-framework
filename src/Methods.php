@@ -36,7 +36,7 @@ if (!function_exists('config')) {
             }
             $config = $fallbackConfig;
         }
-        
+
         if (is_null($key)) {
             return $config;
         }
@@ -96,7 +96,7 @@ if (!function_exists('redirectToRoute')) {
     function redirectToRoute(string $urlName, array $params = []): void
     {
         $router = App::container()->get(Router::class);
-        $url    = $router->getRouteByName($urlName, $params);
+        $url = $router->getRouteByName($urlName, $params);
 
         // Queued cookie'leri gönder
         if (
@@ -149,18 +149,18 @@ if (!function_exists('mailto')) {
 
 
         // Load configuration
-        $smtpConfig  = config('mail.mailers.smtp', []);
-        $fromConfig  = config('mail.from', []);
-        $timeout     = config('mail.timeout', 10);
-        $batchSize   = config('mail.max_recipients_per_mail', 50);
+        $smtpConfig = config('mail.mailers.smtp', []);
+        $fromConfig = config('mail.from', []);
+        $timeout = config('mail.timeout', 10);
+        $batchSize = config('mail.max_recipients_per_mail', 50);
 
         $logger->info("SMTP configuration loaded", [
-            'host'       => $smtpConfig['host'] ?? '',
-            'port'       => $smtpConfig['port'] ?? 587,
+            'host' => $smtpConfig['host'] ?? '',
+            'port' => $smtpConfig['port'] ?? 587,
             'encryption' => $smtpConfig['encryption'] ?? false,
-            'auth'       => isset($smtpConfig['username']),
-            'autotls'    => $smtpConfig['autotls'] ?? false,
-            'timeout'    => $timeout,
+            'auth' => isset($smtpConfig['username']),
+            'autotls' => $smtpConfig['autotls'] ?? false,
+            'timeout' => $timeout,
             'batch_size' => $batchSize,
         ]);
 
@@ -182,23 +182,23 @@ if (!function_exists('mailto')) {
         // Single recipient case
         if ($validTotal === 1) {
             $mail = new PHPMailer(true);
-            $mail->Timeout      = $timeout;
-            $mail->SMTPAutoTLS  = $smtpConfig['autotls'] ?? false;
+            $mail->Timeout = $timeout;
+            $mail->SMTPAutoTLS = $smtpConfig['autotls'] ?? false;
             $mail->isSMTP();
-            $mail->Host         = $smtpConfig['host'] ?? '';
-            $mail->SMTPAuth     = isset($smtpConfig['username']);
-            $mail->Username     = $smtpConfig['username'] ?? '';
-            $mail->Password     = $smtpConfig['password'] ?? '';
-            $mail->SMTPSecure   = $smtpConfig['encryption'] ?? false;
-            $mail->Port         = $smtpConfig['port'] ?? 587;
+            $mail->Host = $smtpConfig['host'] ?? '';
+            $mail->SMTPAuth = isset($smtpConfig['username']);
+            $mail->Username = $smtpConfig['username'] ?? '';
+            $mail->Password = $smtpConfig['password'] ?? '';
+            $mail->SMTPSecure = $smtpConfig['encryption'] ?? false;
+            $mail->Port = $smtpConfig['port'] ?? 587;
             $mail->setFrom(
                 $fromConfig['address'] ?? 'hello@example.com',
-                $fromConfig['name']    ?? 'Example'
+                $fromConfig['name'] ?? 'Example'
             );
             $mail->addAddress($validRecipients[0]);
             $mail->isHTML(true);
             $mail->Subject = $subject;
-            $mail->Body    = $message;
+            $mail->Body = $message;
             $mail->CharSet = 'UTF-8';
 
             foreach ($headers as $key => $value) {
@@ -221,18 +221,18 @@ if (!function_exists('mailto')) {
             $logger->info("Preparing batch #{$batchNo}", ['batch_recipients' => $batch]);
 
             $mail = new PHPMailer(true);
-            $mail->Timeout      = $timeout;
-            $mail->SMTPAutoTLS  = $smtpConfig['autotls'] ?? false;
+            $mail->Timeout = $timeout;
+            $mail->SMTPAutoTLS = $smtpConfig['autotls'] ?? false;
             $mail->isSMTP();
-            $mail->Host         = $smtpConfig['host'] ?? '';
-            $mail->SMTPAuth     = isset($smtpConfig['username']);
-            $mail->Username     = $smtpConfig['username'] ?? '';
-            $mail->Password     = $smtpConfig['password'] ?? '';
-            $mail->SMTPSecure   = $smtpConfig['encryption'] ?? false;
-            $mail->Port         = $smtpConfig['port'] ?? 587;
+            $mail->Host = $smtpConfig['host'] ?? '';
+            $mail->SMTPAuth = isset($smtpConfig['username']);
+            $mail->Username = $smtpConfig['username'] ?? '';
+            $mail->Password = $smtpConfig['password'] ?? '';
+            $mail->SMTPSecure = $smtpConfig['encryption'] ?? false;
+            $mail->Port = $smtpConfig['port'] ?? 587;
             $mail->setFrom(
                 $fromConfig['address'] ?? 'hello@example.com',
-                $fromConfig['name']    ?? 'Example'
+                $fromConfig['name'] ?? 'Example'
             );
 
             foreach ($batch as $address) {
@@ -241,7 +241,7 @@ if (!function_exists('mailto')) {
 
             $mail->isHTML(true);
             $mail->Subject = $subject;
-            $mail->Body    = $message;
+            $mail->Body = $message;
             $mail->CharSet = 'UTF-8';
 
             foreach ($headers as $key => $value) {
@@ -275,7 +275,8 @@ if (!function_exists('formatDateForHumans')) {
      */
     function formatDateForHumans(string|\DateTime|null $datetimeInput): string
     {
-        if (!$datetimeInput) return '';
+        if (!$datetimeInput)
+            return '';
         $now = time();
         try {
             $then = ($datetimeInput instanceof \DateTime) ? $datetimeInput : new \DateTime($datetimeInput);
@@ -310,16 +311,6 @@ if (!function_exists('redirect')) {
     {
         header('Location: ' . $uri, true, $code);
         exit();
-    }
-}
-
-if (!function_exists('send')) {
-    // This function seems intended for debugging, use dd() or similar instead.
-    function send($data): void
-    {
-        echo '<pre>';
-        print_r($data);
-        echo '</pre>';
     }
 }
 
@@ -560,7 +551,8 @@ if (!function_exists('csrf_field')) {
         try {
             $logger = App::container()->get(LoggerInterface::class); // Get logger for errors
             if (!class_exists(\SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::class)) {
-                if ($logger) $logger->error('CSRF Middleware Class Not Found');
+                if ($logger)
+                    $logger->error('CSRF Middleware Class Not Found');
                 echo '<!-- CSRF Middleware Class Not Found -->';
                 return;
             }
@@ -568,13 +560,17 @@ if (!function_exists('csrf_field')) {
             echo '<input type="hidden" name="_token" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
         } catch (\RuntimeException $e) {
             // Log session start error using PSR-3 logger
-            if ($logger) $logger->error("CSRF Field Error: " . $e->getMessage(), ['exception' => $e]);
-            else error_log("CSRF Field Error (Logger unavailable): " . $e->getMessage()); // Fallback
+            if ($logger)
+                $logger->error("CSRF Field Error: " . $e->getMessage(), ['exception' => $e]);
+            else
+                error_log("CSRF Field Error (Logger unavailable): " . $e->getMessage()); // Fallback
             echo '<!-- CSRF Token Error -->';
         } catch (\Throwable $t) {
             // Catch any other error during container access or token generation
-            if ($logger) $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
-            else error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
+            if ($logger)
+                $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
+            else
+                error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
             echo '<!-- CSRF Token Error -->';
         }
     }
@@ -591,7 +587,8 @@ if (!function_exists('csrf_token')) {
         try {
             $logger = App::container()->get(LoggerInterface::class); // Get logger for errors
             if (!class_exists(\SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken::class)) {
-                if ($logger) $logger->error('CSRF Middleware Class Not Found');
+                if ($logger)
+                    $logger->error('CSRF Middleware Class Not Found');
                 echo '<!-- CSRF Middleware Class Not Found -->';
                 return;
             }
@@ -599,13 +596,17 @@ if (!function_exists('csrf_token')) {
             return htmlspecialchars($token, ENT_QUOTES, 'UTF-8');
         } catch (\RuntimeException $e) {
             // Log session start error using PSR-3 logger
-            if ($logger) $logger->error("CSRF Field Error: " . $e->getMessage(), ['exception' => $e]);
-            else error_log("CSRF Field Error (Logger unavailable): " . $e->getMessage()); // Fallback
+            if ($logger)
+                $logger->error("CSRF Field Error: " . $e->getMessage(), ['exception' => $e]);
+            else
+                error_log("CSRF Field Error (Logger unavailable): " . $e->getMessage()); // Fallback
             echo '<!-- CSRF Token Error -->';
         } catch (\Throwable $t) {
             // Catch any other error during container access or token generation
-            if ($logger) $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
-            else error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
+            if ($logger)
+                $logger->critical("Unexpected error in csrf_field(): " . $t->getMessage(), ['exception' => $t]);
+            else
+                error_log("Unexpected error in csrf_field() (Logger unavailable): " . $t->getMessage());
             echo '<!-- CSRF Token Error -->';
         }
     }
@@ -803,7 +804,7 @@ if (!function_exists('session')) {
             }
             return null;
         }
-        return $session->get((string)$key, $default);
+        return $session->get((string) $key, $default);
     }
 }
 

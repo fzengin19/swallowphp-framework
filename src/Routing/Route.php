@@ -114,10 +114,10 @@ class Route
     $routeParameters = $request->all(); // Get all request data, including route params
 
     if (is_callable($this->action)) {
-        // Resolve parameters for the closure using reflection and container
-        $reflector = new ReflectionFunction($this->action);
-        $args = $this->resolveMethodDependencies($reflector->getParameters(), $routeParameters, $container, $request);
-        return call_user_func_array($this->action, $args);
+      // Resolve parameters for the closure using reflection and container
+      $reflector = new ReflectionFunction($this->action);
+      $args = $this->resolveMethodDependencies($reflector->getParameters(), $routeParameters, $container, $request);
+      return call_user_func_array($this->action, $args);
 
     } elseif (is_string($this->action)) {
       [$controllerName, $method] = explode('@', $this->action);
@@ -128,7 +128,6 @@ class Route
     }
 
     if (!class_exists($controllerName)) {
-      // TODO: Make controller namespace configurable?
       $configuredNamespace = config('app.controller_namespace', '\\App\\Controllers');
       $controllerName = rtrim($configuredNamespace, '\\') . '\\' . $controllerName;
       if (!class_exists($controllerName))
@@ -137,9 +136,9 @@ class Route
 
     // Resolve controller instance from the container
     try {
-        $controller = $container->get($controllerName);
+      $controller = $container->get($controllerName);
     } catch (\Exception $e) {
-         throw new Exception("Could not resolve controller '{$controllerName}' from container: " . $e->getMessage(), 500, $e);
+      throw new Exception("Could not resolve controller '{$controllerName}' from container: " . $e->getMessage(), 500, $e);
     }
 
     if (!method_exists($controller, $method)) {
@@ -168,46 +167,45 @@ class Route
    */
   protected function resolveMethodDependencies(array $parameters, array $routeParameters, Container $container, Request $request): array
   {
-      $args = [];
-      foreach ($parameters as $param) {
-          $paramName = $param->getName();
-          $paramType = $param->getType() instanceof \ReflectionNamedType ? $param->getType()->getName() : null;
+    $args = [];
+    foreach ($parameters as $param) {
+      $paramName = $param->getName();
+      $paramType = $param->getType() instanceof \ReflectionNamedType ? $param->getType()->getName() : null;
 
-          if (array_key_exists($paramName, $routeParameters)) {
-              // Match by route parameter name
-              $args[] = $routeParameters[$paramName];
-          } elseif ($paramType === Request::class || is_subclass_of($paramType, Request::class)) {
-              // Match by Request type hint
-              $args[] = $request;
-          } elseif ($paramType && $container->has($paramType)) {
-              // Match by type hint in the container
-              try {
-                   $args[] = $container->get($paramType);
-              } catch (\Exception $e) {
-                   // Handle cases where container fails to resolve (e.g., interface not bound)
-                   if ($param->isDefaultValueAvailable()) {
-                        $args[] = $param->getDefaultValue();
-                   } elseif ($param->allowsNull()) {
-                        $args[] = null;
-                   } else {
-                        throw new Exception("Could not resolve parameter '{$paramName}' of type '{$paramType}': " . $e->getMessage(), 500, $e);
-                   }
-              }
-          } elseif ($param->isDefaultValueAvailable()) {
-              // Use default value if available
-              $args[] = $param->getDefaultValue();
+      if (array_key_exists($paramName, $routeParameters)) {
+        // Match by route parameter name
+        $args[] = $routeParameters[$paramName];
+      } elseif ($paramType === Request::class || is_subclass_of($paramType, Request::class)) {
+        // Match by Request type hint
+        $args[] = $request;
+      } elseif ($paramType && $container->has($paramType)) {
+        // Match by type hint in the container
+        try {
+          $args[] = $container->get($paramType);
+        } catch (\Exception $e) {
+          // Handle cases where container fails to resolve (e.g., interface not bound)
+          if ($param->isDefaultValueAvailable()) {
+            $args[] = $param->getDefaultValue();
           } elseif ($param->allowsNull()) {
-               // Use null if allowed
-               $args[] = null;
+            $args[] = null;
+          } else {
+            throw new Exception("Could not resolve parameter '{$paramName}' of type '{$paramType}': " . $e->getMessage(), 500, $e);
           }
-           else {
-              // Cannot resolve the parameter
-              $methodName = $param->getDeclaringFunction()->getName();
-              $className = $param->getDeclaringClass() ? $param->getDeclaringClass()->getName() . '::' : '';
-              throw new Exception("Unresolvable dependency resolving [{$param->getName()}] in {$className}{$methodName}");
-          }
+        }
+      } elseif ($param->isDefaultValueAvailable()) {
+        // Use default value if available
+        $args[] = $param->getDefaultValue();
+      } elseif ($param->allowsNull()) {
+        // Use null if allowed
+        $args[] = null;
+      } else {
+        // Cannot resolve the parameter
+        $methodName = $param->getDeclaringFunction()->getName();
+        $className = $param->getDeclaringClass() ? $param->getDeclaringClass()->getName() . '::' : '';
+        throw new Exception("Unresolvable dependency resolving [{$param->getName()}] in {$className}{$methodName}");
       }
-      return $args;
+    }
+    return $args;
   }
 
   // Removed duplicate: public function execute(Request $request)

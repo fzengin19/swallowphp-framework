@@ -170,7 +170,7 @@ class Route
     $args = [];
     foreach ($parameters as $param) {
       $paramName = $param->getName();
-      $paramType = $param->getType() instanceof \ReflectionNamedType ? $param->getType()->getName() : null;
+      $paramType = $this->getParameterClassName($param);
 
       if (array_key_exists($paramName, $routeParameters)) {
         // Match by route parameter name
@@ -247,5 +247,48 @@ class Route
   public function getUri()
   {
     return $this->uri;
+  }
+
+  /**
+   * Get the class name from a reflection parameter's type.
+   * Handles named types, union types (PHP 8.0+), and intersection types (PHP 8.1+).
+   * Returns the first class/interface type found, or null for built-in types only.
+   *
+   * @param ReflectionParameter $param
+   * @return string|null Class name or null
+   */
+  protected function getParameterClassName(ReflectionParameter $param): ?string
+  {
+    $type = $param->getType();
+
+    if ($type === null) {
+      return null;
+    }
+
+    // PHP 8.0+ Union types (e.g., Foo|Bar|null)
+    if ($type instanceof \ReflectionUnionType) {
+      foreach ($type->getTypes() as $unionType) {
+        if ($unionType instanceof \ReflectionNamedType && !$unionType->isBuiltin()) {
+          return $unionType->getName();
+        }
+      }
+      return null;
+    }
+
+    // PHP 8.1+ Intersection types (e.g., Foo&Bar)
+    if ($type instanceof \ReflectionIntersectionType) {
+      $types = $type->getTypes();
+      if (!empty($types) && $types[0] instanceof \ReflectionNamedType) {
+        return $types[0]->getName();
+      }
+      return null;
+    }
+
+    // Named type (most common case)
+    if ($type instanceof \ReflectionNamedType) {
+      return $type->isBuiltin() ? null : $type->getName();
+    }
+
+    return null;
   }
 }

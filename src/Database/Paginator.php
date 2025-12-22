@@ -94,31 +94,80 @@ class Paginator implements ArrayAccess, Countable, IteratorAggregate, JsonSerial
     /**
      * Render the pagination links as HTML.
      *
-     * @param string|null $view Optional view name (not implemented yet, defaults to basic HTML).
-     * @param array $data Optional data for the view.
+     * @param string|null $view Optional view name (e.g., 'components.pagination'). 
+     *                          If null, uses config('pagination.view') or falls back to default HTML.
+     * @param array $data Optional additional data for the view.
      * @return string Rendered HTML pagination links.
      */
     public function links(?string $view = null, array $data = []): string
     {
-        // Basic HTML rendering for now. View integration can be added later.
         if (empty($this->linkStructure)) {
             return '';
         }
 
-        $html = '<ul class="pagination">'; // Basic bootstrap-like structure
+        // Determine which view to use
+        $viewName = $view ?? config('app.pagination_view', null);
 
-        // Prepare appended query string fragment once
-        $appendedQueryString = '';
-        if (!empty($this->appendedQuery)) {
-            // Ensure 'page' is not duplicated if already in appendedQuery
-            $queryToAppend = $this->appendedQuery;
-            unset($queryToAppend['page']); // Remove page if manually added via appends
-            if (!empty($queryToAppend)) {
-                 $appendedQueryString = '&' . http_build_query($queryToAppend, '', '&'); // Use & for HTML attributes
+        // If a view is specified, render it
+        if ($viewName !== null) {
+            return $this->renderView($viewName, $data);
+        }
+
+        // Fallback to default Bootstrap-style HTML
+        return $this->renderDefaultHtml();
+    }
+
+    /**
+     * Render pagination using a view file.
+     *
+     * @param string $viewName The view name (e.g., 'components.pagination')
+     * @param array $additionalData Additional data to pass to the view
+     * @return string Rendered HTML
+     */
+    protected function renderView(string $viewName, array $additionalData = []): string
+    {
+        $viewData = array_merge([
+            'paginator' => $this,
+            'links' => $this->getProcessedLinks(),
+            'hasPages' => $this->lastPage > 1,
+            'onFirstPage' => $this->onFirstPage(),
+            'hasMorePages' => $this->hasMorePages(),
+            'currentPage' => $this->currentPage,
+            'lastPage' => $this->lastPage,
+            'total' => $this->total,
+            'perPage' => $this->perPage,
+            'previousPageUrl' => $this->appendQueryToUrl($this->prevPageUrl),
+            'nextPageUrl' => $this->appendQueryToUrl($this->nextPageUrl),
+            'firstPageUrl' => $this->appendQueryToUrl($this->firstPageUrl),
+            'lastPageUrl' => $this->appendQueryToUrl($this->lastPageUrl),
+        ], $additionalData);
+
+        // Use the view() helper to render
+        if (function_exists('view')) {
+            try {
+                $response = view($viewName, $viewData);
+                return $response->getContent();
+            } catch (\Throwable $e) {
+                // If view rendering fails, fall back to default HTML
+                error_log("Pagination view rendering failed: " . $e->getMessage());
+                return $this->renderDefaultHtml();
             }
         }
 
-        foreach ($this->getProcessedLinks() as $link) { // Use helper to get links with appended query
+        // If view() function not available, use default HTML
+        return $this->renderDefaultHtml();
+    }
+
+    /**
+     * Render default Bootstrap-compatible pagination HTML.
+     *
+     * @return string HTML string
+     */
+    protected function renderDefaultHtml(): string
+    {
+        $html = '<ul class="pagination">';
+
+        foreach ($this->getProcessedLinks() as $link) {
             $class = 'page-item';
             if ($link['active']) {
                 $class .= ' active';
@@ -131,9 +180,7 @@ class Paginator implements ArrayAccess, Countable, IteratorAggregate, JsonSerial
             if ($link['url'] === null || ($link['disabled'] ?? false)) {
                 $html .= '<span class="page-link">' . $link['label'] . '</span>';
             } else {
-                // Append the query string fragment to the URL
-                // Note: htmlspecialchars is applied to the final URL
-                $url = $link['url']; // URL already contains base path and page number
+                $url = $link['url'];
                 $html .= '<a class="page-link" href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">' . $link['label'] . '</a>';
             }
             $html .= '</li>';
@@ -145,35 +192,93 @@ class Paginator implements ArrayAccess, Countable, IteratorAggregate, JsonSerial
 
     // --- Accessor methods ---
 
-    public function items(): array { return $this->items; }
-    public function total(): int { return $this->total; }
-    public function perPage(): int { return $this->perPage; }
-    public function currentPage(): int { return $this->currentPage; }
-    public function lastPage(): int { return $this->lastPage; }
-    public function firstPageUrl(): ?string { return $this->firstPageUrl; }
-    public function lastPageUrl(): ?string { return $this->lastPageUrl; }
-    public function previousPageUrl(): ?string { return $this->prevPageUrl; } // Alias
-    public function nextPageUrl(): ?string { return $this->nextPageUrl; }
-    public function path(): string { return $this->path; }
-    public function hasMorePages(): bool { return $this->currentPage < $this->lastPage; }
-    public function onFirstPage(): bool { return $this->currentPage <= 1; }
-    public function isEmpty(): bool { return empty($this->items); }
-    public function isNotEmpty(): bool { return !$this->isEmpty(); }
+    public function items(): array
+    {
+        return $this->items;
+    }
+    public function total(): int
+    {
+        return $this->total;
+    }
+    public function perPage(): int
+    {
+        return $this->perPage;
+    }
+    public function currentPage(): int
+    {
+        return $this->currentPage;
+    }
+    public function lastPage(): int
+    {
+        return $this->lastPage;
+    }
+    public function firstPageUrl(): ?string
+    {
+        return $this->firstPageUrl;
+    }
+    public function lastPageUrl(): ?string
+    {
+        return $this->lastPageUrl;
+    }
+    public function previousPageUrl(): ?string
+    {
+        return $this->prevPageUrl;
+    } // Alias
+    public function nextPageUrl(): ?string
+    {
+        return $this->nextPageUrl;
+    }
+    public function path(): string
+    {
+        return $this->path;
+    }
+    public function hasMorePages(): bool
+    {
+        return $this->currentPage < $this->lastPage;
+    }
+    public function onFirstPage(): bool
+    {
+        return $this->currentPage <= 1;
+    }
+    public function isEmpty(): bool
+    {
+        return empty($this->items);
+    }
+    public function isNotEmpty(): bool
+    {
+        return !$this->isEmpty();
+    }
 
     // --- ArrayAccess implementation ---
 
-    public function offsetExists(mixed $offset): bool { return isset($this->items[$offset]); }
-    public function offsetGet(mixed $offset): mixed { return $this->items[$offset]; }
-    public function offsetSet(mixed $offset, mixed $value): void { /* Read-only */ }
-    public function offsetUnset(mixed $offset): void { /* Read-only */ }
+    public function offsetExists(mixed $offset): bool
+    {
+        return isset($this->items[$offset]);
+    }
+    public function offsetGet(mixed $offset): mixed
+    {
+        return $this->items[$offset];
+    }
+    public function offsetSet(mixed $offset, mixed $value): void
+    { /* Read-only */
+    }
+    public function offsetUnset(mixed $offset): void
+    { /* Read-only */
+    }
 
     // --- Countable implementation ---
 
-    public function count(): int { return count($this->items); }
+    public function count(): int
+    {
+        return count($this->items);
+    }
 
     // --- IteratorAggregate implementation ---
 
-    public function getIterator(): ArrayIterator { return new ArrayIterator($this->items); }
+    public function getIterator(): ArrayIterator
+    {
+        return new ArrayIterator($this->items);
+    }
 
     // --- JsonSerializable implementation ---
 
@@ -247,7 +352,7 @@ class Paginator implements ArrayAccess, Countable, IteratorAggregate, JsonSerial
         $host = $urlParts['host'] ?? '';
         $port = isset($urlParts['port']) ? ':' . $urlParts['port'] : '';
         $user = $urlParts['user'] ?? '';
-        $pass = isset($urlParts['pass']) ? ':' . $urlParts['pass']  : '';
+        $pass = isset($urlParts['pass']) ? ':' . $urlParts['pass'] : '';
         $pass = ($user || $pass) ? "$pass@" : '';
         $path = $urlParts['path'] ?? '';
         $queryString = http_build_query($finalQuery);

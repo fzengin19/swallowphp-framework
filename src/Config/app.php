@@ -86,6 +86,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Pagination View
+    |--------------------------------------------------------------------------
+    |
+    | Custom view for rendering pagination links. Set to null to use 
+    | default Bootstrap-compatible HTML. Example: 'components.pagination'
+    |
+    */
+    'pagination_view' => null,
+
+    /*
+    |--------------------------------------------------------------------------
     | Controller Namespace
     |--------------------------------------------------------------------------
     */

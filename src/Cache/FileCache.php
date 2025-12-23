@@ -47,12 +47,12 @@ class FileCache implements CacheInterface
         if (!is_dir($cacheDir)) {
             // Use correct logical AND operator '&&'
             if (!@mkdir($cacheDir, $this->dirPermissions, true) && !is_dir($cacheDir)) { // Check mkdir result and existence
-                 throw new \RuntimeException("Failed to create cache directory: {$cacheDir}");
+                throw new \RuntimeException("Failed to create cache directory: {$cacheDir}");
             }
         }
-         if (!is_writable($cacheDir)) {
-             throw new \RuntimeException("Cache directory is not writable: {$cacheDir}");
-         }
+        if (!is_writable($cacheDir)) {
+            throw new \RuntimeException("Cache directory is not writable: {$cacheDir}");
+        }
     }
 
     // PSR-16 Methods Implementation
@@ -64,11 +64,11 @@ class FileCache implements CacheInterface
 
         if ($this->has($key)) { // has() checks existence and expiration
             $item = $this->cache[$key];
-             // Basic data structure validation
-             if (!array_key_exists('value', $item)) {
-                 $this->delete($key); // Remove corrupted item
-                 return $default;
-             }
+            // Basic data structure validation
+            if (!array_key_exists('value', $item)) {
+                $this->delete($key); // Remove corrupted item
+                return $default;
+            }
             return $item['value'];
         }
 
@@ -85,20 +85,20 @@ class FileCache implements CacheInterface
         // Handle immediate deletion for expired TTL on set, as per PSR-16
         // Use correct logical AND operator '&&'
         if ($expirationTimestamp !== null && $expirationTimestamp < time()) {
-             return $this->delete($key);
+            return $this->delete($key);
         }
 
         // Prevent caching resources
         if (is_resource($value)) {
-             error_log("Cache error in set(): Resources cannot be cached (key: '{$key}').");
-             return false;
+            error_log("Cache error in set(): Resources cannot be cached (key: '{$key}').");
+            return false;
         }
 
         try {
-             // Check if encoding works before adding to cache array
-             if (json_encode($value) === false) {
-                 throw new Exception("Failed to json_encode value for key '{$key}'. Error: " . json_last_error_msg());
-             }
+            // Check if encoding works before adding to cache array
+            if (json_encode($value) === false) {
+                throw new Exception("Failed to json_encode value for key '{$key}'. Error: " . json_last_error_msg());
+            }
 
             $this->cache[$key] = [
                 'value' => $value,
@@ -137,16 +137,16 @@ class FileCache implements CacheInterface
     {
         $validKeys = [];
         foreach ($keys as $key) {
-             if (!is_string($key)) {
-                  throw new \InvalidArgumentException("Cache keys must be strings.");
-             }
+            if (!is_string($key)) {
+                throw new \InvalidArgumentException("Cache keys must be strings.");
+            }
             $this->validateKey($key); // Reuse validation
             $validKeys[] = $key;
         }
 
         // Return early if no valid keys provided
         if (empty($validKeys)) {
-             return [];
+            return [];
         }
 
         $this->loadCacheIfNeeded();
@@ -160,9 +160,9 @@ class FileCache implements CacheInterface
 
     public function setMultiple(iterable $values, null|int|\DateInterval $ttl = null): bool
     {
-         if (!is_iterable($values)) {
-             throw new \InvalidArgumentException("Cache values must be an array or Traversable.");
-         }
+        if (!is_iterable($values)) {
+            throw new \InvalidArgumentException("Cache values must be an array or Traversable.");
+        }
 
         $this->loadCacheIfNeeded();
         $expirationTimestamp = $this->ttlToTimestamp($ttl);
@@ -171,19 +171,20 @@ class FileCache implements CacheInterface
         // Handle immediate deletion for expired TTL on set
         // Use correct logical AND operator '&&'
         if ($expirationTimestamp !== null && $expirationTimestamp < time()) {
-             $keysToDelete = [];
-             foreach ($values as $key => $value) {
-                 if (is_string($key)) $keysToDelete[] = $key;
-             }
-             return $this->deleteMultiple($keysToDelete);
+            $keysToDelete = [];
+            foreach ($values as $key => $value) {
+                if (is_string($key))
+                    $keysToDelete[] = $key;
+            }
+            return $this->deleteMultiple($keysToDelete);
         }
 
         foreach ($values as $key => $value) {
-             if (!is_string($key)) {
-                  error_log("Cache error in setMultiple(): Invalid key type provided.");
-                  $success = false;
-                  continue;
-             }
+            if (!is_string($key)) {
+                error_log("Cache error in setMultiple(): Invalid key type provided.");
+                $success = false;
+                continue;
+            }
             try {
                 $this->validateKey($key);
 
@@ -201,10 +202,10 @@ class FileCache implements CacheInterface
                     'expiration' => $expirationTimestamp,
                     'created_at' => time()
                 ];
-             } catch (\Exception $e) { // Catches InvalidArgumentException or Exception
-                 error_log("Cache error in setMultiple() for key '{$key}': " . $e->getMessage());
-                 $success = false;
-             }
+            } catch (\Exception $e) { // Catches InvalidArgumentException or Exception
+                error_log("Cache error in setMultiple() for key '{$key}': " . $e->getMessage());
+                $success = false;
+            }
         }
 
         // Use correct logical AND operator '&&'
@@ -213,26 +214,26 @@ class FileCache implements CacheInterface
 
     public function deleteMultiple(iterable $keys): bool
     {
-         if (!is_iterable($keys)) {
-             throw new \InvalidArgumentException("Cache keys must be an array or Traversable.");
-         }
+        if (!is_iterable($keys)) {
+            throw new \InvalidArgumentException("Cache keys must be an array or Traversable.");
+        }
 
         $this->loadCacheIfNeeded();
         $keysWerePresent = false;
 
         foreach ($keys as $key) {
-             if (!is_string($key)) {
-                  throw new \InvalidArgumentException("Cache keys must be strings.");
-             }
+            if (!is_string($key)) {
+                throw new \InvalidArgumentException("Cache keys must be strings.");
+            }
             try {
                 $this->validateKey($key);
                 if (array_key_exists($key, $this->cache)) {
                     unset($this->cache[$key]);
                     $keysWerePresent = true;
                 }
-             } catch (\InvalidArgumentException $e) {
-                 throw $e;
-             }
+            } catch (\InvalidArgumentException $e) {
+                throw $e;
+            }
         }
 
         return $keysWerePresent ? $this->saveCache() : true;
@@ -241,9 +242,9 @@ class FileCache implements CacheInterface
     public function has(string $key): bool
     {
         try {
-             $this->validateKey($key);
+            $this->validateKey($key);
         } catch (\InvalidArgumentException $e) {
-             return false;
+            return false;
         }
 
         $this->loadCacheIfNeeded();
@@ -278,12 +279,12 @@ class FileCache implements CacheInterface
             $currentValue = 0;
 
             if ($item !== null && !$this->isExpired($key) && isset($item['value']) && is_numeric($item['value'])) {
-                $currentValue = (int)$item['value'];
+                $currentValue = (int) $item['value'];
             } elseif ($item !== null && !$this->isExpired($key)) {
-                 // Item exists but is not numeric, cannot increment
-                 error_log("Cache error in increment(): Value for key '{$key}' is not numeric.");
-                 flock($fp, LOCK_UN);
-                 return false;
+                // Item exists but is not numeric, cannot increment
+                error_log("Cache error in increment(): Value for key '{$key}' is not numeric.");
+                flock($fp, LOCK_UN);
+                return false;
             }
             // If item doesn't exist or is expired, start from 0
 
@@ -298,8 +299,8 @@ class FileCache implements CacheInterface
             ];
 
             if (!$this->saveCache()) { // saveCache handles prune and writing
-                 flock($fp, LOCK_UN); // Ensure unlock on save failure
-                 return false;
+                flock($fp, LOCK_UN); // Ensure unlock on save failure
+                return false;
             }
 
             flock($fp, LOCK_UN);
@@ -308,13 +309,13 @@ class FileCache implements CacheInterface
         } catch (\Throwable $e) {
             error_log("Cache error in increment() for key '{$key}': " . $e->getMessage());
             if (isset($fp) && is_resource($fp)) {
-                 @flock($fp, LOCK_UN);
+                @flock($fp, LOCK_UN);
             }
             return false;
         } finally {
-             if (isset($fp) && is_resource($fp)) {
-                 @fclose($fp);
-             }
+            if (isset($fp) && is_resource($fp)) {
+                @fclose($fp);
+            }
         }
     }
 
@@ -334,23 +335,23 @@ class FileCache implements CacheInterface
         }
 
         if (!file_exists($this->cacheFile)) {
-             if (@touch($this->cacheFile)) {
-                 @chmod($this->cacheFile, $this->filePermissions);
-             } else {
-                  throw new \RuntimeException("Cache file does not exist and could not be created: {$this->cacheFile}");
-             }
-             $this->cache = [];
-             $this->loaded = true;
-             return;
+            if (@touch($this->cacheFile)) {
+                @chmod($this->cacheFile, $this->filePermissions);
+            } else {
+                throw new \RuntimeException("Cache file does not exist and could not be created: {$this->cacheFile}");
+            }
+            $this->cache = [];
+            $this->loaded = true;
+            return;
         }
 
         if (!is_readable($this->cacheFile)) {
-             throw new \RuntimeException("Cache file is not readable: {$this->cacheFile}");
+            throw new \RuntimeException("Cache file is not readable: {$this->cacheFile}");
         }
 
         $fp = @fopen($this->cacheFile, 'r');
         if (!$fp) {
-             throw new \RuntimeException("Could not open cache file for reading: {$this->cacheFile}");
+            throw new \RuntimeException("Could not open cache file for reading: {$this->cacheFile}");
         }
 
         try {
@@ -359,12 +360,12 @@ class FileCache implements CacheInterface
                 flock($fp, LOCK_UN);
 
                 if ($json === false) {
-                     throw new \RuntimeException("Failed to read cache file content: {$this->cacheFile}");
+                    throw new \RuntimeException("Failed to read cache file content: {$this->cacheFile}");
                 }
 
                 if (strlen($json) > $this->maxCacheSize) {
-                     error_log("Cache file exceeded max size ({$this->maxCacheSize} bytes): {$this->cacheFile}. Cache cleared.");
-                     $this->cache = [];
+                    error_log("Cache file exceeded max size ({$this->maxCacheSize} bytes): {$this->cacheFile}. Cache cleared.");
+                    $this->cache = [];
                 } elseif (!empty($json)) {
                     $data = json_decode($json, true);
                     // Use correct logical AND operator '&&'
@@ -375,14 +376,14 @@ class FileCache implements CacheInterface
                         $this->cache = [];
                     }
                 } else {
-                     $this->cache = [];
+                    $this->cache = [];
                 }
             } else {
                 error_log("Could not acquire shared lock for cache file: {$this->cacheFile}");
-                 throw new \RuntimeException("Could not acquire shared lock for cache file: {$this->cacheFile}");
+                throw new \RuntimeException("Could not acquire shared lock for cache file: {$this->cacheFile}");
             }
         } finally {
-             @fclose($fp);
+            @fclose($fp);
         }
 
         $this->loaded = true;
@@ -391,13 +392,13 @@ class FileCache implements CacheInterface
     /** Saves the current cache state to the file. */
     private function saveCache(): bool
     {
-         $this->pruneCacheIfNeeded();
+        $this->pruneCacheIfNeeded();
         $tempFile = $this->cacheFile . '.' . uniqid(mt_rand(), true) . '.tmp';
         $json = json_encode($this->cache, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-         if ($json === false) {
-             error_log("Failed to encode cache data to JSON: " . json_last_error_msg());
-             return false;
-         }
+        if ($json === false) {
+            error_log("Failed to encode cache data to JSON: " . json_last_error_msg());
+            return false;
+        }
         if (@file_put_contents($tempFile, $json, LOCK_EX) === false) {
             error_log("Failed to write to temporary cache file: {$tempFile}");
             @unlink($tempFile);
@@ -413,31 +414,31 @@ class FileCache implements CacheInterface
         }
     }
 
-     /** Prunes the cache if needed. */
-     private function pruneCacheIfNeeded(): void
-     {
-         $estimatedSize = strlen(json_encode($this->cache));
-         if ($estimatedSize > $this->maxCacheSize) {
-             uasort($this->cache, function ($a, $b) {
-                 return ($a['created_at'] ?? 0) <=> ($b['created_at'] ?? 0);
-             });
-             $targetSize = $this->maxCacheSize * 0.9;
-             // Use correct logical AND operator '&&'
-             while ($estimatedSize > $targetSize && !empty($this->cache)) {
-                 $keyToRemove = array_key_first($this->cache);
-                 if ($keyToRemove !== null) {
-                      unset($this->cache[$keyToRemove]);
-                      if (mt_rand(1, 10) === 1) {
-                          $estimatedSize = strlen(json_encode($this->cache));
-                      }
-                 } else {
-                      break;
-                 }
-             }
-             $estimatedSize = strlen(json_encode($this->cache));
-             error_log("Cache pruned: size reduced to ~{$estimatedSize} bytes.");
-         }
-     }
+    /** Prunes the cache if needed. */
+    private function pruneCacheIfNeeded(): void
+    {
+        $estimatedSize = strlen(json_encode($this->cache));
+        if ($estimatedSize > $this->maxCacheSize) {
+            uasort($this->cache, function ($a, $b) {
+                return ($a['created_at'] ?? 0) <=> ($b['created_at'] ?? 0);
+            });
+            $targetSize = $this->maxCacheSize * 0.9;
+            // Use correct logical AND operator '&&'
+            while ($estimatedSize > $targetSize && !empty($this->cache)) {
+                $keyToRemove = array_key_first($this->cache);
+                if ($keyToRemove !== null) {
+                    unset($this->cache[$keyToRemove]);
+                    if (mt_rand(1, 10) === 1) {
+                        $estimatedSize = strlen(json_encode($this->cache));
+                    }
+                } else {
+                    break;
+                }
+            }
+            $estimatedSize = strlen(json_encode($this->cache));
+            error_log("Cache pruned: size reduced to ~{$estimatedSize} bytes.");
+        }
+    }
 
 
     /** Checks if a cached item is expired. */
@@ -454,7 +455,7 @@ class FileCache implements CacheInterface
         if ($key === '') {
             throw new \InvalidArgumentException("Cache key cannot be empty.");
         }
-        if (preg_match('/[{}()\/\\\\@:]/', $key)) {
+        if (preg_match('/[{}()\/\\\\@]/', $key)) {
             throw new \InvalidArgumentException("Cache key '{$key}' contains reserved characters: {}()/\@:");
         }
     }
@@ -462,16 +463,17 @@ class FileCache implements CacheInterface
     /** Converts TTL to timestamp. */
     private function ttlToTimestamp(null|int|\DateInterval $ttl): ?int
     {
-        if ($ttl === null) return null;
+        if ($ttl === null)
+            return null;
         if (is_int($ttl)) {
             return ($ttl > 0) ? time() + $ttl : time() - 1;
         }
         if ($ttl instanceof \DateInterval) {
-             try {
-                 return (new DateTimeImmutable())->add($ttl)->getTimestamp();
-             } catch (\Exception $e) {
-                  throw new \InvalidArgumentException("Invalid DateInterval provided for TTL.", 0, $e);
-             }
+            try {
+                return (new DateTimeImmutable())->add($ttl)->getTimestamp();
+            } catch (\Exception $e) {
+                throw new \InvalidArgumentException("Invalid DateInterval provided for TTL.", 0, $e);
+            }
         }
         throw new \InvalidArgumentException("Invalid TTL value provided. Must be null, int (seconds), or DateInterval.");
     }

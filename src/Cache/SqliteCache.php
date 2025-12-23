@@ -35,9 +35,9 @@ class SqliteCache implements CacheInterface
                 throw new \RuntimeException("Failed to create SQLite cache directory: {$dbDir}");
             }
         }
-         if (!is_writable($dbDir)) {
-             throw new \RuntimeException("SQLite cache directory is not writable: {$dbDir}");
-         }
+        if (!is_writable($dbDir)) {
+            throw new \RuntimeException("SQLite cache directory is not writable: {$dbDir}");
+        }
         $this->connect(); // Connect and ensure table exists on instantiation
     }
 
@@ -86,9 +86,9 @@ class SqliteCache implements CacheInterface
             // Use json_decode instead of unserialize
             $value = json_decode($result['value'], true);
             if (json_last_error() !== JSON_ERROR_NONE) {
-                 error_log("SQLite Cache: Failed to json_decode value for key '{$key}'. Error: " . json_last_error_msg());
-                 $this->delete($key); // Delete corrupted item
-                 return $default;
+                error_log("SQLite Cache: Failed to json_decode value for key '{$key}'. Error: " . json_last_error_msg());
+                $this->delete($key); // Delete corrupted item
+                return $default;
             }
             return $value;
 
@@ -104,14 +104,14 @@ class SqliteCache implements CacheInterface
 
         // Handle immediate deletion for invalid/expired TTL
         if (($ttl instanceof \DateInterval && $this->ttlToTimestamp($ttl) < time()) || (is_int($ttl) && $ttl <= 0)) {
-             return $this->delete($key);
+            return $this->delete($key);
         }
 
         // Use json_encode instead of serialize
         $encodedValue = json_encode($value);
         if ($encodedValue === false) {
-             error_log("SQLite Cache: Failed to json_encode value for key '{$key}'. Error: " . json_last_error_msg());
-             return false;
+            error_log("SQLite Cache: Failed to json_encode value for key '{$key}'. Error: " . json_last_error_msg());
+            return false;
         }
 
         $expirationTimestamp = $this->ttlToTimestamp($ttl);
@@ -168,9 +168,9 @@ class SqliteCache implements CacheInterface
         // Validate keys first
         $validKeys = [];
         foreach ($keys as $key) {
-             if (!is_string($key)) {
-                  throw new Psr16InvalidArgumentException("Cache keys must be strings.");
-             }
+            if (!is_string($key)) {
+                throw new Psr16InvalidArgumentException("Cache keys must be strings.");
+            }
             $this->validateKey($key);
             $validKeys[] = $key;
         }
@@ -189,16 +189,16 @@ class SqliteCache implements CacheInterface
 
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 if (!$this->isRowExpired($row)) {
-                     $value = json_decode($row['value'], true);
-                     if (json_last_error() === JSON_ERROR_NONE) {
-                         $results[$row['key']] = $value;
-                     } else {
-                          error_log("SQLite Cache: Failed to json_decode value for key '{$row['key']}' in getMultiple(). Error: " . json_last_error_msg());
-                          // Keep default value for this key
-                          $this->delete($row['key']); // Delete corrupted
-                     }
+                    $value = json_decode($row['value'], true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $results[$row['key']] = $value;
+                    } else {
+                        error_log("SQLite Cache: Failed to json_decode value for key '{$row['key']}' in getMultiple(). Error: " . json_last_error_msg());
+                        // Keep default value for this key
+                        $this->delete($row['key']); // Delete corrupted
+                    }
                 } else {
-                     $this->delete($row['key']); // Delete expired
+                    $this->delete($row['key']); // Delete expired
                 }
             }
         } catch (PDOException $e) {
@@ -212,9 +212,9 @@ class SqliteCache implements CacheInterface
 
     public function setMultiple(iterable $values, null|int|\DateInterval $ttl = null): bool
     {
-         if (!is_array($values) && !$values instanceof \Traversable) {
-             throw new Psr16InvalidArgumentException("Cache values must be an array or Traversable.");
-         }
+        if (!is_array($values) && !$values instanceof \Traversable) {
+            throw new Psr16InvalidArgumentException("Cache values must be an array or Traversable.");
+        }
 
         $expirationTimestamp = $this->ttlToTimestamp($ttl);
         $success = true;
@@ -224,26 +224,26 @@ class SqliteCache implements CacheInterface
             $stmt = $this->db->prepare("INSERT OR REPLACE INTO `{$this->tableName}` (key, value, expiration) VALUES (?, ?, ?)");
 
             foreach ($values as $key => $value) {
-                 if (!is_string($key)) {
-                      $this->db->rollBack(); // Rollback on invalid key
-                      throw new Psr16InvalidArgumentException("Cache keys must be strings.");
-                 }
+                if (!is_string($key)) {
+                    $this->db->rollBack(); // Rollback on invalid key
+                    throw new Psr16InvalidArgumentException("Cache keys must be strings.");
+                }
                 $this->validateKey($key);
 
-                 // Handle immediate deletion for invalid/expired TTL for this item
-                 if (($ttl instanceof \DateInterval && $expirationTimestamp < time()) || (is_int($ttl) && $ttl <= 0)) {
-                      // Need separate delete statement within transaction
-                      $deleteStmt = $this->db->prepare("DELETE FROM `{$this->tableName}` WHERE key = ?");
-                      $deleteStmt->execute([$key]);
-                      continue; // Skip setting this item
-                 }
+                // Handle immediate deletion for invalid/expired TTL for this item
+                if (($ttl instanceof \DateInterval && $expirationTimestamp < time()) || (is_int($ttl) && $ttl <= 0)) {
+                    // Need separate delete statement within transaction
+                    $deleteStmt = $this->db->prepare("DELETE FROM `{$this->tableName}` WHERE key = ?");
+                    $deleteStmt->execute([$key]);
+                    continue; // Skip setting this item
+                }
 
                 $encodedValue = json_encode($value);
-                 if ($encodedValue === false) {
-                     error_log("SQLite Cache: Failed to json_encode value for key '{$key}' in setMultiple(). Error: " . json_last_error_msg());
-                     $success = false; // Mark as failed but continue
-                     continue;
-                 }
+                if ($encodedValue === false) {
+                    error_log("SQLite Cache: Failed to json_encode value for key '{$key}' in setMultiple(). Error: " . json_last_error_msg());
+                    $success = false; // Mark as failed but continue
+                    continue;
+                }
 
                 if (!$stmt->execute([$key, $encodedValue, $expirationTimestamp])) {
                     $success = false; // Mark as failed if any execute fails
@@ -263,15 +263,15 @@ class SqliteCache implements CacheInterface
 
     public function deleteMultiple(iterable $keys): bool
     {
-         if (!is_array($keys) && !$keys instanceof \Traversable) {
-             throw new Psr16InvalidArgumentException("Cache keys must be an array or Traversable.");
-         }
+        if (!is_array($keys) && !$keys instanceof \Traversable) {
+            throw new Psr16InvalidArgumentException("Cache keys must be an array or Traversable.");
+        }
 
         $validKeys = [];
         foreach ($keys as $key) {
-             if (!is_string($key)) {
-                  throw new Psr16InvalidArgumentException("Cache keys must be strings.");
-             }
+            if (!is_string($key)) {
+                throw new Psr16InvalidArgumentException("Cache keys must be strings.");
+            }
             $this->validateKey($key);
             $validKeys[] = $key;
         }
@@ -326,7 +326,7 @@ class SqliteCache implements CacheInterface
             if ($item !== false && !$this->isRowExpired($item)) {
                 $decodedValue = json_decode($item['value'], true);
                 if (is_numeric($decodedValue)) {
-                    $currentValue = (int)$decodedValue;
+                    $currentValue = (int) $decodedValue;
                     $expiration = $item['expiration']; // Keep existing expiration
                 } else {
                     error_log("SQLite Cache: Cannot increment non-numeric value for key '{$key}'.");
@@ -335,23 +335,24 @@ class SqliteCache implements CacheInterface
                 }
             } else {
                 // If expired or not found, start from 0 and use default TTL
-                 $expiration = $this->ttlToTimestamp(config('cache.ttl'));
-                 if ($item !== false) $this->delete($key); // Delete expired before inserting
+                $expiration = $this->ttlToTimestamp(config('cache.ttl'));
+                if ($item !== false)
+                    $this->delete($key); // Delete expired before inserting
             }
 
             $newValue = $currentValue + $step;
             $encodedNewValue = json_encode($newValue);
             if ($encodedNewValue === false) {
-                 error_log("SQLite Cache: Failed to json_encode new incremented value for key '{$key}'.");
-                 $this->db->rollBack();
-                 return false;
+                error_log("SQLite Cache: Failed to json_encode new incremented value for key '{$key}'.");
+                $this->db->rollBack();
+                return false;
             }
 
             // Update or Insert
             $updateStmt = $this->db->prepare("INSERT OR REPLACE INTO `{$this->tableName}` (key, value, expiration) VALUES (?, ?, ?)");
             if (!$updateStmt->execute([$key, $encodedNewValue, $expiration])) {
-                 $this->db->rollBack();
-                 return false;
+                $this->db->rollBack();
+                return false;
             }
 
             $this->db->commit();
@@ -390,7 +391,7 @@ class SqliteCache implements CacheInterface
     {
         $expiration = $row['expiration'] ?? null;
         // Check if expiration is set and is in the past
-        return $expiration !== null && time() >= (int)$expiration;
+        return $expiration !== null && time() >= (int) $expiration;
     }
 
     /**
@@ -404,8 +405,8 @@ class SqliteCache implements CacheInterface
         if ($key === '') {
             throw new Psr16InvalidArgumentException("Cache key cannot be empty.");
         }
-        // PSR-16 reserved characters: {}()/\@:
-        if (preg_match('/[{}()\/\\@:]/', $key)) {
+        // PSR-16 reserved characters {}()/\@:
+        if (preg_match('/[{}()\/\\@]/', $key)) {
             throw new Psr16InvalidArgumentException("Cache key '{$key}' contains reserved characters.");
         }
     }
@@ -433,23 +434,23 @@ class SqliteCache implements CacheInterface
         }
 
         if ($ttl instanceof \DateInterval) {
-             try {
-                 // Use DateTimeImmutable for safety
-                 return (new DateTimeImmutable())->add($ttl)->getTimestamp();
-             } catch (\Exception $e) {
-                  throw new Psr16InvalidArgumentException("Invalid DateInterval provided for TTL.", 0, $e);
-             }
+            try {
+                // Use DateTimeImmutable for safety
+                return (new DateTimeImmutable())->add($ttl)->getTimestamp();
+            } catch (\Exception $e) {
+                throw new Psr16InvalidArgumentException("Invalid DateInterval provided for TTL.", 0, $e);
+            }
         }
 
         // Should not happen with type hinting, but as fallback
         throw new Psr16InvalidArgumentException("Invalid TTL value provided. Must be null, int (seconds), or DateInterval.");
     }
 
-     /**
-      * Close the database connection on destruct.
-      */
-     public function __destruct()
-     {
-         $this->db = null;
-     }
+    /**
+     * Close the database connection on destruct.
+     */
+    public function __destruct()
+    {
+        $this->db = null;
+    }
 }

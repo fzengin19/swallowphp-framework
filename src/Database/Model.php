@@ -117,7 +117,7 @@ class Model
     {
         // Use correct logical AND operator '&&'
         if ((in_array($key, $this->fillable) || empty($this->fillable)) && !in_array($key, $this->guarded)) {
-             $this->attributes[$key] = $value;
+            $this->attributes[$key] = $value;
         } elseif (in_array($key, $this->guarded)) {
             throw new InvalidArgumentException("Attribute '{$key}' is protected and cannot be set directly.");
         }
@@ -167,32 +167,32 @@ class Model
         return static::query()->select($columns);
     }
 
-     /**
-      * Add where condition.
-      * Accepts standard (column, operator, value), (column, value), or nested (Closure) conditions.
-      *
-      * @param string|Closure $column Column name or Closure for nested query.
-      * @param mixed|null $operatorOrValue Operator, value (if 2 args), or boolean (if Closure).
-      * @param mixed|null $value Value (if 3 args).
-      * @param string $boolean Boolean connector ('AND' or 'OR'), used mainly internally by Database class.
-      * @return \SwallowPHP\Framework\Database
-      */
-     public static function where($column, $operatorOrValue = null, $value = null, string $boolean = 'AND'): Database
-     {
-         // Pass all arguments directly to the Database query builder's where method
-         // which now handles all argument variations including Closures.
-         return static::query()->where($column, $operatorOrValue, $value, $boolean);
-     }
+    /**
+     * Add where condition.
+     * Accepts standard (column, operator, value), (column, value), or nested (Closure) conditions.
+     *
+     * @param string|Closure $column Column name or Closure for nested query.
+     * @param mixed|null $operatorOrValue Operator, value (if 2 args), or boolean (if Closure).
+     * @param mixed|null $value Value (if 3 args).
+     * @param string $boolean Boolean connector ('AND' or 'OR'), used mainly internally by Database class.
+     * @return \SwallowPHP\Framework\Database
+     */
+    public static function where($column, $operatorOrValue = null, $value = null, string $boolean = 'AND'): Database
+    {
+        // Pass all arguments directly to the Database query builder's where method
+        // which now handles all argument variations including Closures.
+        return static::query()->where($column, $operatorOrValue, $value, $boolean);
+    }
 
-     /**
-      * Add an or where condition.
-      * Accepts standard (column, operator, value), (column, value), or nested (Closure) conditions.
-      *
-      * @param string|Closure $column Column name or Closure for nested query.
-      * @param mixed|null $operator Operator or value (if 2 args).
-      * @param mixed|null $value Value (if 3 args).
-      * @return \SwallowPHP\Framework\Database
-      */
+    /**
+     * Add an or where condition.
+     * Accepts standard (column, operator, value), (column, value), or nested (Closure) conditions.
+     *
+     * @param string|Closure $column Column name or Closure for nested query.
+     * @param mixed|null $operator Operator or value (if 2 args).
+     * @param mixed|null $value Value (if 3 args).
+     * @return \SwallowPHP\Framework\Database
+     */
     public static function orWhere($column, $operator = null, $value = null): Database
     {
         // Pass arguments directly to the Database query builder's orWhere method.
@@ -241,7 +241,7 @@ class Model
      */
     public static function first(): ?self
     {
-         return static::query()->first();
+        return static::query()->first();
     }
 
     /**
@@ -296,8 +296,8 @@ class Model
             if (!empty($dirtyData)) {
                 $dirtyData['updated_at'] = $this->attributes['updated_at'];
                 $result = static::query()
-                                ->where('id', '=', $this->attributes['id'])
-                                ->update($dirtyData);
+                    ->where('id', '=', $this->attributes['id'])
+                    ->update($dirtyData);
             } else {
                 $result = 0;
             }
@@ -346,9 +346,9 @@ class Model
     public function fill(array $data): void
     {
         foreach ($data as $key => $value) {
-             // Use correct logical AND operator '&&'
+            // Use correct logical AND operator '&&'
             if ((in_array($key, $this->fillable) || empty($this->fillable)) && !in_array($key, $this->guarded)) {
-                 $this->attributes[$key] = $value;
+                $this->attributes[$key] = $value;
             }
         }
     }
@@ -401,8 +401,8 @@ class Model
         static::fireEvent('deleting', $this);
 
         $result = static::query()
-                        ->where('id', '=', $this->attributes['id'])
-                        ->delete();
+            ->where('id', '=', $this->attributes['id'])
+            ->delete();
 
         if ($result !== false && $result > 0) { // Check if delete was successful
             static::fireEvent('deleted', $this);
@@ -424,7 +424,8 @@ class Model
      */
     public static function paginate(int $perPage, ?int $page = null): Paginator
     {
-        if($page === null) $page = request()->getQuery('page', 1);
+        if ($page === null)
+            $page = request()->getQuery('page', 1);
         return static::query()->paginate($perPage, $page);
     }
 
@@ -433,8 +434,8 @@ class Model
         return static::query()->whereRaw($query, $bindings);
     }
 
-    /** Paginate using cursor. Returns hydrated models. */
-    public static function cursorPaginate(int $perPage, ?string $cursor = null): array
+    /** Paginate using cursor. Returns Paginator with hydrated models. */
+    public static function cursorPaginate(int $perPage, ?string $cursor = null): Paginator
     {
         return static::query()->cursorPaginate($perPage, $cursor);
     }
@@ -449,38 +450,49 @@ class Model
     protected function castAttribute(string $key, $value)
     {
         $castType = $this->casts[$key] ?? null;
-         // Use correct logical AND operator '&&'
+        // Use correct logical AND operator '&&'
         if (is_null($value) && !in_array($castType, ['date', 'datetime', 'array', 'object'])) {
-             return null;
+            return null;
         }
         if (!$castType) {
             if (in_array($key, $this->dates)) {
-                 $castType = 'datetime';
+                $castType = 'datetime';
             } else {
-                 return $value;
+                return $value;
             }
         }
 
         switch ($castType) {
-            case 'int': case 'integer':
+            case 'int':
+            case 'integer':
                 return is_numeric($value) ? (int) $value : null;
-            case 'real': case 'float': case 'double':
+            case 'real':
+            case 'float':
+            case 'double':
                 return is_numeric($value) ? (float) $value : null;
             case 'string':
                 return (string) $value;
-            case 'bool': case 'boolean':
+            case 'bool':
+            case 'boolean':
                 if (is_string($value)) {
-                     return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+                    return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
                 }
                 return (bool) $value;
             case 'array':
                 return is_array($value) ? $value : json_decode($value, true);
             case 'object':
-                 return is_object($value) ? $value : json_decode($value);
-            case 'date': case 'datetime':
-                 if ($value instanceof DateTime) return $value;
-                 if (empty($value)) return null;
-                 try { return new DateTime($value); } catch (\Exception $e) { return null; }
+                return is_object($value) ? $value : json_decode($value);
+            case 'date':
+            case 'datetime':
+                if ($value instanceof DateTime)
+                    return $value;
+                if (empty($value))
+                    return null;
+                try {
+                    return new DateTime($value);
+                } catch (\Exception $e) {
+                    return null;
+                }
             default:
                 return $value;
         }
@@ -497,7 +509,7 @@ class Model
         $models = [];
         foreach ($data as $item) {
             if (is_array($item)) {
-                 $models[] = static::hydrateModel($item);
+                $models[] = static::hydrateModel($item);
             }
         }
         return $models;
@@ -514,10 +526,10 @@ class Model
         $model = static::createModelInstance();
         $model->attributes = $data;
         $idKey = 'id'; // Assume primary key is 'id'
-         // Use correct logical AND operator '&&'
+        // Use correct logical AND operator '&&'
         if (array_key_exists($idKey, $data) && property_exists($model, $idKey)) {
             $castType = $model->casts[$idKey] ?? null;
-            $model->id = ($castType === 'integer' || $castType === 'int') ? (int)$data[$idKey] : $data[$idKey];
+            $model->id = ($castType === 'integer' || $castType === 'int') ? (int) $data[$idKey] : $data[$idKey];
         }
         $model->syncOriginal();
         return $model;
@@ -535,7 +547,7 @@ class Model
         $dirty = [];
         foreach ($this->attributes as $key => $value) {
             if (!array_key_exists($key, $this->original) || $this->original[$key] !== $value) {
-                 $dirty[$key] = $value;
+                $dirty[$key] = $value;
             }
         }
         return $dirty;
@@ -554,11 +566,11 @@ class Model
     {
         $class = get_called_class();
         if (isset(static::$eventCallbacks[$class][$event])) {
-             foreach (static::$eventCallbacks[$class][$event] as $callback) {
-                 if (call_user_func($callback, $payload) === false) {
+            foreach (static::$eventCallbacks[$class][$event] as $callback) {
+                if (call_user_func($callback, $payload) === false) {
                     // break;
-                 }
-             }
+                }
+            }
         }
     }
 
@@ -571,9 +583,9 @@ class Model
         }
         $localValue = $this->attributes[$localKey] ?? null;
         if ($localValue === null) {
-             $builder = $relatedModel::query()->whereRaw('1 = 0'); // Boş sonuç için
+            $builder = $relatedModel::query()->whereRaw('1 = 0'); // Boş sonuç için
         } else {
-             $builder = $relatedModel::query()->where($foreignKey, '=', $localValue);
+            $builder = $relatedModel::query()->where($foreignKey, '=', $localValue);
         }
         // Pass 'many' as the relation type
         return new \SwallowPHP\Framework\Database\Relation($builder, 'many');
@@ -589,17 +601,17 @@ class Model
      */
     public function belongsTo(string $relatedModel, string $foreignKey, string $ownerKey = 'id'): \SwallowPHP\Framework\Database\Relation
     {
-         if (!class_exists($relatedModel)) {
-             throw new \RuntimeException("Related model not found: {$relatedModel}");
-         }
-         $foreignValue = $this->attributes[$foreignKey] ?? null;
+        if (!class_exists($relatedModel)) {
+            throw new \RuntimeException("Related model not found: {$relatedModel}");
+        }
+        $foreignValue = $this->attributes[$foreignKey] ?? null;
 
-         // Build the query regardless of whether the foreign key is set.
-         // The Relation object can handle fetching (or not fetching) later.
-         $builder = $relatedModel::query()->where($ownerKey, '=', $foreignValue);
+        // Build the query regardless of whether the foreign key is set.
+        // The Relation object can handle fetching (or not fetching) later.
+        $builder = $relatedModel::query()->where($ownerKey, '=', $foreignValue);
 
-         // Pass 'one' as the relation type
-         return new \SwallowPHP\Framework\Database\Relation($builder, 'one');
+        // Pass 'one' as the relation type
+        return new \SwallowPHP\Framework\Database\Relation($builder, 'one');
     }
 
 
@@ -607,15 +619,15 @@ class Model
     protected static function getTable(): string
     {
         if (empty(static::$table)) {
-             $className = basename(str_replace('\\', '/', get_called_class()));
-             $tableName = strtolower(preg_replace('/(?<!\A)[A-Z]/', '_$0', $className));
-              // Use correct logical AND operator '&&'
-             if (str_ends_with($tableName, 'y') && !in_array(substr($tableName, -2, 1), ['a','e','i','o','u'])) {
-                  $tableName = substr($tableName, 0, -1) . 'ies';
-             } else if (!str_ends_with($tableName, 's')) {
-                 $tableName .= 's';
-             }
-             static::$table = $tableName;
+            $className = basename(str_replace('\\', '/', get_called_class()));
+            $tableName = strtolower(preg_replace('/(?<!\A)[A-Z]/', '_$0', $className));
+            // Use correct logical AND operator '&&'
+            if (str_ends_with($tableName, 'y') && !in_array(substr($tableName, -2, 1), ['a', 'e', 'i', 'o', 'u'])) {
+                $tableName = substr($tableName, 0, -1) . 'ies';
+            } else if (!str_ends_with($tableName, 's')) {
+                $tableName .= 's';
+            }
+            static::$table = $tableName;
         }
         return static::$table;
     }
@@ -629,7 +641,7 @@ class Model
     public static function query(): Database
     {
         if (!class_exists(Database::class)) {
-             throw new \RuntimeException("Database class not found.");
+            throw new \RuntimeException("Database class not found.");
         }
         $builder = \SwallowPHP\Framework\Foundation\App::container()->get(Database::class);
         $builder->reset();

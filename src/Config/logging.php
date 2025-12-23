@@ -26,7 +26,7 @@ return [
         'file' => [
             'driver' => 'single',
             // Default relative path - Actual path resolution happens in App.php logger definition
-            'path' => 'logs/swallow.log',
+            'path' => 'logs/app.log',
             'level' => LogLevel::DEBUG, // Default minimum level
         ],
 

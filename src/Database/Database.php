@@ -107,7 +107,7 @@ class Database
             if ($driver === 'sqlite') {
                 $storagePath = config('app.storage_path');
                 if (!$storagePath || !is_dir(dirname($storagePath))) {
-                    $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
+                    $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 5);
                     $storagePath = $potentialBasePath . '/storage';
                     $warningMsg = "Warning: 'app.storage_path' not configured or invalid, using fallback for DB path: " . $storagePath;
                     if ($this->logger)

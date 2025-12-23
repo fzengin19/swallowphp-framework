@@ -28,8 +28,7 @@ class Env
             return self::$basePath;
         }
 
-        // fallback: guess from current file location (4 levels up)
-        return dirname(__DIR__, 4);
+        return dirname(__DIR__, 5);
     }
 
     /**

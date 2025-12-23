@@ -35,7 +35,7 @@ class App
 
         self::$viewDirectory = $config->get('app.view_path');
         if (!self::$viewDirectory) {
-            $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
+            $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 5);
             self::$viewDirectory = $potentialBasePath . '/resources/views';
         }
 
@@ -78,7 +78,7 @@ class App
                 if (defined('BASE_PATH')) {
                     $appConfigPath = constant('BASE_PATH') . '/config';
                 } else {
-                    $potentialBasePath = dirname(__DIR__, 3);
+                    $potentialBasePath = dirname(__DIR__, 5);
                     $appConfigPath = $potentialBasePath . '/config';
                 }
                 return new Config($frameworkConfigPath, $appConfigPath);
@@ -106,7 +106,7 @@ class App
 
                     // Ensure storage path is configured and try to determine fallback if not
                     if (!$storagePath || !is_dir(dirname($storagePath))) {
-                        $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
+                        $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 5);
                         $storagePath = $potentialBasePath . '/storage';
                         error_log("Warning: 'app.storage_path' not configured or invalid, using fallback for logging path: " . $storagePath);
                         // Attempt to create fallback storage directory
@@ -138,7 +138,7 @@ class App
                         throw new \RuntimeException("Failed to initialize FileLogger: " . $e->getMessage(), 0, $e);
                     }
                 } elseif ($driver === 'errorlog') {
-                    return new class($level) implements LoggerInterface {
+                    return new class ($level) implements LoggerInterface {
                         use \Psr\Log\LoggerTrait;
                         private int $minLevelValue;
                         private array $logLevels = [LogLevel::DEBUG => 100, LogLevel::INFO => 200, LogLevel::NOTICE => 250, LogLevel::WARNING => 300, LogLevel::ERROR => 400, LogLevel::CRITICAL => 500, LogLevel::ALERT => 550, LogLevel::EMERGENCY => 600];
@@ -151,7 +151,7 @@ class App
                             if (($this->logLevels[$level] ?? 0) >= $this->minLevelValue) {
                                 $replace = [];
                                 foreach ($context as $key => $val) {
-                                    $replace['{' . $key . '}'] = is_scalar($val) || (is_object($val) && method_exists($val, '__toString')) ? (string)$val : '[' . gettype($val) . ']';
+                                    $replace['{' . $key . '}'] = is_scalar($val) || (is_object($val) && method_exists($val, '__toString')) ? (string) $val : '[' . gettype($val) . ']';
                                 }
                                 $interpolatedMessage = strtr((string) $message, $replace);
                                 error_log(strtoupper($level) . ': ' . $interpolatedMessage);
@@ -203,7 +203,7 @@ class App
             self::$container->addShared(VerifyCsrfToken::class, function () {
                 return new VerifyCsrfToken();
             });
-            
+
             // Register pending service providers
             foreach (self::$pendingServiceProviders as $provider) {
                 self::$container->addServiceProvider($provider);
@@ -282,7 +282,7 @@ class App
 
             date_default_timezone_set($config->get('app.timezone', 'UTC'));
             setlocale(LC_TIME, ($config->get('app.locale', 'en') ?? 'en') . '.UTF-8');
-            set_time_limit((int)$config->get('max_execution_time', 30));
+            set_time_limit((int) $config->get('max_execution_time', 30));
 
             // --- Configure PHP Error Reporting based on Config ---
             // Get the desired level from config, default to E_ALL if not set

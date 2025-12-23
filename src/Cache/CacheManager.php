@@ -79,11 +79,14 @@ class CacheManager
 
             // Ensure storage path is resolved correctly
             if (!$storagePath || !is_dir(dirname($storagePath))) {
-                 $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
-                 $storagePath = $potentialBasePath . '/storage';
-                 if ($logger) $logger->warning("Config 'app.storage_path' not found or invalid, using fallback.", ['path' => $storagePath]);
-                 else error_log("Warning: Config 'app.storage_path' not found or invalid, using fallback: ".$storagePath);
-                 if (!is_dir($storagePath)) @mkdir($storagePath, 0755, true);
+                $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 5);
+                $storagePath = $potentialBasePath . '/storage';
+                if ($logger)
+                    $logger->warning("Config 'app.storage_path' not found or invalid, using fallback.", ['path' => $storagePath]);
+                else
+                    error_log("Warning: Config 'app.storage_path' not found or invalid, using fallback: " . $storagePath);
+                if (!is_dir($storagePath))
+                    @mkdir($storagePath, 0755, true);
             }
 
             $cachePath = rtrim($storagePath, '/\\') . '/' . ltrim($relativePath, '/\\');
@@ -91,10 +94,12 @@ class CacheManager
             return new FileCache($cachePath, $maxSize);
 
         } catch (\Exception $e) {
-             $message = "Could not create file cache driver. Check path and permissions.";
-             if ($logger) $logger->critical($message, ['exception' => $e, 'path' => $cachePath ?? 'N/A']);
-             else error_log("Failed to create FileCache driver: " . $e->getMessage()); // Fallback log
-             throw new RuntimeException($message, 0, $e);
+            $message = "Could not create file cache driver. Check path and permissions.";
+            if ($logger)
+                $logger->critical($message, ['exception' => $e, 'path' => $cachePath ?? 'N/A']);
+            else
+                error_log("Failed to create FileCache driver: " . $e->getMessage()); // Fallback log
+            throw new RuntimeException($message, 0, $e);
         }
     }
 
@@ -112,11 +117,14 @@ class CacheManager
             $tableName = config('cache.stores.sqlite.table', 'cache'); // Get table name from config
 
             if (!$storagePath || !is_dir(dirname($storagePath))) {
-                 $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 3);
-                 $storagePath = $potentialBasePath . '/storage';
-                 if ($logger) $logger->warning("Config 'app.storage_path' not found or invalid, using fallback.", ['path' => $storagePath]);
-                 else error_log("Warning: Config 'app.storage_path' not found or invalid, using fallback: ".$storagePath);
-                 if (!is_dir($storagePath)) @mkdir($storagePath, 0755, true);
+                $potentialBasePath = defined('BASE_PATH') ? constant('BASE_PATH') : dirname(__DIR__, 5);
+                $storagePath = $potentialBasePath . '/storage';
+                if ($logger)
+                    $logger->warning("Config 'app.storage_path' not found or invalid, using fallback.", ['path' => $storagePath]);
+                else
+                    error_log("Warning: Config 'app.storage_path' not found or invalid, using fallback: " . $storagePath);
+                if (!is_dir($storagePath))
+                    @mkdir($storagePath, 0755, true);
             }
 
             $dbPath = rtrim($storagePath, '/\\') . '/' . ltrim($relativePath, '/\\');
@@ -124,10 +132,12 @@ class CacheManager
             return new SqliteCache($dbPath, $tableName); // Pass table name
 
         } catch (\Exception $e) {
-             $message = "Could not create SQLite cache driver. Check path and permissions.";
-             if ($logger) $logger->critical($message, ['exception' => $e, 'path' => $dbPath ?? 'N/A']);
-             else error_log("Failed to create SqliteCache driver: " . $e->getMessage()); // Fallback log
-             throw new RuntimeException($message, 0, $e);
+            $message = "Could not create SQLite cache driver. Check path and permissions.";
+            if ($logger)
+                $logger->critical($message, ['exception' => $e, 'path' => $dbPath ?? 'N/A']);
+            else
+                error_log("Failed to create SqliteCache driver: " . $e->getMessage()); // Fallback log
+            throw new RuntimeException($message, 0, $e);
         }
     }
 

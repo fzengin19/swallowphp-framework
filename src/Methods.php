@@ -486,11 +486,13 @@ if (!function_exists('logger')) {
     }
 }
 if (!function_exists('getFile')) {
-    function getFile($name): string // Added return type hint
+    function getFile($name): string
     {
         // This assumes 'files' is directly under the public directory accessible via APP_URL
-        // Use config('app.url') instead of env() directly
-        return rtrim(config('app.url', 'http://localhost'), '/') . '/files/' . ltrim($name, '/');
+        // Use config('app.url') and config('app.path') for subdirectory support
+        $baseUrl = rtrim(config('app.url', 'http://localhost'), '/');
+        $appPath = config('app.path', '');
+        return $baseUrl . $appPath . '/files/' . ltrim($name, '/');
     }
 }
 

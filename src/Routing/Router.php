@@ -67,9 +67,9 @@ class Router
     {
         // Consider making this non-static or ensuring $request is always set before access
         if (!isset(self::$request)) {
-             // This might happen if called outside the dispatch cycle.
-             // Maybe get from container instead?
-             return App::container()->get(Request::class);
+            // This might happen if called outside the dispatch cycle.
+            // Maybe get from container instead?
+            return App::container()->get(Request::class);
         }
         return self::$request;
     }
@@ -101,7 +101,7 @@ class Router
                 foreach ($params as $param => $value) {
                     $placeholder = '{' . $param . '}';
                     if (str_contains($uriPattern, $placeholder)) {
-                        $uriPattern = str_replace($placeholder, rawurlencode((string)$value), $uriPattern); // URL encode values
+                        $uriPattern = str_replace($placeholder, rawurlencode((string) $value), $uriPattern); // URL encode values
                         unset($params[$param]);
                     }
                     // Handle optional parameters? e.g., {param?} - more complex regex needed
@@ -110,10 +110,11 @@ class Router
                 // Append remaining params as query string
                 $queryString = !empty($params) ? http_build_query($params) : '';
 
-                // Get base URL from config
+                // Get base URL and app path from config
                 $baseUrl = rtrim(config('app.url', 'http://localhost'), '/');
+                $appPath = config('app.path', '');
                 $routePath = '/' . ltrim($uriPattern, '/');
-                $url = $baseUrl . $routePath;
+                $url = $baseUrl . $appPath . $routePath;
 
                 return $queryString ? $url . '?' . $queryString : $url;
             }
@@ -136,11 +137,11 @@ class Router
         // Remove potential base path defined in config
         $appPath = config('app.path', '');
         if (!empty($appPath) && str_starts_with($requestUriPath, $appPath)) {
-             $requestUriPath = substr($requestUriPath, strlen($appPath));
-             // Ensure it starts with / after removing base path
-             if (!str_starts_with($requestUriPath, '/')) {
-                 $requestUriPath = '/' . $requestUriPath;
-             }
+            $requestUriPath = substr($requestUriPath, strlen($appPath));
+            // Ensure it starts with / after removing base path
+            if (!str_starts_with($requestUriPath, '/')) {
+                $requestUriPath = '/' . $requestUriPath;
+            }
         }
 
         // Ensure path starts with / and remove trailing slash (unless it's just '/')
@@ -164,10 +165,10 @@ class Router
                 if ($route->getMethod() === $requestMethod) {
                     // Method matches! Execute rate limiter and route action.
                     try {
-                         RateLimiter::execute($route); // Apply rate limiting
+                        RateLimiter::execute($route); // Apply rate limiting
                     } catch (RateLimitExceededException $e) {
-                         // Let ExceptionHandler handle this specific exception
-                         throw $e;
+                        // Let ExceptionHandler handle this specific exception
+                        throw $e;
                     }
 
                     // Extract named parameters from matches

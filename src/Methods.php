@@ -57,6 +57,79 @@ if (!function_exists('env')) {
     }
 }
 
+if (!function_exists('e')) {
+    /**
+     * Escape a value for safe HTML output.
+     *
+     * Usage in views: <?= e($value) ?>
+     */
+    function e(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        // Common scalars
+        if (is_bool($value)) {
+            $value = $value ? '1' : '0';
+        } elseif (is_int($value) || is_float($value)) {
+            $value = (string) $value;
+        } elseif (is_string($value)) {
+            // keep as-is
+        } elseif ($value instanceof \Stringable) {
+            $value = (string) $value;
+        } elseif (is_array($value) || is_object($value)) {
+            // Best-effort stringification for debug/admin views
+            $value = json_encode(
+                $value,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            if ($value === false) {
+                $value = '[unencodable]';
+            }
+        } else {
+            $value = '[' . gettype($value) . ']';
+        }
+
+        return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+
+if (!function_exists('attr')) {
+    /**
+     * Escape a value for safe HTML attribute output.
+     * Alias for e().
+     */
+    function attr(mixed $value): string
+    {
+        return e($value);
+    }
+}
+
+if (!function_exists('raw')) {
+    /**
+     * Return a value as a string without escaping.
+     * Use with extreme caution in views.
+     */
+    function raw(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        if (is_string($value) || is_int($value) || is_float($value) || is_bool($value) || ($value instanceof \Stringable)) {
+            return (string) $value;
+        }
+        if (is_array($value) || is_object($value)) {
+            $json = json_encode(
+                $value,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            return $json === false ? '' : $json;
+        }
+        return '';
+    }
+}
+
 if (!function_exists('shortenText')) {
     function shortenText($text, $length)
     {
@@ -97,14 +170,6 @@ if (!function_exists('redirectToRoute')) {
     {
         $router = App::container()->get(Router::class);
         $url = $router->getRouteByName($urlName, $params);
-
-        // Queued cookie'leri gönder
-        if (
-            class_exists(\SwallowPHP\Framework\Http\Cookie::class)
-            && method_exists(\SwallowPHP\Framework\Http\Cookie::class, 'sendQueuedCookies')
-        ) {
-            \SwallowPHP\Framework\Http\Cookie::sendQueuedCookies();
-        }
 
         // Response sınıfını kullanarak yönlendir ve header + exit yerine send() metodunu kullan
         \SwallowPHP\Framework\Http\Response::redirect($url)
@@ -309,7 +374,8 @@ if (!function_exists('hasRoute')) {
 if (!function_exists('redirect')) {
     function redirect($uri, $code = 302): void // Add return type hint
     {
-        header('Location: ' . $uri, true, $code);
+        // Use Response to ensure queued cookies are sent consistently.
+        \SwallowPHP\Framework\Http\Response::redirect((string) $uri, (int) $code)->send();
         exit();
     }
 }
@@ -486,11 +552,13 @@ if (!function_exists('logger')) {
     }
 }
 if (!function_exists('getFile')) {
-    function getFile($name): string // Added return type hint
+    function getFile($name): string
     {
         // This assumes 'files' is directly under the public directory accessible via APP_URL
-        // Use config('app.url') instead of env() directly
-        return rtrim(config('app.url', 'http://localhost'), '/') . '/files/' . ltrim($name, '/');
+        // Use config('app.url') and config('app.path') for subdirectory support
+        $baseUrl = rtrim(config('app.url', 'http://localhost'), '/');
+        $appPath = config('app.path', '');
+        return $baseUrl . $appPath . '/files/' . ltrim($name, '/');
     }
 }
 
@@ -745,7 +813,7 @@ if (!function_exists('view')) {
         }
 
         // Render the main view content
-        extract($data);
+        extract($data, EXTR_SKIP);
         ob_start();
         try {
             include $viewFile;
@@ -765,7 +833,7 @@ if (!function_exists('view')) {
             ob_start();
             // Extract data again for layout scope
             try {
-                extract($data);
+                extract($data, EXTR_SKIP);
                 include $layoutFile;
             } catch (\Throwable $e) {
                 ob_end_clean();

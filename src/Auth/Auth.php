@@ -140,25 +140,32 @@ class Auth
                         }
 
                         $cookieValue = $user->getAuthIdentifier() . '|' . $rawToken;
-                        $lifetimeMinutes = config('auth.remember_lifetime', 43200);
+                        // Config value is in minutes (default: 43200 = 30 days)
+                        $lifetimeMinutes = (int) config('auth.remember_lifetime', 43200);
+                        // Cookie::set() expects days, so convert minutes -> days (ceil).
+                        // If lifetime is <= 0, fall back to a session cookie (0).
+                        $lifetimeDays = $lifetimeMinutes > 0 ? (int) ceil($lifetimeMinutes / 1440) : 0;
 
                         // Set secure cookie options from config
                         $cookieSet = Cookie::set(
                             'remember_me',
                             $cookieValue,
-                            $lifetimeMinutes, // Pass minutes directly
-                            config('cookie.path', '/'),
-                            config('cookie.domain', null),
-                            config('cookie.secure', false),
+                            $lifetimeDays,
+                            config('cookie.path', config('session.path', '/')),
+                            config('cookie.domain', config('session.domain', null)),
+                            config('cookie.secure', config('session.secure', false)),
                             true, // httpOnly: Force true for security
-                            false, // raw
-                            config('cookie.samesite', 'Lax')
+                            config('cookie.samesite', config('session.same_site', 'Lax'))
                         );
 
                         if (!$cookieSet) {
                             self::logger()->error("Failed to set remember me cookie.", ['user_id' => $user->getAuthIdentifier()]);
                         } else {
-                            self::logger()->debug("Remember me cookie set.", ['user_id' => $user->getAuthIdentifier(), 'lifetime_minutes' => $lifetimeMinutes]);
+                            self::logger()->debug("Remember me cookie set.", [
+                                'user_id' => $user->getAuthIdentifier(),
+                                'lifetime_minutes' => $lifetimeMinutes,
+                                'lifetime_days' => $lifetimeDays,
+                            ]);
                         }
                     } catch (\Throwable $rememberError) {
                         $rememberMessage = "Failed to set remember me token/cookie.";

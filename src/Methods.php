@@ -57,6 +57,79 @@ if (!function_exists('env')) {
     }
 }
 
+if (!function_exists('e')) {
+    /**
+     * Escape a value for safe HTML output.
+     *
+     * Usage in views: <?= e($value) ?>
+     */
+    function e(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        // Common scalars
+        if (is_bool($value)) {
+            $value = $value ? '1' : '0';
+        } elseif (is_int($value) || is_float($value)) {
+            $value = (string) $value;
+        } elseif (is_string($value)) {
+            // keep as-is
+        } elseif ($value instanceof \Stringable) {
+            $value = (string) $value;
+        } elseif (is_array($value) || is_object($value)) {
+            // Best-effort stringification for debug/admin views
+            $value = json_encode(
+                $value,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            if ($value === false) {
+                $value = '[unencodable]';
+            }
+        } else {
+            $value = '[' . gettype($value) . ']';
+        }
+
+        return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+
+if (!function_exists('attr')) {
+    /**
+     * Escape a value for safe HTML attribute output.
+     * Alias for e().
+     */
+    function attr(mixed $value): string
+    {
+        return e($value);
+    }
+}
+
+if (!function_exists('raw')) {
+    /**
+     * Return a value as a string without escaping.
+     * Use with extreme caution in views.
+     */
+    function raw(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        if (is_string($value) || is_int($value) || is_float($value) || is_bool($value) || ($value instanceof \Stringable)) {
+            return (string) $value;
+        }
+        if (is_array($value) || is_object($value)) {
+            $json = json_encode(
+                $value,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            return $json === false ? '' : $json;
+        }
+        return '';
+    }
+}
+
 if (!function_exists('shortenText')) {
     function shortenText($text, $length)
     {
@@ -747,7 +820,7 @@ if (!function_exists('view')) {
         }
 
         // Render the main view content
-        extract($data);
+        extract($data, EXTR_SKIP);
         ob_start();
         try {
             include $viewFile;
@@ -767,7 +840,7 @@ if (!function_exists('view')) {
             ob_start();
             // Extract data again for layout scope
             try {
-                extract($data);
+                extract($data, EXTR_SKIP);
                 include $layoutFile;
             } catch (\Throwable $e) {
                 ob_end_clean();

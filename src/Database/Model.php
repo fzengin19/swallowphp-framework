@@ -618,18 +618,15 @@ class Model
     /** Get the table associated with the model. */
     protected static function getTable(): string
     {
-        if (empty(static::$table)) {
-            $className = basename(str_replace('\\', '/', get_called_class()));
-            $tableName = strtolower(preg_replace('/(?<!\A)[A-Z]/', '_$0', $className));
-            // Use correct logical AND operator '&&'
-            if (str_ends_with($tableName, 'y') && !in_array(substr($tableName, -2, 1), ['a', 'e', 'i', 'o', 'u'])) {
-                $tableName = substr($tableName, 0, -1) . 'ies';
-            } else if (!str_ends_with($tableName, 's')) {
-                $tableName .= 's';
-            }
-            static::$table = $tableName;
+        $table = static::$table ?? '';
+        if (!is_string($table) || trim($table) === '') {
+            $modelClass = get_called_class();
+            throw new InvalidArgumentException(
+                "Table name is not defined for model: {$modelClass}. "
+                . "Define `protected static string \$table = 'table_name';` on the model class."
+            );
         }
-        return static::$table;
+        return $table;
     }
 
 

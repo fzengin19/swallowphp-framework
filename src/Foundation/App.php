@@ -295,7 +295,10 @@ class App
 
             // SSL Redirect
             if ($config->get('app.ssl_redirect', false) === true && empty($_SERVER['HTTPS'])) {
-                header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
+                // Use Response to ensure queued cookies are sent consistently.
+                \SwallowPHP\Framework\Http\Response::redirect(
+                    'https://' . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '/')
+                )->send();
                 exit;
             }
 

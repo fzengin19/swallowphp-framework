@@ -171,14 +171,6 @@ if (!function_exists('redirectToRoute')) {
         $router = App::container()->get(Router::class);
         $url = $router->getRouteByName($urlName, $params);
 
-        // Queued cookie'leri gönder
-        if (
-            class_exists(\SwallowPHP\Framework\Http\Cookie::class)
-            && method_exists(\SwallowPHP\Framework\Http\Cookie::class, 'sendQueuedCookies')
-        ) {
-            \SwallowPHP\Framework\Http\Cookie::sendQueuedCookies();
-        }
-
         // Response sınıfını kullanarak yönlendir ve header + exit yerine send() metodunu kullan
         \SwallowPHP\Framework\Http\Response::redirect($url)
             ->send();
@@ -382,7 +374,8 @@ if (!function_exists('hasRoute')) {
 if (!function_exists('redirect')) {
     function redirect($uri, $code = 302): void // Add return type hint
     {
-        header('Location: ' . $uri, true, $code);
+        // Use Response to ensure queued cookies are sent consistently.
+        \SwallowPHP\Framework\Http\Response::redirect((string) $uri, (int) $code)->send();
         exit();
     }
 }

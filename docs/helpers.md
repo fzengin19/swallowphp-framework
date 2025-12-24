@@ -433,6 +433,50 @@ Output:
 <input type="hidden" name="_method" value="DELETE">
 ```
 
+### `e($value)`
+
+Escape a value for safe HTML output (XSS protection).
+
+```php
+// In views - escape user content
+<p><?= e($user->name) ?></p>
+<div><?= e($comment->body) ?></div>
+
+// Handles various types
+e('Hello <script>alert("xss")</script>');  // Hello &lt;script&gt;...
+e(null);                                     // ''
+e(123);                                      // '123'
+e(['key' => 'value']);                       // JSON encoded for debugging
+```
+
+**Always use `e()` when outputting user-provided data in HTML context.**
+
+### `raw($value)`
+
+Mark content as safe (already escaped) to bypass automatic escaping.
+
+```php
+// For pre-escaped HTML content
+$safeHtml = '<strong>Bold text</strong>';
+<?= raw($safeHtml) ?>
+
+// Returns a RawValue object that renders as-is
+```
+
+> [!WARNING]
+> Only use `raw()` with content you've already sanitized. Never use with user input.
+
+### `attr($value)`
+
+Escape a value for use in HTML attributes.
+
+```php
+<input type="text" value="<?= attr($userInput) ?>">
+<div data-info="<?= attr($jsonData) ?>"></div>
+```
+
+This is equivalent to `e()` but semantically indicates attribute context.
+
 ---
 
 ## String & Text
@@ -647,6 +691,9 @@ return [
 | `csrf_field()` | CSRF hidden input |
 | `csrf_token()` | CSRF token value |
 | `method()` | HTTP method input |
+| `e()` | HTML escape (XSS protection) |
+| `raw()` | Mark content as safe |
+| `attr()` | Attribute escape |
 | `slug()` | URL-friendly string |
 | `shortenText()` | Truncate text |
 | `minifyHtml()` | Minify HTML |

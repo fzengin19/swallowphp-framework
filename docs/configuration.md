@@ -199,7 +199,7 @@ Main application configuration.
 | `env` | string | `'production'` | Environment (local, production, testing) |
 | `debug` | bool | `false` | Enable debug mode |
 | `url` | string | `'http://localhost'` | Application URL |
-| `path` | string | `''` | Subdirectory path (e.g., `/myapp`) |
+| `path` | string | `''` | Subdirectory path for installations not at domain root (e.g., `/myapp`). When set, all generated route URLs and file URLs will include this prefix. |
 | `timezone` | string | `'UTC'` | PHP timezone |
 | `locale` | string | `'en'` | Application locale |
 | `key` | string | `null` | **Required**. 32-character encryption key |

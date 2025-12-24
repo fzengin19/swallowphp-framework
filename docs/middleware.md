@@ -11,6 +11,7 @@ Middleware provides a convenient mechanism for filtering HTTP requests entering 
   - [CSRF Protection](#csrf-protection)
   - [Rate Limiting](#rate-limiting)
   - [Content Security Policy](#content-security-policy)
+  - [Validate Post Size](#validate-post-size)
 
 ---
 
@@ -399,3 +400,47 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 3. **Avoid database calls** - Keep middleware fast; defer heavy logic to controllers
 4. **Use early returns** - Terminate early if conditions aren't met
 5. **Log appropriately** - Use debug/info levels, not warning/error for normal flow
+
+---
+
+### Validate Post Size
+
+**Class:** `SwallowPHP\Framework\Http\Middleware\ValidatePostSize`
+
+This middleware validates that incoming POST requests don't exceed PHP's configured upload limits. It's applied globally in `App::run()`.
+
+#### How It Works
+
+1. Checks `CONTENT_LENGTH` header against `post_max_size` PHP setting
+2. For multipart uploads, also validates against `upload_max_filesize`
+3. If exceeded, throws `PayloadTooLargeException` (HTTP 413)
+
+#### Why This Matters
+
+Without this middleware, oversized uploads would fail silently or trigger misleading errors (like CSRF token mismatch). The middleware provides clear 413 responses instead.
+
+#### Configuration
+
+The limits are determined by your `php.ini` settings:
+
+```ini
+; Maximum size of POST data
+post_max_size = 8M
+
+; Maximum upload file size
+upload_max_filesize = 2M
+```
+
+#### Response
+
+When a request exceeds the limit:
+
+```
+HTTP/1.1 413 Payload Too Large
+Content-Type: application/json
+
+{
+    "error": "Payload Too Large",
+    "message": "The uploaded content exceeds the server limit of 8M."
+}
+```

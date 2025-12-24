@@ -4,7 +4,8 @@ A lightweight, modern PHP framework designed for simplicity and rapid developmen
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![PHP Version](https://img.shields.io/badge/PHP-8.0%2B-blue.svg)](https://php.net)
-[![Version](https://img.shields.io/badge/Version-1.0.0-orange.svg)](https://github.com/swallowphp/framework)
+[![Version](https://img.shields.io/badge/Version-1.1.0-orange.svg)](https://github.com/swallowphp/framework)
+[![Total Downloads](https://img.shields.io/packagist/dt/swallowphp/framework.svg)](https://packagist.org/packages/swallowphp/framework)
 
 ## Features
 

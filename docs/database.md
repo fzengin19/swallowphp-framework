@@ -277,6 +277,9 @@ $activeUsers = db()->table('users')
 
 Create models by extending the `Model` class:
 
+> [!IMPORTANT]
+> **Breaking Change (v1.1.0):** Models now **require** an explicit `$table` property. Automatic table name inference has been removed for clarity and predictability.
+
 ```php
 <?php
 
@@ -286,7 +289,7 @@ use SwallowPHP\Framework\Database\Model;
 
 class User extends Model
 {
-    // Table name (auto-detected as 'users' if not specified)
+    // Table name (REQUIRED - must be explicitly defined)
     protected static string $table = 'users';
     
     // Mass assignable attributes
@@ -314,7 +317,7 @@ class User extends Model
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `$table` | string | Database table name |
+| `$table` | string | **Required.** Database table name |
 | `$fillable` | array | Attributes that can be mass assigned |
 | `$guarded` | array | Attributes protected from mass assignment |
 | `$hidden` | array | Attributes hidden in `toArray()` |

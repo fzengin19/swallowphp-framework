@@ -7,6 +7,7 @@ use SwallowPHP\Framework\Exceptions\CsrfTokenMismatchException;
 use SwallowPHP\Framework\Exceptions\EnvPropertyValueException;
 use SwallowPHP\Framework\Exceptions\MethodNotAllowedException;
 use SwallowPHP\Framework\Exceptions\MethodNotFoundException;
+use SwallowPHP\Framework\Exceptions\PayloadTooLargeException;
 use SwallowPHP\Framework\Exceptions\RateLimitExceededException;
 use SwallowPHP\Framework\Exceptions\RouteNotFoundException;
 use SwallowPHP\Framework\Exceptions\ViewNotFoundException;
@@ -86,7 +87,11 @@ class ExceptionHandler
             }
         } else {
             // Use standard status text for client/server errors in production
-             $responseBody['message'] = self::STATUS_TEXTS[$statusCode] ?? ($statusCode >= 500 ? 'Internal Server Error' : 'Error');
+            if ($exception instanceof PayloadTooLargeException) {
+                $responseBody['message'] = 'Uploaded data is too large. Please reduce the file size and try again.';
+            } else {
+                $responseBody['message'] = self::STATUS_TEXTS[$statusCode] ?? ($statusCode >= 500 ? 'Internal Server Error' : 'Error');
+            }
         }
 
 
@@ -240,6 +245,9 @@ class ExceptionHandler
         }
         if ($exception instanceof CsrfTokenMismatchException) {
             return 419;
+        }
+        if ($exception instanceof PayloadTooLargeException) {
+            return 413;
         }
         // Other specific exceptions can be added here
 

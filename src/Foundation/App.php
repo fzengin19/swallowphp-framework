@@ -8,6 +8,7 @@ use SwallowPHP\Framework\Contracts\CacheInterface;
 use SwallowPHP\Framework\Cache\CacheManager;
 use SwallowPHP\Framework\Database\Database;
 use SwallowPHP\Framework\Http\Middleware\VerifyCsrfToken;
+use SwallowPHP\Framework\Http\Middleware\ValidatePostSize;
 use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Routing\Router;
 use Psr\Log\LoggerInterface; // Import PSR-3 Logger Interface
@@ -325,22 +326,25 @@ class App
             ob_start();
 
             // Apply global middleware
+            $postSizeMiddleware = new ValidatePostSize();
             $csrfMiddleware = $container->get(VerifyCsrfToken::class);
 
-            $response = $csrfMiddleware->handle($request, function ($request) use ($app, $logger) {
-                $routeResponse = $app->handleRequest($request);
+            $response = $postSizeMiddleware->handle($request, function ($request) use ($csrfMiddleware, $app, $logger) {
+                return $csrfMiddleware->handle($request, function ($request) use ($app, $logger) {
+                    $routeResponse = $app->handleRequest($request);
 
-                if (!$routeResponse instanceof \SwallowPHP\Framework\Http\Response) {
-                    if (is_array($routeResponse) || is_object($routeResponse)) {
-                        return \SwallowPHP\Framework\Http\Response::json($routeResponse);
-                    } elseif (is_scalar($routeResponse) || is_null($routeResponse) || (is_object($routeResponse) && method_exists($routeResponse, '__toString'))) {
-                        return \SwallowPHP\Framework\Http\Response::html((string) $routeResponse);
-                    } else {
-                        $logger->error("Route action returned an unconvertible type: " . gettype($routeResponse));
-                        return \SwallowPHP\Framework\Http\Response::html('Internal Server Error: Invalid response type.', 500);
+                    if (!$routeResponse instanceof \SwallowPHP\Framework\Http\Response) {
+                        if (is_array($routeResponse) || is_object($routeResponse)) {
+                            return \SwallowPHP\Framework\Http\Response::json($routeResponse);
+                        } elseif (is_scalar($routeResponse) || is_null($routeResponse) || (is_object($routeResponse) && method_exists($routeResponse, '__toString'))) {
+                            return \SwallowPHP\Framework\Http\Response::html((string) $routeResponse);
+                        } else {
+                            $logger->error("Route action returned an unconvertible type: " . gettype($routeResponse));
+                            return \SwallowPHP\Framework\Http\Response::html('Internal Server Error: Invalid response type.', 500);
+                        }
                     }
-                }
-                return $routeResponse;
+                    return $routeResponse;
+                });
             });
 
             // Send the final response

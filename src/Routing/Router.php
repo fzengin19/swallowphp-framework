@@ -156,7 +156,13 @@ class Router
             // Prepare regex pattern from route URI
             // Escape regex characters, then replace {param} with named capture groups
             $pattern = preg_quote($route->getUri(), '/');
-            $pattern = preg_replace('/\\\{([a-zA-Z0-9_]+)\\\}/', '(?P<$1>[^\/]+)', $pattern);
+            
+            // Wildcard: {param+} → captures everything INCLUDING slashes (for nested paths)
+            $pattern = preg_replace('/\\\\{([a-zA-Z0-9_]+)\\\\\\+\\\\}/', '(?P<$1>.+)', $pattern);
+            
+            // Normal: {param} → captures everything EXCEPT slashes (single segment)
+            $pattern = preg_replace('/\\\\{([a-zA-Z0-9_]+)\\\\}/', '(?P<$1>[^\\/]+)', $pattern);
+            
             $regex = '/^' . $pattern . '$/';
 
             if (preg_match($regex, $processedUri, $matches)) {

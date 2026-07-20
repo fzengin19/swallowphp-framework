@@ -12,6 +12,9 @@ class Cookie
     /** @var array Cookies queued to be sent with the response. */
     protected static array $queuedCookies = [];
 
+    /** @var string|null Memoized raw 32-byte app key, decoded once per request. */
+    private static ?string $decodedKey = null;
+
     /** Get logger instance helper */
     private static function logger(): ?LoggerInterface
     {
@@ -317,6 +320,10 @@ class Cookie
      /** Gets and decodes the application key from the configuration. */
      private static function getDecodedAppKey(): string|false
      {
+         // Memoize the successfully decoded key; it doesn't change within a request.
+         if (self::$decodedKey !== null) {
+             return self::$decodedKey;
+         }
          $logger = self::logger(); // Get logger for this method too
          $key = config('app.key');
          if (empty($key) || !is_string($key)) {
@@ -341,6 +348,6 @@ class Cookie
               return false;
          }
 
-         return $key;
+         return self::$decodedKey = $key;
      }
 }

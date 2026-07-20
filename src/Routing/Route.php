@@ -21,6 +21,7 @@ class Route
   private $action;
   private $rateLimit = null;
   private $ttl = null;
+  private ?string $compiledRegex = null;
 
 
   /**
@@ -247,6 +248,21 @@ class Route
   public function getUri()
   {
     return $this->uri;
+  }
+
+  /**
+   * Compile (once) and return the anchored regex used to match this route's URI.
+   * {param+} captures across slashes (nested paths); {param} captures a single segment.
+   */
+  public function getCompiledRegex(): string
+  {
+    if ($this->compiledRegex === null) {
+      $pattern = preg_quote($this->uri, '/');
+      $pattern = preg_replace('/\\\\{([a-zA-Z0-9_]+)\\\\\\+\\\\}/', '(?P<$1>.+)', $pattern);
+      $pattern = preg_replace('/\\\\{([a-zA-Z0-9_]+)\\\\}/', '(?P<$1>[^\\/]+)', $pattern);
+      $this->compiledRegex = '/^' . $pattern . '$/';
+    }
+    return $this->compiledRegex;
   }
 
   /**

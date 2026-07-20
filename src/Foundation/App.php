@@ -183,8 +183,10 @@ class App
                 return Request::createFromGlobals();
             });
 
-            // Database Service (Shared Singleton) - Defined AFTER Config and Logger
-            self::$container->addShared(Database::class, function () {
+            // Database Service (factory: fresh builder per resolve so concurrent query
+            // builders never share/reset each other's state; the underlying PDO
+            // connection is still shared via Database::$connections).
+            self::$container->add(Database::class, function () {
                 $config = self::container()->get(Config::class);
                 $connectionName = $config->get('database.default', 'mysql');
                 $connectionConfig = $config->get("database.connections.{$connectionName}");

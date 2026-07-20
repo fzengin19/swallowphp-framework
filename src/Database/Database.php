@@ -18,6 +18,13 @@ use Closure; // Import Closure for type hinting
  */
 class Database
 {
+    /**
+     * Shared PDO connections keyed by DSN+user, reused across builder instances so
+     * that many independent query builders share a single physical connection.
+     * @var array<string, PDO>
+     */
+    protected static array $connections = [];
+
     /** @var PDO|null PDO connection instance. */
     protected ?PDO $connection = null;
 
@@ -53,9 +60,6 @@ class Database
 
     /** @var array Array of or where conditions. */
     protected array $orWhere = [];
-
-    /** @var array Array of raw where conditions with bindings. */
-    protected array $whereRawBindings = [];
 
     /** @var array The database connection configuration. */
     protected array $config = [];
@@ -132,6 +136,16 @@ class Database
                 $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
             }
 
+            // Reuse an already-established connection for the same DSN+user. This lets
+            // Model::query() hand out a fresh builder per call (independent state, no
+            // cross-builder corruption) while still using one physical connection.
+            $cacheKey = $dsn . '|' . (string) $username;
+            if (isset(self::$connections[$cacheKey])) {
+                $this->connection = self::$connections[$cacheKey];
+                $this->connectedSuccessfully = true;
+                return;
+            }
+
             $defaultOptions = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -142,6 +156,7 @@ class Database
             // Use LoggedPDO to enable global query logging at PDO level
             $this->connection = new \SwallowPHP\Framework\Database\Instrumentation\LoggedPDO($dsn, $username, $password, $pdoOptions);
             $this->connectedSuccessfully = true;
+            self::$connections[$cacheKey] = $this->connection;
 
             if ($driver === 'sqlite') {
                 try {
@@ -192,7 +207,6 @@ class Database
         $this->limit = null;
         $this->offset = null;
         $this->orWhere = [];
-        $this->whereRawBindings = [];
         $this->modelClass = null;
     }
 
@@ -285,8 +299,6 @@ class Database
     public function whereRaw(string $rawCondition, array $bindings = [], string $boolean = 'AND'): self
     {
         $this->where[] = ['type' => 'Raw', 'sql' => $rawCondition, 'bindings' => $bindings, 'boolean' => $boolean];
-        // Keep whereRawBindings for now for compatibility with getBindValuesForWhere, but ideally refactor later
-        $this->whereRawBindings = array_merge($this->whereRawBindings, $bindings);
         return $this;
     }
     /** Add an order by clause. */
@@ -739,17 +751,7 @@ class Database
                     break;
             }
         }
-        // Include bindings from the old whereRawBindings property for backward compatibility,
-        // though ideally, 'Raw' type should handle its own bindings.
-        // $bindings = array_merge($bindings, $this->whereRawBindings); // Re-evaluate if needed
-
         return $bindings;
-    }
-
-    /** Get bind values including limit/offset (use carefully). */
-    protected function getBindValues(): array
-    {
-        return $this->getBindValuesForWhere();
     }
     /** Whitelist of SQL comparison operators allowed in where clauses. */
     protected const VALID_OPERATORS = [

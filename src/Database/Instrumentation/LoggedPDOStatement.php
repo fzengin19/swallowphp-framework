@@ -28,16 +28,26 @@ class LoggedPDOStatement extends PDOStatement
         $this->driverName = $driverName;
     }
 
+    /** Whether bindings need to be captured for logging. */
+    private function shouldCaptureBindings(): bool
+    {
+        return $this->logQueries && $this->logBindings && $this->logger !== null;
+    }
+
     public function bindValue($param, $value, $type = PDO::PARAM_STR): bool
     {
-        $this->bindings[$param] = $value;
+        if ($this->shouldCaptureBindings()) {
+            $this->bindings[$param] = $value;
+        }
         return parent::bindValue($param, $value, $type);
     }
 
     public function bindParam($param, &$var, $type = PDO::PARAM_STR, $maxLength = null, $driverOptions = null): bool
     {
         // store reference; value will be read at execute time
-        $this->paramRefs[$param] = &$var;
+        if ($this->shouldCaptureBindings()) {
+            $this->paramRefs[$param] = &$var;
+        }
         return parent::bindParam($param, $var, $type, $maxLength ?? 0, $driverOptions ?? null);
     }
 
@@ -57,7 +67,7 @@ class LoggedPDOStatement extends PDOStatement
         $t0 = hrtime(true);
         $ok = false;
         try {
-            if (is_array($params)) {
+            if (is_array($params) && $this->shouldCaptureBindings()) {
                 foreach ($params as $k => $v) { $this->bindings[$k] = $v; }
             }
             $ok = parent::execute($params ?? null);

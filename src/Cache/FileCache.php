@@ -392,13 +392,23 @@ class FileCache implements CacheInterface
     /** Saves the current cache state to the file. */
     private function saveCache(): bool
     {
-        $this->pruneCacheIfNeeded();
-        $tempFile = $this->cacheFile . '.' . uniqid(mt_rand(), true) . '.tmp';
-        $json = json_encode($this->cache, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+        $json = json_encode($this->cache, $flags);
         if ($json === false) {
             error_log("Failed to encode cache data to JSON: " . json_last_error_msg());
             return false;
         }
+        // Only pay for pruning (sort + repeated re-encode) when we're actually over the
+        // cap. The common under-limit path now encodes exactly once instead of twice.
+        if (strlen($json) > $this->maxCacheSize) {
+            $this->pruneCacheIfNeeded();
+            $json = json_encode($this->cache, $flags);
+            if ($json === false) {
+                error_log("Failed to encode cache data to JSON: " . json_last_error_msg());
+                return false;
+            }
+        }
+        $tempFile = $this->cacheFile . '.' . uniqid(mt_rand(), true) . '.tmp';
         if (@file_put_contents($tempFile, $json, LOCK_EX) === false) {
             error_log("Failed to write to temporary cache file: {$tempFile}");
             @unlink($tempFile);

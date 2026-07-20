@@ -400,39 +400,38 @@ class Request
         // or in contexts without a Request object.
         $server = $_SERVER;
 
-        // Order matters: Check trusted proxy headers first if configured,
-        // then common headers, finally REMOTE_ADDR.
-        // For simplicity, using a common order without trusted proxy config:
-        $ipHeaders = [
-            'HTTP_CLIENT_IP',
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_FORWARDED',
-            'HTTP_FORWARDED_FOR',
-            'HTTP_FORWARDED',
-            'REMOTE_ADDR'
-        ];
+        // The direct peer. This is the ONLY value an attacker cannot forge, so it is
+        // the secure default. Proxy headers (X-Forwarded-For, Client-IP, ...) are fully
+        // client-controlled and must NOT be trusted unless the request actually arrives
+        // from a proxy we operate.
+        $remoteAddr = (isset($server['REMOTE_ADDR']) && filter_var($server['REMOTE_ADDR'], FILTER_VALIDATE_IP))
+            ? $server['REMOTE_ADDR']
+            : null;
 
-        foreach ($ipHeaders as $header) {
-            if (!empty($server[$header])) {
-                // If X-Forwarded-For, take the first IP in the list
-                $ip = $server[$header];
-                if ($header === 'HTTP_X_FORWARDED_FOR') {
-                    $parts = explode(',', $ip);
-                    $ip = trim($parts[0]);
-                }
+        // Trust forwarded headers only when the direct peer is a configured trusted proxy.
+        // Configure via config('app.trusted_proxies') = ['10.0.0.1', ...] or ['*'] to trust all.
+        $trustedProxies = [];
+        try {
+            $trustedProxies = (array) config('app.trusted_proxies', []);
+        } catch (\Throwable $e) {
+            // config()/container not available yet — fall back to REMOTE_ADDR only.
+        }
 
-                // Basic IP validation
-                if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                    // Optionally filter private/reserved ranges, but REMOTE_ADDR might be private
-                    // if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                    //     return $ip; // Found valid public IP from proxy header
-                    // } elseif ($header === 'REMOTE_ADDR') {
-                    //     return $ip; // Return REMOTE_ADDR even if private
-                    // }
-                    return $ip; // Return first valid IP found
+        $peerIsTrusted = $trustedProxies && ($trustedProxies === ['*']
+            || ($remoteAddr !== null && in_array($remoteAddr, $trustedProxies, true)));
+
+        if ($peerIsTrusted) {
+            foreach (['HTTP_X_FORWARDED_FOR', 'HTTP_CLIENT_IP', 'HTTP_X_FORWARDED', 'HTTP_FORWARDED_FOR'] as $header) {
+                if (!empty($server[$header])) {
+                    // X-Forwarded-For is a comma-separated list; the left-most is the client.
+                    $ip = trim(explode(',', $server[$header])[0]);
+                    if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                        return $ip;
+                    }
                 }
             }
         }
-        return null; // Could not determine IP
+
+        return $remoteAddr; // null if REMOTE_ADDR was missing/invalid
     }
 }

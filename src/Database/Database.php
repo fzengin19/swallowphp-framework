@@ -430,8 +430,13 @@ class Database
     /** Get the first result from the query. */
     public function first()
     {
+        $originalLimit = $this->limit;
         $this->limit(1);
-        $results = $this->get();
+        try {
+            $results = $this->get();
+        } finally {
+            $this->limit = $originalLimit; // Don't leave the builder permanently capped at 1.
+        }
         return $results[0] ?? null;
     }
 

@@ -307,11 +307,11 @@ class App
             $request = $container->get(Request::class);
             $sessionManager = $container->get(SessionManager::class);
 
-            // Start session and Age flash data
+            // Start session. start() already ages flash data exactly once; calling
+            // ageFlashData() again here would age it twice and wipe the current
+            // request's flash payload before controllers can read it.
             $sessionStarted = $sessionManager->start();
-            if ($sessionStarted) {
-                $sessionManager->ageFlashData();
-            } else {
+            if (!$sessionStarted) {
                 $logger->warning('Session could not be started in App::run(): Headers may already be sent.');
             }
 

@@ -2,6 +2,7 @@
 
 use SwallowPHP\Framework\Database\Database;
 use SwallowPHP\Framework\Database\Model;
+use SwallowPHP\Framework\Http\Request;
 
 /**
  * Guards the security/compat fixes: SQL identifier escaping, operator
@@ -51,4 +52,16 @@ it('supports isset/empty/null-coalescing on model attributes', function () {
 
     unset($u->name);
     expect(isset($u->name))->toBeFalse();
+});
+
+it('ignores spoofed forwarded-for headers when no trusted proxy is configured', function () {
+    $saved = $_SERVER;
+    $_SERVER['REMOTE_ADDR'] = '203.0.113.9';
+    $_SERVER['HTTP_X_FORWARDED_FOR'] = '1.2.3.4';   // attacker-supplied
+    $_SERVER['HTTP_CLIENT_IP'] = '5.6.7.8';         // attacker-supplied
+
+    // With no app.trusted_proxies set, the forged headers must be ignored.
+    expect(Request::getClientIp())->toBe('203.0.113.9');
+
+    $_SERVER = $saved;
 });

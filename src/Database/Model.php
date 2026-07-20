@@ -167,7 +167,8 @@ class Model
      */
     public static function create(array $data): self|false
     {
-        static::fireEvent('creating', $data);
+        // Note: the 'creating' event is fired by save() for every insert (including
+        // this path), so we don't fire it here to avoid a double dispatch.
         $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
         $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
 

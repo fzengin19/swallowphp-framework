@@ -295,6 +295,18 @@ class Database
         $this->where[] = ['type' => 'Between', 'column' => $column, 'values' => [$start, $end], 'boolean' => $boolean];
         return $this;
     }
+    /** Add a `column IS NULL` condition. */
+    public function whereNull(string $column, string $boolean = 'AND'): self
+    {
+        $this->where[] = ['type' => 'Null', 'column' => $column, 'boolean' => $boolean];
+        return $this;
+    }
+    /** Add a `column IS NOT NULL` condition. */
+    public function whereNotNull(string $column, string $boolean = 'AND'): self
+    {
+        $this->where[] = ['type' => 'NotNull', 'column' => $column, 'boolean' => $boolean];
+        return $this;
+    }
     /** Add a raw where condition. */
     public function whereRaw(string $rawCondition, array $bindings = [], string $boolean = 'AND'): self
     {
@@ -352,6 +364,12 @@ class Database
                     break;
                 case 'Between':
                     $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " BETWEEN ? AND ?";
+                    break;
+                case 'Null':
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " IS NULL";
+                    break;
+                case 'NotNull':
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " IS NOT NULL";
                     break;
                 case 'Raw':
                     $sqlParts[] = "{$boolean} ({$condition['sql']})";

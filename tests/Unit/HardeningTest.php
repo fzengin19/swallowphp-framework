@@ -29,6 +29,19 @@ it('quotes identifiers and escapes embedded backticks', function () {
     expect($wrap->invoke($db, 'ev`il'))->toBe('`ev``il`');
 });
 
+it('builds IS NULL / IS NOT NULL clauses with no bindings', function () {
+    $db = db_instance();
+    $db->table('users')->whereNull('deleted_at')->whereNotNull('email');
+
+    $build = db_method('buildWhereClause');
+    $binds = db_method('getBindValuesForWhere');
+    $sql = $build->invoke($db);
+
+    expect($sql)->toContain('`deleted_at` IS NULL');
+    expect($sql)->toContain('`email` IS NOT NULL');
+    expect($binds->invoke($db))->toBe([]); // null checks bind nothing
+});
+
 it('accepts whitelisted operators and rejects injection attempts', function () {
     $db = db_instance();
     $op = db_method('normalizeOperator');

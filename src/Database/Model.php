@@ -235,6 +235,16 @@ class Model
         return static::query()->whereBetween($column, $start, $end);
     }
 
+    public static function whereNull(string $column): Database
+    {
+        return static::query()->whereNull($column);
+    }
+
+    public static function whereNotNull(string $column): Database
+    {
+        return static::query()->whereNotNull($column);
+    }
+
     public static function orderBy(string $column, string $direction = 'ASC'): Database
     {
         return static::query()->orderBy($column, $direction);

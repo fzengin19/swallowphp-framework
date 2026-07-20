@@ -188,6 +188,13 @@ class Auth
             }
         } else {
             // --- Failed Login ---
+            // Equalise response time so a missing user cannot be distinguished from a
+            // wrong password (mitigates user enumeration via timing). The hash below is
+            // a fixed, well-formed bcrypt digest; the result is intentionally discarded.
+            if (!($user instanceof AuthenticatableModel)) {
+                password_verify($password, '$2y$12$5HxC/nsKLuNSBkFXgqLbCuYXc18X6zgFSu6uLWM81RloqYoxPg1Iq');
+            }
+
             $logContext = ['email' => $email, 'ip' => $rawIp];
             self::logger()->warning("Login attempt failed: Invalid credentials.", $logContext);
 

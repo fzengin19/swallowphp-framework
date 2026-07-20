@@ -30,6 +30,7 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
+        "php": ">=8.2",
         "phpmailer/phpmailer": "^6.9.1",
         "php-debugbar/php-debugbar": "^1.23",
         "psr/simple-cache": "^3.0",

@@ -50,7 +50,7 @@ class Model
      * @param string|null $table Table name
      * @param array $data Initial data
      */
-    public function __construct(string $table = null, array $data = [])
+    public function __construct(?string $table = null, array $data = [])
     {
         if (!empty($data)) {
             $this->fill($data);
@@ -121,6 +121,31 @@ class Model
         } elseif (in_array($key, $this->guarded)) {
             throw new InvalidArgumentException("Attribute '{$key}' is protected and cannot be set directly.");
         }
+    }
+
+    /**
+     * Determine if an attribute or relation is set (and not null).
+     *
+     * Without this, isset($model->x), empty($model->x) and $model->x ?? ...
+     * always behave as if the attribute were unset, because PHP routes them
+     * through __isset for overloaded properties.
+     *
+     * @param string $key Attribute or relation name.
+     * @return bool
+     */
+    public function __isset(string $key): bool
+    {
+        return $this->__get($key) !== null;
+    }
+
+    /**
+     * Unset an attribute or cached relation.
+     *
+     * @param string $key Attribute or relation name.
+     */
+    public function __unset(string $key): void
+    {
+        unset($this->attributes[$key], $this->relations[$key]);
     }
 
     /**

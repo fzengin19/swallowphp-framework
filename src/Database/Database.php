@@ -328,18 +328,18 @@ class Database
 
             switch ($type) {
                 case 'Basic':
-                    $sqlParts[] = "{$boolean} `{$condition['column']}` {$condition['operator']} ?";
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " " . $this->normalizeOperator($condition['operator']) . " ?";
                     break;
                 case 'In':
                     if (!empty($condition['values'])) {
                         $placeholders = implode(', ', array_fill(0, count($condition['values']), '?'));
-                        $sqlParts[] = "{$boolean} `{$condition['column']}` IN ({$placeholders})";
+                        $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " IN ({$placeholders})";
                     } else {
                         // Handle empty IN array - this case is handled in whereIn by adding a raw '1=0'
                     }
                     break;
                 case 'Between':
-                    $sqlParts[] = "{$boolean} `{$condition['column']}` BETWEEN ? AND ?";
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " BETWEEN ? AND ?";
                     break;
                 case 'Raw':
                     $sqlParts[] = "{$boolean} ({$condition['sql']})";
@@ -384,7 +384,7 @@ class Database
         $sql = "SELECT {$this->select} FROM `{$this->table}` ";
         $sql .= $this->buildWhereClause();
         if (!empty($this->orderBy)) {
-            $orderByColumns = array_map(fn($order) => "`{$order[0]}` {$order[1]}", $this->orderBy);
+            $orderByColumns = array_map(fn($order) => $this->wrapColumn($order[0]) . " {$order[1]}", $this->orderBy);
             $sql .= ' ORDER BY ' . implode(', ', $orderByColumns);
         }
         if ($this->limit !== null) {
@@ -441,7 +441,7 @@ class Database
         $this->initialize();
         if (empty($data))
             return false;
-        $columns = implode(', ', array_map(fn($col) => "`$col`", array_keys($data)));
+        $columns = implode(', ', array_map(fn($col) => $this->wrapColumn($col), array_keys($data)));
         $placeholders = implode(', ', array_fill(0, count($data), '?'));
         $sql = "INSERT INTO `{$this->table}` ($columns) VALUES ($placeholders)";
         try {
@@ -468,7 +468,7 @@ class Database
         $this->initialize();
         if (empty($data))
             return 0;
-        $sets = array_map(fn($column) => "`$column` = ?", array_keys($data));
+        $sets = array_map(fn($column) => $this->wrapColumn($column) . " = ?", array_keys($data));
         $sql = "UPDATE `{$this->table}` SET " . implode(', ', $sets);
         $sql .= ' ' . $this->buildWhereClause();
         try {
@@ -746,6 +746,36 @@ class Database
     {
         return $this->getBindValuesForWhere();
     }
+    /** Whitelist of SQL comparison operators allowed in where clauses. */
+    protected const VALID_OPERATORS = [
+        '=', '<', '>', '<=', '>=', '<>', '!=', '<=>',
+        'like', 'not like', 'ilike', 'not ilike',
+        'rlike', 'not rlike', 'regexp', 'not regexp',
+        'is', 'is not',
+    ];
+
+    /**
+     * Quote a (possibly qualified) identifier and escape embedded backticks,
+     * so column/table names can never break out of the quoting.
+     */
+    protected function wrapColumn(string $column): string
+    {
+        return implode('.', array_map(
+            fn($part) => '`' . str_replace('`', '``', trim($part)) . '`',
+            explode('.', $column)
+        ));
+    }
+
+    /** Validate an operator against the whitelist, returning it for use in SQL. */
+    protected function normalizeOperator(string $operator): string
+    {
+        $op = strtolower(trim($operator));
+        if (!in_array($op, self::VALID_OPERATORS, true)) {
+            throw new InvalidArgumentException("Invalid SQL operator: {$operator}");
+        }
+        return $operator;
+    }
+
     /** Get PDO param type. */
     protected function getPDOParamType($value): int
     {

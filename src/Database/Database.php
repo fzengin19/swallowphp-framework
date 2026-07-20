@@ -18,6 +18,13 @@ use Closure; // Import Closure for type hinting
  */
 class Database
 {
+    /**
+     * Shared PDO connections keyed by DSN+user, reused across builder instances so
+     * that many independent query builders share a single physical connection.
+     * @var array<string, PDO>
+     */
+    protected static array $connections = [];
+
     /** @var PDO|null PDO connection instance. */
     protected ?PDO $connection = null;
 
@@ -53,9 +60,6 @@ class Database
 
     /** @var array Array of or where conditions. */
     protected array $orWhere = [];
-
-    /** @var array Array of raw where conditions with bindings. */
-    protected array $whereRawBindings = [];
 
     /** @var array The database connection configuration. */
     protected array $config = [];
@@ -132,6 +136,16 @@ class Database
                 $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=$charset";
             }
 
+            // Reuse an already-established connection for the same DSN+user. This lets
+            // Model::query() hand out a fresh builder per call (independent state, no
+            // cross-builder corruption) while still using one physical connection.
+            $cacheKey = $dsn . '|' . (string) $username;
+            if (isset(self::$connections[$cacheKey])) {
+                $this->connection = self::$connections[$cacheKey];
+                $this->connectedSuccessfully = true;
+                return;
+            }
+
             $defaultOptions = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -142,6 +156,7 @@ class Database
             // Use LoggedPDO to enable global query logging at PDO level
             $this->connection = new \SwallowPHP\Framework\Database\Instrumentation\LoggedPDO($dsn, $username, $password, $pdoOptions);
             $this->connectedSuccessfully = true;
+            self::$connections[$cacheKey] = $this->connection;
 
             if ($driver === 'sqlite') {
                 try {
@@ -192,7 +207,6 @@ class Database
         $this->limit = null;
         $this->offset = null;
         $this->orWhere = [];
-        $this->whereRawBindings = [];
         $this->modelClass = null;
     }
 
@@ -281,12 +295,22 @@ class Database
         $this->where[] = ['type' => 'Between', 'column' => $column, 'values' => [$start, $end], 'boolean' => $boolean];
         return $this;
     }
+    /** Add a `column IS NULL` condition. */
+    public function whereNull(string $column, string $boolean = 'AND'): self
+    {
+        $this->where[] = ['type' => 'Null', 'column' => $column, 'boolean' => $boolean];
+        return $this;
+    }
+    /** Add a `column IS NOT NULL` condition. */
+    public function whereNotNull(string $column, string $boolean = 'AND'): self
+    {
+        $this->where[] = ['type' => 'NotNull', 'column' => $column, 'boolean' => $boolean];
+        return $this;
+    }
     /** Add a raw where condition. */
     public function whereRaw(string $rawCondition, array $bindings = [], string $boolean = 'AND'): self
     {
         $this->where[] = ['type' => 'Raw', 'sql' => $rawCondition, 'bindings' => $bindings, 'boolean' => $boolean];
-        // Keep whereRawBindings for now for compatibility with getBindValuesForWhere, but ideally refactor later
-        $this->whereRawBindings = array_merge($this->whereRawBindings, $bindings);
         return $this;
     }
     /** Add an order by clause. */
@@ -328,18 +352,24 @@ class Database
 
             switch ($type) {
                 case 'Basic':
-                    $sqlParts[] = "{$boolean} `{$condition['column']}` {$condition['operator']} ?";
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " " . $this->normalizeOperator($condition['operator']) . " ?";
                     break;
                 case 'In':
                     if (!empty($condition['values'])) {
                         $placeholders = implode(', ', array_fill(0, count($condition['values']), '?'));
-                        $sqlParts[] = "{$boolean} `{$condition['column']}` IN ({$placeholders})";
+                        $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " IN ({$placeholders})";
                     } else {
                         // Handle empty IN array - this case is handled in whereIn by adding a raw '1=0'
                     }
                     break;
                 case 'Between':
-                    $sqlParts[] = "{$boolean} `{$condition['column']}` BETWEEN ? AND ?";
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " BETWEEN ? AND ?";
+                    break;
+                case 'Null':
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " IS NULL";
+                    break;
+                case 'NotNull':
+                    $sqlParts[] = "{$boolean} " . $this->wrapColumn($condition['column']) . " IS NOT NULL";
                     break;
                 case 'Raw':
                     $sqlParts[] = "{$boolean} ({$condition['sql']})";
@@ -384,7 +414,7 @@ class Database
         $sql = "SELECT {$this->select} FROM `{$this->table}` ";
         $sql .= $this->buildWhereClause();
         if (!empty($this->orderBy)) {
-            $orderByColumns = array_map(fn($order) => "`{$order[0]}` {$order[1]}", $this->orderBy);
+            $orderByColumns = array_map(fn($order) => $this->wrapColumn($order[0]) . " {$order[1]}", $this->orderBy);
             $sql .= ' ORDER BY ' . implode(', ', $orderByColumns);
         }
         if ($this->limit !== null) {
@@ -430,8 +460,13 @@ class Database
     /** Get the first result from the query. */
     public function first()
     {
+        $originalLimit = $this->limit;
         $this->limit(1);
-        $results = $this->get();
+        try {
+            $results = $this->get();
+        } finally {
+            $this->limit = $originalLimit; // Don't leave the builder permanently capped at 1.
+        }
         return $results[0] ?? null;
     }
 
@@ -441,7 +476,7 @@ class Database
         $this->initialize();
         if (empty($data))
             return false;
-        $columns = implode(', ', array_map(fn($col) => "`$col`", array_keys($data)));
+        $columns = implode(', ', array_map(fn($col) => $this->wrapColumn($col), array_keys($data)));
         $placeholders = implode(', ', array_fill(0, count($data), '?'));
         $sql = "INSERT INTO `{$this->table}` ($columns) VALUES ($placeholders)";
         try {
@@ -468,7 +503,7 @@ class Database
         $this->initialize();
         if (empty($data))
             return 0;
-        $sets = array_map(fn($column) => "`$column` = ?", array_keys($data));
+        $sets = array_map(fn($column) => $this->wrapColumn($column) . " = ?", array_keys($data));
         $sql = "UPDATE `{$this->table}` SET " . implode(', ', $sets);
         $sql .= ' ' . $this->buildWhereClause();
         try {
@@ -734,18 +769,38 @@ class Database
                     break;
             }
         }
-        // Include bindings from the old whereRawBindings property for backward compatibility,
-        // though ideally, 'Raw' type should handle its own bindings.
-        // $bindings = array_merge($bindings, $this->whereRawBindings); // Re-evaluate if needed
-
         return $bindings;
     }
+    /** Whitelist of SQL comparison operators allowed in where clauses. */
+    protected const VALID_OPERATORS = [
+        '=', '<', '>', '<=', '>=', '<>', '!=', '<=>',
+        'like', 'not like', 'ilike', 'not ilike',
+        'rlike', 'not rlike', 'regexp', 'not regexp',
+        'is', 'is not',
+    ];
 
-    /** Get bind values including limit/offset (use carefully). */
-    protected function getBindValues(): array
+    /**
+     * Quote a (possibly qualified) identifier and escape embedded backticks,
+     * so column/table names can never break out of the quoting.
+     */
+    protected function wrapColumn(string $column): string
     {
-        return $this->getBindValuesForWhere();
+        return implode('.', array_map(
+            fn($part) => '`' . str_replace('`', '``', trim($part)) . '`',
+            explode('.', $column)
+        ));
     }
+
+    /** Validate an operator against the whitelist, returning it for use in SQL. */
+    protected function normalizeOperator(string $operator): string
+    {
+        $op = strtolower(trim($operator));
+        if (!in_array($op, self::VALID_OPERATORS, true)) {
+            throw new InvalidArgumentException("Invalid SQL operator: {$operator}");
+        }
+        return $operator;
+    }
+
     /** Get PDO param type. */
     protected function getPDOParamType($value): int
     {

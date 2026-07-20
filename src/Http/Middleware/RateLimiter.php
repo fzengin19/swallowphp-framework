@@ -40,25 +40,32 @@ class RateLimiter
 
         $cache = App::container()->get(CacheInterface::class); // Get cache instance
 
+        $now = time();
         $cacheData = $cache->get($cacheKey);
 
-        $requestCount = 1;
-        $lastRequestTime = time(); // Default for new entry
-
-        if (is_array($cacheData) && isset($cacheData['count'], $cacheData['last_request_time'])) {
-            // Entry exists, increment count
+        // Fixed window: the window starts on the first request and lasts $cacheTTL
+        // seconds. Crucially, the TTL is anchored to window_start and is NOT extended
+        // on every hit — otherwise a steady stream of requests would keep the window
+        // (and the lockout) alive forever.
+        if (
+            is_array($cacheData)
+            && isset($cacheData['count'], $cacheData['window_start'])
+            && ($now - $cacheData['window_start']) < $cacheTTL
+        ) {
             $requestCount = $cacheData['count'] + 1;
-            $lastRequestTime = $cacheData['last_request_time']; // Keep track of last request for Retry-After
+            $windowStart = $cacheData['window_start'];
+        } else {
+            $requestCount = 1;
+            $windowStart = $now;
         }
 
-        // Prepare data to be stored/updated in cache
-        $newCacheData = [
-            'count' => $requestCount,
-            'last_request_time' => time() // Update last request time
-        ];
-
-        // Save updated data to cache with TTL
-        $cache->set($cacheKey, $newCacheData, $cacheTTL);
+        // Store with the REMAINING window lifetime so the entry expires when the
+        // window ends, not $cacheTTL seconds after the latest request.
+        // ponytail: get-then-set is not atomic, so concurrent requests can under-count
+        // near the limit boundary. Upgrade path: an atomic increment() on CacheInterface
+        // (SQLite: UPDATE ... SET count=count+1; File: flock) if precise limiting matters.
+        $remainingTtl = max(1, $cacheTTL - ($now - $windowStart));
+        $cache->set($cacheKey, ['count' => $requestCount, 'window_start' => $windowStart], $remainingTtl);
 
         // Check if limit is exceeded
         $remainingRequests = max(0, $rateLimit - $requestCount); // Calculate remaining, ensure non-negative
@@ -69,9 +76,8 @@ class RateLimiter
              header("X-RateLimit-Limit: {$rateLimit}");
              header("X-RateLimit-Remaining: {$remainingRequests}");
              if ($limitExceeded) {
-                  // Calculate Retry-After based on when the cache entry expires
-                  $retryAfter = max(0, $cacheTTL - (time() - $lastRequestTime)); // Time until cache expires
-                  header("Retry-After: {$retryAfter}");
+                  // Time until the current window expires.
+                  header("Retry-After: {$remainingTtl}");
              }
         }
 

@@ -50,7 +50,7 @@ class Model
      * @param string|null $table Table name
      * @param array $data Initial data
      */
-    public function __construct(string $table = null, array $data = [])
+    public function __construct(?string $table = null, array $data = [])
     {
         if (!empty($data)) {
             $this->fill($data);
@@ -124,6 +124,31 @@ class Model
     }
 
     /**
+     * Determine if an attribute or relation is set (and not null).
+     *
+     * Without this, isset($model->x), empty($model->x) and $model->x ?? ...
+     * always behave as if the attribute were unset, because PHP routes them
+     * through __isset for overloaded properties.
+     *
+     * @param string $key Attribute or relation name.
+     * @return bool
+     */
+    public function __isset(string $key): bool
+    {
+        return $this->__get($key) !== null;
+    }
+
+    /**
+     * Unset an attribute or cached relation.
+     *
+     * @param string $key Attribute or relation name.
+     */
+    public function __unset(string $key): void
+    {
+        unset($this->attributes[$key], $this->relations[$key]);
+    }
+
+    /**
      * Set table name (Static context - returns a new query builder)
      *
      * @param string $table Table name
@@ -142,7 +167,8 @@ class Model
      */
     public static function create(array $data): self|false
     {
-        static::fireEvent('creating', $data);
+        // Note: the 'creating' event is fired by save() for every insert (including
+        // this path), so we don't fire it here to avoid a double dispatch.
         $data['updated_at'] = $data['updated_at'] ?? date('Y-m-d H:i:s');
         $data['created_at'] = $data['created_at'] ?? date('Y-m-d H:i:s');
 
@@ -207,6 +233,16 @@ class Model
     public static function whereBetween(string $column, $start, $end): Database
     {
         return static::query()->whereBetween($column, $start, $end);
+    }
+
+    public static function whereNull(string $column): Database
+    {
+        return static::query()->whereNull($column);
+    }
+
+    public static function whereNotNull(string $column): Database
+    {
+        return static::query()->whereNotNull($column);
     }
 
     public static function orderBy(string $column, string $direction = 'ASC'): Database

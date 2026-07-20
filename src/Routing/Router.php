@@ -153,17 +153,8 @@ class Router
         $supportedMethods = []; // Track methods for matched URI but wrong method
 
         foreach (self::$routes as $route) {
-            // Prepare regex pattern from route URI
-            // Escape regex characters, then replace {param} with named capture groups
-            $pattern = preg_quote($route->getUri(), '/');
-            
-            // Wildcard: {param+} → captures everything INCLUDING slashes (for nested paths)
-            $pattern = preg_replace('/\\\\{([a-zA-Z0-9_]+)\\\\\\+\\\\}/', '(?P<$1>.+)', $pattern);
-            
-            // Normal: {param} → captures everything EXCEPT slashes (single segment)
-            $pattern = preg_replace('/\\\\{([a-zA-Z0-9_]+)\\\\}/', '(?P<$1>[^\\/]+)', $pattern);
-            
-            $regex = '/^' . $pattern . '$/';
+            // Regex is compiled once per Route and cached (helps persistent-worker runtimes).
+            $regex = $route->getCompiledRegex();
 
             if (preg_match($regex, $processedUri, $matches)) {
                 // URI matches, now check method

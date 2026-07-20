@@ -746,7 +746,7 @@ if (!function_exists('minifyHtml')) {
 
         // Genel HTML minify
         $search = [
-            '//s',  // HTML yorumları (IE conditional comments hariç)
+            '/<!--(?!\[if)[\s\S]*?-->/', // HTML yorumları (IE conditional comments hariç)
             '/>\s+</',               // Tag arası boşluk
             '/\s*(\/?>)/',           // Tag sonu
             '/\s{2,}/',              // Çoklu boşluk

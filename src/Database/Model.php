@@ -603,8 +603,11 @@ class Model
         $class = get_called_class();
         if (isset(static::$eventCallbacks[$class][$event])) {
             foreach (static::$eventCallbacks[$class][$event] as $callback) {
+                // Returning exactly false is the documented abort signal — a
+                // listener that wants to cancel the operation (e.g. veto a
+                // 'saving' event) must stop propagation, not be ignored.
                 if (call_user_func($callback, $payload) === false) {
-                    // break;
+                    break;
                 }
             }
         }

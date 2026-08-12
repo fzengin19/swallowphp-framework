@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `Database::delete()` now throws `\RuntimeException` when called with no
+  `WHERE` condition (previously deleted every row in the table silently);
+  use the new `Database::deleteAll()` for the old unguarded behavior.
+
+### Fixed
+- `where($column, null)` and `where($column, '=', null)` now produce
+  `IS NULL` instead of binding a literal `NULL` to `=` (which never matches).
+  `where($column, '!=', null)` / `where($column, '<>', null)` produce
+  `IS NOT NULL` for symmetry.
+- `Model::fireEvent()` now honors the documented abort signal: a listener
+  that returns `false` stops propagation to later listeners on the same event.
+- `Database::update()` returns `false` on a PDOException (previously
+  returned `0`, which `Model::save()` could not distinguish from a
+  successful no-op update). A genuinely-failed UPDATE therefore no longer
+  fires the `updated`/`saved` events and `save()` reports failure.
+- `AuthenticatableTrait::setRememberToken()` now writes to the attributes
+  array directly, bypassing the model's mass-assignment guard so that
+  "remember me" logins persist on User models whose `$fillable` does not
+  list `remember_token`.
+
 ## [1.3.0] - 2026-07-20
 
 ### Security

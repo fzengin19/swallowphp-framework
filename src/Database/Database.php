@@ -237,18 +237,38 @@ class Database
         // Handle standard where (column, operator, value) or (column, value)
         // Adjust logic slightly to handle the optional $boolean argument potentially being passed
         // when only two args (column, value) are intended.
-        if (func_num_args() === 2 || $value === null && $operatorOrValue !== null && !($operatorOrValue instanceof Closure)) {
-            // where($column, $value) case
-            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
-        } elseif ($value !== null) {
-            // where($column, $operator, $value) case
-            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $operatorOrValue, 'value' => $value, 'boolean' => $boolean];
+        $numArgs = func_num_args();
+        if ($numArgs === 2) {
+            // where($column, $value) case — operator defaults to '='.
+            $resolvedOperator = '=';
+            $resolvedValue = $operatorOrValue;
+        } elseif ($numArgs === 3 || ($value === null && $operatorOrValue !== null && !($operatorOrValue instanceof Closure))) {
+            // where($column, $operator, $value) case — explicit 3-arg form.
+            $resolvedOperator = $operatorOrValue;
+            $resolvedValue = $value;
         } else {
-            // Fallback or error? Could indicate invalid usage.
-            // For now, let's assume it might be a where($column) scenario which isn't standard.
-            // Or perhaps where($column, null) which should likely be whereNull($column).
-            // Let's treat where($column, null) as where($column, '=', null) for now.
-            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => '=', 'value' => $operatorOrValue, 'boolean' => $boolean];
+            // Fallback / where($column) or similar unsupported shapes.
+            // Preserve previous behavior of treating the second argument as a value.
+            $resolvedOperator = '=';
+            $resolvedValue = $operatorOrValue;
+        }
+
+        // `col = NULL` (and `col <> NULL`) are never true in SQL; bind values of NULL
+        // would silently match nothing. Translate null-valued conditions to IS NULL /
+        // IS NOT NULL, mirroring whereNull()/whereNotNull(). The 2-arg form and the
+        // 3-arg-explicit-null form both land here.
+        if ($resolvedValue === null) {
+            $normalizedOperator = strtolower(trim((string) $resolvedOperator));
+            if ($normalizedOperator === '!=' || $normalizedOperator === '<>') {
+                $this->where[] = ['type' => 'NotNull', 'column' => $column, 'boolean' => $boolean];
+            } else {
+                // '=' or any other operator with a NULL value: SQL semantics are
+                // "never true" for = and undefined for the others; we deliberately
+                // express the user's intent as IS NULL, matching whereNull().
+                $this->where[] = ['type' => 'Null', 'column' => $column, 'boolean' => $boolean];
+            }
+        } else {
+            $this->where[] = ['type' => 'Basic', 'column' => $column, 'operator' => $resolvedOperator, 'value' => $resolvedValue, 'boolean' => $boolean];
         }
 
         return $this;
@@ -497,8 +517,15 @@ class Database
         }
     }
 
-    /** Update records. */
-    public function update(array $data): int
+    /**
+     * Update records.
+     *
+     * Returns the number of affected rows on success, or `false` if the
+     * statement threw a PDOException. Callers (notably Model::save()) MUST
+     * distinguish the two cases: 0 is a legitimate "no rows matched" result,
+     * while `false` signals that the write genuinely failed.
+     */
+    public function update(array $data): int|false
     {
         $this->initialize();
         if (empty($data))
@@ -520,14 +547,27 @@ class Database
                 $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql, 'data' => $data]);
             else
                 error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
-            return 0;
+            return false;
         }
     }
 
-    /** Delete records. */
+    /**
+     * Delete records matching the current WHERE clause.
+     *
+     * Throws `\RuntimeException` when called without any `where(...)` condition,
+     * because that would otherwise silently delete every row in the table.
+     * Use {@see deleteAll()} for the explicit, intentional "truncate" path.
+     *
+     * @throws \RuntimeException When no WHERE condition is set.
+     */
     public function delete(): int
     {
         $this->initialize();
+        if (empty($this->where)) {
+            throw new \RuntimeException(
+                "delete() called with no WHERE condition; use deleteAll() to intentionally delete every row"
+            );
+        }
         $sql = "DELETE FROM `{$this->table}` " . $this->buildWhereClause();
         try {
             $statement = $this->connection->prepare($sql);
@@ -539,6 +579,33 @@ class Database
             return $statement->rowCount();
         } catch (PDOException $e) {
             $errorMsg = "Database Error in delete()";
+            if ($this->logger)
+                $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
+            else
+                error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
+            return 0;
+        }
+    }
+
+    /**
+     * Unconditionally delete every row in the current table.
+     *
+     * This is the explicit opt-in for callers who genuinely intend to wipe
+     * the table (e.g. a maintenance / truncation script). It performs the
+     * same unguarded DELETE that {@see delete()} used to perform before the
+     * WHERE guard was added, and is intentionally NOT guarded — the WHOLE
+     * POINT is "delete every row".
+     */
+    public function deleteAll(): int
+    {
+        $this->initialize();
+        $sql = "DELETE FROM `{$this->table}`";
+        try {
+            $statement = $this->connection->prepare($sql);
+            $statement->execute();
+            return $statement->rowCount();
+        } catch (PDOException $e) {
+            $errorMsg = "Database Error in deleteAll()";
             if ($this->logger)
                 $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
             else

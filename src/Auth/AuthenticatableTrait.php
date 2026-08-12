@@ -66,12 +66,20 @@ trait AuthenticatableTrait
     /**
      * Set the "remember me" token value.
      *
+     * Writes the token directly to the attributes array, deliberately bypassing
+     * the model's mass-assignment guard (`__set()` checks `$fillable`/`$guarded`).
+     * Going through `$this->{$tokenName} = $value` here would silently drop the
+     * assignment on any User model whose `$fillable` whitelist happens not to
+     * list `remember_token` — which is the common, recommended configuration.
+     * That bug would mean "remember me" login never persists a token, leaving
+     * the cookie to be checked against a column that was never written.
+     *
      * @param  string|null  $value
      * @return void
      */
     public function setRememberToken(?string $value): void
     {
         $tokenName = $this->getRememberTokenName();
-        $this->{$tokenName} = $value;
+        $this->attributes[$tokenName] = $value;
     }
 }

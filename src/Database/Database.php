@@ -242,8 +242,13 @@ class Database
             // where($column, $value) case — operator defaults to '='.
             $resolvedOperator = '=';
             $resolvedValue = $operatorOrValue;
-        } elseif ($numArgs === 3 || ($value === null && $operatorOrValue !== null && !($operatorOrValue instanceof Closure))) {
-            // where($column, $operator, $value) case — explicit 3-arg form.
+        } elseif ($numArgs === 3 || $numArgs === 4 || ($value === null && $operatorOrValue !== null && !($operatorOrValue instanceof Closure))) {
+            // where($column, $operator, $value) or where($column, $operator, $value, $boolean)
+            // case — explicit 3-arg / 4-arg form. Forwarding the boolean as a 4th arg is
+            // the documented internal-call shape (e.g. Model::where's wrapper forwards
+            // it through); not recognising it would let Database::where() fall into the
+            // fallback branch and bind the operator string as the value (silent wrong
+            // results, e.g. `name = '='` instead of `name = 'alice'`).
             $resolvedOperator = $operatorOrValue;
             $resolvedValue = $value;
         } else {

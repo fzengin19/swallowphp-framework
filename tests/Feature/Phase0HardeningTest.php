@@ -473,6 +473,64 @@ it('AC-1 regression: Model::where is consistent with query()->where for ordinary
     expect($viaBuilder[0]->name)->toBe('y');
 });
 
+it('AC-1 regression: Database::where(col, operator, value, boolean) (4-arg) binds the value, not the operator', function () {
+    // Direct 4-arg call against the builder. With the old code path this
+    // hit the fallback branch in Database::where(): numArgs === 4 did not
+    // match the 2-arg OR 3-arg branch, so $resolvedOperator defaulted to '='
+    // and $resolvedValue became the operator string '='. The rendered SQL
+    // was `WHERE name = ?` with binding '=' — matching no rows at all.
+    NullableModel::create(['name' => 'alice']);
+    NullableModel::create(['name' => 'bob']);
+    NullableModel::create(['name' => 'carol']);
+
+    $rows = NullableModel::query()->where('name', '=', 'alice', 'OR')->get();
+    expect($rows)->toHaveCount(1);
+    expect($rows[0]->name)->toBe('alice');
+
+    // Sanity-check the actual binding passed to PDO: must be 'alice', not '='.
+    $db = NullableModel::query()->where('name', '=', 'alice', 'OR');
+    $binds = new \ReflectionMethod(\SwallowPHP\Framework\Database\Database::class, 'getBindValuesForWhere');
+    expect($binds->invoke($db))->toBe(['alice']);
+});
+
+it('AC-1 regression: Model::where(col, operator, value, boolean) (4-arg via wrapper) matches the right rows', function () {
+    // The wrapper forwards 4 args to the builder. The builder must resolve
+    // them as (column, operator, value, boolean) — not as the fallback shape
+    // that would bind the operator as the value.
+    NullableModel::create(['name' => 'alice']);
+    NullableModel::create(['name' => 'bob']);
+    NullableModel::create(['name' => 'carol']);
+
+    $rows = NullableModel::where('name', '=', 'alice', 'OR')->get();
+    expect($rows)->toHaveCount(1);
+    expect($rows[0]->name)->toBe('alice');
+});
+
+it('AC-1 regression: 4-arg with non-"=" operator and boolean OR-joins a second condition', function () {
+    // Exercise the boolean slot itself: WHERE id > 2 OR name = 'alice'
+    // must produce carol+dave (id > 2) plus alice (via OR). The 4-arg
+    // call must keep the `OR` connector; the buggy code path did not
+    // only bind the operator as the value, it also dropped the boolean,
+    // which would skip the OR entirely.
+    NullableModel::create(['name' => 'alice']);
+    NullableModel::create(['name' => 'bob']);
+    NullableModel::create(['name' => 'carol']);
+    NullableModel::create(['name' => 'dave']);
+
+    $rows = NullableModel::query()
+        ->where('id', '>', 2, 'AND')
+        ->orWhere('name', '=', 'alice')
+        ->get();
+
+    // id > 2 → carol, dave (2 rows); plus alice via OR (1 row).
+    expect($rows)->toHaveCount(3);
+    $names = array_map(fn($m) => $m->name, $rows);
+    expect($names)->toContain('alice');
+    expect($names)->toContain('carol');
+    expect($names)->toContain('dave');
+    expect($names)->not->toContain('bob');
+});
+
 it('AC-5 regression: empty nested where() closure does not bypass the no-WHERE guard', function () {
     NullableModel::create(['name' => 'a']);
     NullableModel::create(['name' => 'b']);

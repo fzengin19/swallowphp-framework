@@ -125,12 +125,11 @@ beforeEach(function () {
     );
 
     // Clear static event-callback registries so listeners from one test
-    // cannot bleed into the next.
-    $eventCallbacks = (new ReflectionProperty(Model::class, 'eventCallbacks'))
-        ->getValue();
-    foreach ($eventCallbacks as $class => $_) {
-        unset($eventCallbacks[$class]);
-    }
+    // cannot bleed into the next. NOTE: ReflectionProperty::getValue() returns
+    // a COPY of the static array (PHP arrays are copy-on-write); mutating that
+    // local copy does NOT touch the real static. Use setValue(null, []) to
+    // actually reset the static.
+    (new ReflectionProperty(Model::class, 'eventCallbacks'))->setValue(null, []);
 });
 
 /* ----------------------------------------------------------------------
@@ -192,6 +191,32 @@ it('AC-1: where with angle-bracket and null matches non-NULL rows', function () 
 /* ----------------------------------------------------------------------
  * AC-2 — event listener returning false stops propagation
  * ---------------------------------------------------------------------- */
+
+it('test-isolation: beforeEach clears the static event-callback registry', function () {
+    // Register a callback in this test's setup so the registry is non-empty
+    // by the time the assertion runs. The leak-probe uses a sentinel
+    // ($GLOBALS['leak_probe_fired']) so the next test can detect whether
+    // the callback is still registered.
+    $GLOBALS['leak_probe_fired'] = 0;
+    NullableModel::on('saving', function () { $GLOBALS['leak_probe_fired']++; });
+    $registry = (new ReflectionProperty(Model::class, 'eventCallbacks'))->getValue();
+    expect($registry)->not->toBeEmpty();
+});
+
+it('test-isolation: a previous test\'s listener does not leak into this test', function () {
+    // If the previous beforeEach() reset was broken (mutating a ReflectionProperty
+    // copy rather than the real static), the LeakProbe callback from the test
+    // above would still be in the registry. Reset the sentinel before we fire
+    // the event, then assert that only OUR listener ran.
+    $GLOBALS['leak_probe_fired'] = 0;
+    $count = 0;
+    NullableModel::on('saving', function () use (&$count) { $count++; });
+    $m = new NullableModel(null, ['name' => 'leak-check']);
+    $m->save(); // fires 'saving'
+    expect($count)->toBe(1); // only OUR listener ran
+    expect($GLOBALS['leak_probe_fired'])->toBe(0); // previous test's listener did NOT leak
+    unset($GLOBALS['leak_probe_fired']);
+});
 
 it('AC-2: a listener returning false stops later listeners on the same event', function () {
     $firstRan = false;
@@ -258,13 +283,68 @@ it('AC-3: a no-op save (no dirty data) does not regress to reporting failure', f
     });
 
     $m = NullableModel::create(['name' => 'dave']);
-    // Same value as already persisted → getDirty() returns [] → no UPDATE
-    // statement is issued at all. The bug we're fixing is in update()'s
-    // catch path, so this no-op branch must keep working unchanged.
+
+    // Force a deterministic no-dirty state, regardless of wall-clock drift
+    // between create() and save(). Without this, the second-resolution
+    // `updated_at` timestamp can cross a second boundary and make
+    // getDirty() return a non-empty array, taking us down the real-UPDATE
+    // branch instead of the no-op one this test is meant to cover.
+    $attrsProp = new ReflectionProperty(Model::class, 'attributes');
+    $originalProp = new ReflectionProperty(Model::class, 'original');
+    $pinned = $attrsProp->getValue($m);
+    $pinned['updated_at'] = date('Y-m-d H:i:s');
+    $attrsProp->setValue($m, $pinned);
+    $originalProp->setValue($m, $pinned);
+
+    // getDirty() now returns [] → no UPDATE statement is issued at all.
+    // The bug we're fixing is in update()'s catch path, so this no-op
+    // branch must keep working unchanged.
     $result = $m->save();
 
     expect($result)->toBe(0); // 0 affected rows, but not an error
     expect($updatedFired)->toBeTrue(); // 'updated' still fires on no-op saves
+});
+
+it('AC-3: a zero-row UPDATE (real UPDATE issues, matches no rows) does not regress to reporting failure', function () {
+    $updatedFired = false;
+    $savedFired = false;
+    NullableModel::on('updated', function () use (&$updatedFired) {
+        $updatedFired = true;
+    });
+    NullableModel::on('saved', function () use (&$savedFired) {
+        $savedFired = true;
+    });
+
+    // Step 1: a model that genuinely exists in the DB, with id and a row.
+    $m = NullableModel::create(['name' => 'erin']);
+    expect($m->id)->toBeGreaterThan(0);
+
+    // Reset the success-event flags so the assertions below only cover the
+    // UPDATE save() that follows.
+    $updatedFired = false;
+    $savedFired = false;
+
+    // Step 2: make the next save() issue a REAL UPDATE that matches ZERO rows.
+    // We do this by changing the in-memory id to a value that does not exist
+    // in the DB; the helper writes directly to $attributes (bypassing
+    // __set()'s fillable guard) so the model is dirty on `id` while every
+    // other attribute stays equal to its original value. The UPDATE will be
+    // `WHERE id = 9999 SET id = 9999, ...` → 0 rows matched → update()
+    // returns 0 (not false).
+    $attrsProp = new ReflectionProperty(Model::class, 'attributes');
+    $current = $attrsProp->getValue($m);
+    $current['id'] = 9999;
+    $attrsProp->setValue($m, $current);
+
+    $result = $m->save();
+
+    // save() must NOT have treated the genuine 0-row UPDATE as failure.
+    expect($result)->toBe(0);
+    // 'updated' must still fire (the spec says "do not report failure" —
+    // i.e. the 0-rows-no-error case must look identical to the user as a
+    // successful no-op update).
+    expect($updatedFired)->toBeTrue();
+    expect($savedFired)->toBeTrue();
 });
 
 /* ----------------------------------------------------------------------

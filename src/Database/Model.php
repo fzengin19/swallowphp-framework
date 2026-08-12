@@ -205,8 +205,24 @@ class Model
      */
     public static function where($column, $operatorOrValue = null, $value = null, string $boolean = 'AND'): Database
     {
-        // Pass all arguments directly to the Database query builder's where method
-        // which now handles all argument variations including Closures.
+        // Forward only the arguments the caller actually supplied. Forwarding all
+        // four unconditionally broke Database::where()'s arity detection — it saw
+        // a 4-arg call for a 2-arg or 3-arg call site and produced wrong SQL for
+        // ordinary non-null values like Model::where('status', 'active') (which
+        // compiled to `status IS NULL`) or Model::where('age', '>=', 18) (which
+        // compiled to `age = '>='`). The `$boolean` parameter remains in the
+        // signature for internal-call compatibility; public callers should rely
+        // on the documented (col, op, val) / (col, val) / (Closure) shapes.
+        $numArgs = func_num_args();
+        if ($numArgs <= 1) {
+            return static::query()->where($column);
+        }
+        if ($numArgs === 2) {
+            return static::query()->where($column, $operatorOrValue);
+        }
+        if ($numArgs === 3) {
+            return static::query()->where($column, $operatorOrValue, $value);
+        }
         return static::query()->where($column, $operatorOrValue, $value, $boolean);
     }
 

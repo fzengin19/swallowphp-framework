@@ -26,6 +26,7 @@ namespace Tests\Feature;
 use SwallowPHP\Framework\Auth\AuthenticatableTrait;
 use SwallowPHP\Framework\Database\Model;
 use SwallowPHP\Framework\Foundation\App;
+use ReflectionClass;
 use ReflectionProperty;
 
 // ---------------------------------------------------------------------------
@@ -410,4 +411,116 @@ it('AC-5: deleteAll() removes every row', function () {
     $deleted = NullableModel::query()->deleteAll();
     expect($deleted)->toBe(3);
     expect(NullableModel::query()->count())->toBe(0);
+});
+
+/* ----------------------------------------------------------------------
+ * Regression tests for HIGH/MEDIUM findings from the reviewer audit.
+ *
+ *  - AC-1 wrapper regression: Model::where() used to forward all four
+ *    arguments unconditionally. That made Database::where() see a 4-arg
+ *    call for any 2-arg / 3-arg call site, which produced wrong SQL for
+ *    ordinary non-null values (Model::where('status', 'active') compiled
+ *    to `status IS NULL`; Model::where('age', '>=', 18) compiled to
+ *    `age = '>='`). The fix forwards only what the caller actually passed.
+ *
+ *  - AC-5 empty-nested regression: where(fn ($q) => ...) bypassed the
+ *    `empty($this->where)` guard (the array entry was non-empty) but
+ *    rendered an empty predicate, so delete() executed a bare DELETE.
+ *    The fix also rejects where(...) entries that produce no SQL.
+ * ---------------------------------------------------------------------- */
+
+it('AC-1 regression: Model::where(col, value) (2-arg non-null) matches the right rows', function () {
+    NullableModel::create(['name' => 'alice']);
+    NullableModel::create(['name' => null]);
+    NullableModel::create(['name' => 'bob']);
+    NullableModel::create(['name' => null]);
+
+    $rows = NullableModel::where('name', 'alice')->get();
+    expect($rows)->toHaveCount(1);
+    expect($rows[0]->name)->toBe('alice');
+});
+
+it('AC-1 regression: Model::where(col, operator, value) (3-arg non-null) matches the right rows', function () {
+    NullableModel::create(['name' => 'alice']);
+    NullableModel::create(['name' => 'bob']);
+    NullableModel::create(['name' => 'carol']);
+
+    // `id > 1` must use the literal value 1, not bind the string '>=' as a
+    // value (which is what the broken wrapper did: it compiled to `id = '>='`
+    // and matched nothing). Picking > 1 instead of >= makes the assertion
+    // unambiguous about which row is matched.
+    $rows = NullableModel::where('id', '>', 1)->get();
+    expect($rows)->toHaveCount(2);
+    $names = array_map(fn($m) => $m->name, $rows);
+    expect($names)->toContain('bob');
+    expect($names)->toContain('carol');
+    expect($names)->not->toContain('alice');
+});
+
+it('AC-1 regression: Model::where is consistent with query()->where for ordinary non-null values', function () {
+    // The wrapper and the builder must produce the same SQL for the same
+    // arguments. With the old 4-arg-forwarding wrapper this was broken for
+    // any non-null value; both call sites now have to agree.
+    NullableModel::create(['name' => 'x']);
+    NullableModel::create(['name' => 'y']);
+    NullableModel::create(['name' => 'z']);
+
+    $viaWrapper = NullableModel::where('name', 'y')->get();
+    $viaBuilder = NullableModel::query()->where('name', 'y')->get();
+
+    expect(count($viaWrapper))->toBe(count($viaBuilder))->toBe(1);
+    expect($viaWrapper[0]->name)->toBe('y');
+    expect($viaBuilder[0]->name)->toBe('y');
+});
+
+it('AC-5 regression: empty nested where() closure does not bypass the no-WHERE guard', function () {
+    NullableModel::create(['name' => 'a']);
+    NullableModel::create(['name' => 'b']);
+    NullableModel::create(['name' => 'c']);
+
+    expect(NullableModel::query()->count())->toBe(3);
+
+    // An empty closure adds a Nested entry whose rendered SQL is empty.
+    // The $this->where array is non-empty, so the original guard passed —
+    // and the bare DELETE would have wiped the table. The fix rejects
+    // both the empty-array case AND the no-rendered-predicate case.
+    expect(fn () => NullableModel::query()->where(function ($q) { /* no-op */ })->delete())
+        ->toThrow(\RuntimeException::class);
+
+    expect(NullableModel::query()->count())->toBe(3); // table untouched
+});
+
+it('AC-5 regression: non-empty nested where() closure still deletes matching rows', function () {
+    NullableModel::create(['name' => 'a']);
+    NullableModel::create(['name' => 'b']);
+    NullableModel::create(['name' => 'c']);
+
+    $deleted = NullableModel::query()
+        ->where(function ($q) { $q->where('name', '=', 'b'); })
+        ->delete();
+
+    expect($deleted)->toBe(1);
+    expect(NullableModel::query()->count())->toBe(2);
+});
+
+it('AC-5 regression: delete() with no WHERE throws RuntimeException even when connection init would fail', function () {
+    // The guard must run BEFORE initialize(), otherwise a connection-init
+    // failure would mask the documented RuntimeException with a generic
+    // Exception, and callers could not reliably catch the no-WHERE case.
+    // We construct a Database via reflection (bypassing the constructor's
+    // own initialize() call) and point it at an unreachable mysql host so
+    // the next initialize() would throw.
+    $db = (new ReflectionClass(\SwallowPHP\Framework\Database\Database::class))->newInstanceWithoutConstructor();
+    (new ReflectionProperty(\SwallowPHP\Framework\Database\Database::class, 'config'))->setValue($db, [
+        'driver' => 'mysql',
+        'host' => '256.256.256.256', // invalid IP, getaddrinfo will fail
+        'port' => '3306',
+        'database' => 'test',
+        'username' => 'x',
+        'password' => 'y',
+        'charset' => 'utf8mb4',
+    ]);
+    (new ReflectionProperty(\SwallowPHP\Framework\Database\Database::class, 'table'))->setValue($db, 'items');
+
+    expect(fn () => $db->delete())->toThrow(\RuntimeException::class);
 });

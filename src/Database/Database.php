@@ -554,21 +554,42 @@ class Database
     /**
      * Delete records matching the current WHERE clause.
      *
-     * Throws `\RuntimeException` when called without any `where(...)` condition,
-     * because that would otherwise silently delete every row in the table.
-     * Use {@see deleteAll()} for the explicit, intentional "truncate" path.
+     * Throws `\RuntimeException` when called without any effective `where(...)`
+     * condition (one that actually renders a predicate), because that would
+     * otherwise silently delete every row in the table. Use {@see deleteAll()}
+     * for the explicit, intentional "truncate" path.
      *
-     * @throws \RuntimeException When no WHERE condition is set.
+     * The guard is enforced BEFORE initialize() so a connection-init failure
+     * cannot mask the no-WHERE contract (callers would otherwise receive the
+     * generic init Exception instead of the documented RuntimeException).
+     *
+     * @throws \RuntimeException When no WHERE condition is set, or when a
+     *                           nested where() closure produced no predicate.
      */
     public function delete(): int
     {
-        $this->initialize();
+        // Guard BEFORE initialize(): a connection-init failure should not mask
+        // the no-WHERE contract — callers rely on receiving the documented
+        // RuntimeException when they forget a where().
         if (empty($this->where)) {
             throw new \RuntimeException(
                 "delete() called with no WHERE condition; use deleteAll() to intentionally delete every row"
             );
         }
         $sql = "DELETE FROM `{$this->table}` " . $this->buildWhereClause();
+
+        // Reject a where() that produces no rendered predicate (e.g. an empty
+        // nested closure: where(fn ($q) => []) ). The $this->where array is
+        // non-empty in that case, so the empty() guard above passes — but the
+        // actual SQL would still be a bare DELETE, which is exactly the hazard
+        // the guard exists to prevent.
+        if (trim($sql) === "DELETE FROM `{$this->table}`") {
+            throw new \RuntimeException(
+                "delete() called with a where(...) that produced no predicate; use deleteAll() to intentionally delete every row"
+            );
+        }
+
+        $this->initialize();
         try {
             $statement = $this->connection->prepare($sql);
             $bindValues = $this->getBindValuesForWhere();

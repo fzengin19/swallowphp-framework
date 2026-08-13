@@ -111,8 +111,12 @@ class Route
   {
     $container = App::container(); // Get the DI container
     // Route parameters are already added to the request object in Router::dispatch
-    // We'll pass the whole request object and let container/reflection handle it.
-    $routeParameters = $request->all(); // Get all request data, including route params
+    // via setRouteParams(). We use routeParams() (not all()) so the scalar
+    // coercion in resolveMethodDependencies() only widens coercion for values
+    // that came from URL segments — query-string and body values keep PHP's
+    // loose string semantics. routeParams() is set by Router::dispatch and
+    // does NOT include query/body keys.
+    $routeParameters = $request->routeParams();
 
     // Array-callable (e.g. [Controller::class, 'method']) MUST be checked BEFORE
     // is_callable(): PHP considers an array of [class, method] callable even
@@ -349,12 +353,31 @@ class Route
         // is_numeric() also accepts floats, which (int) truncates — that's the
         // same trade-off PHP itself makes for numeric-string coercion.
         if (is_numeric($value)) {
+          // is_numeric() ALSO accepts out-of-range values ("9223372036854775808",
+          // "-9999999999999999999") and overflowing exponents ("1e309"). Casting
+          // those silently produces PHP_INT_MAX / 0 / INF — the route ID would
+          // resolve to a completely different record. Validate via float first
+          // (float has the larger range, is_finite() catches INF/NaN, and the
+          // boundary check catches int overflow), then return the raw string
+          // for any value that doesn't fit. This widens the safe common-case
+          // coercion without silently mangling out-of-range input.
+          $asFloat = (float) $value;
+          if (!is_finite($asFloat) || $asFloat < PHP_INT_MIN || $asFloat > PHP_INT_MAX) {
+            return $value;
+          }
           return (int) $value;
         }
         return $value;
       case 'float':
         if (is_numeric($value)) {
-          return (float) $value;
+          // is_numeric() accepts "1e309" / "-1e309" — (float) yields INF.
+          // is_finite() catches both, and (float) "nan"/"inf" are also
+          // numeric strings in PHP that produce NaN/INF; reject those too.
+          $asFloat = (float) $value;
+          if (!is_finite($asFloat)) {
+            return $value;
+          }
+          return $asFloat;
         }
         return $value;
       case 'bool':

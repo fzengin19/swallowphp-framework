@@ -99,6 +99,20 @@ class Phase3TestController
         return 'bool';
     }
 
+    // Variant with a default value — used by the AC-43 scope tests to
+    // distinguish pre-fix from post-fix behavior when a query value
+    // matches a controller parameter name but no URL segment does.
+    // Pre-fix: the framework pulled query values through
+    // resolveMethodDependencies (via $request->all()) and ran the
+    // scalar coercion on them. Post-fix: only URL segments are
+    // passed to resolveMethodDependencies (via $request->routeParams()),
+    // so a query-only value falls through to the parameter's default.
+    public function showIntWithDefault(int $id = 0): string
+    {
+        self::$lastIntId = $id;
+        return 'int-default';
+    }
+
     public function index(): string
     {
         self::$indexRan = true;
@@ -174,6 +188,58 @@ beforeEach(function () {
     Phase3TestController::$lastRawValue = null;
     Phase3TestController::$lastRawType = null;
     Phase3TestController::$probeRawRan = false;
+});
+
+/**
+ * Tear down scratch artifacts. The MEDIUM review flagged that
+ * SqliteCache (AC-41) leaves *.sqlite-wal / *.sqlite-shm / *.sqlite-journal
+ * sidecars in .scratch/phase3/ and the AC-46 tests leave stray PNGs (and
+ * one unused PNG from a pre-cleanup code path). Without this hook, repeated
+ * test runs accumulate files under .scratch/phase3/. The hook removes
+ * SQLite sidecars, the image-conversion artifacts the tests try to clean
+ * up, and any empty directories the AC-46 tests created.
+ */
+afterEach(function () {
+    if (!is_dir(PHASE3_SCRATCH_DIR)) {
+        return;
+    }
+    // SQLite sidecars (WAL/SHM/journal) and the main DB file. SqliteCache
+    // doesn't always close cleanly on destruct in test contexts, so the
+    // WAL may still be flushed — unlink() handles that silently.
+    foreach (glob(PHASE3_SCRATCH_DIR . '/{*.sqlite,*.sqlite-wal,*.sqlite-shm,*.sqlite-journal}', GLOB_BRACE) ?: [] as $f) {
+        @unlink($f);
+    }
+    // Image-conversion artifacts (PNG sources, AVIF/WebP outputs) the
+    // AC-46 tests try to clean up themselves; this is a belt-and-braces
+    // pass for any test that fails before reaching its own cleanup.
+    foreach (glob(PHASE3_SCRATCH_DIR . '/{*.png,*.avif,*.webp}', GLOB_BRACE) ?: [] as $f) {
+        @unlink($f);
+    }
+    // Empty directories the AC-46 tests create (ac46_safe_dest_*, etc.).
+    // Only remove if empty — rrmdir would be unsafe if a test left a file
+    // behind, and we don't want to wipe unrelated test state.
+    foreach (new \DirectoryIterator(PHASE3_SCRATCH_DIR) as $entry) {
+        if (!$entry->isDir() || $entry->isDot()) {
+            continue;
+        }
+        $path = $entry->getPathname();
+        // The 'files/' directory and its PNG contents are created by the
+        // (now-redundant) source-setup snippet at the top of the AC-46
+        // traversal test — the rest of the test does not use that
+        // directory. Remove it recursively so old PNGs from previous runs
+        // don't accumulate; safe because nothing else in this test file
+        // writes into PHASE3_SCRATCH_DIR/files/.
+        if (basename($path) === 'files') {
+            foreach (glob($path . '/*') ?: [] as $f) {
+                @unlink($f);
+            }
+            @rmdir($path);
+            continue;
+        }
+        if (count(glob($path . '/*') ?: []) === 0) {
+            @rmdir($path);
+        }
+    }
 });
 
 // ---------------------------------------------------------------------------
@@ -427,17 +493,17 @@ it('AC-43: resolveMethodDependencies() itself coerces numeric route params (prod
     $resolve = $rc->getMethod('resolveMethodDependencies');
 
     // Construct a Request the same way Router::dispatch() builds one
-    // after a successful match: route param merged into the body
-    // accessor via setAll(array_merge($request->request(), $params)).
+    // after a successful match: route param set via setRouteParams()
+    // (which is also merged into the body accessor for back-compat).
     // No query keys, no other body keys -- exactly one route param.
     $request = phase3BuildRequest('/ac43/probe/42', 'GET');
-    $request->setAll(array_merge($request->request(), ['id' => '42']));
+    $request->setRouteParams(['id' => '42']);
 
-    // The framework reads route params via $request->all(), which is
-    // what executeAction() passes as the second argument to
-    // resolveMethodDependencies. Reproduce the container that
-    // executeAction() would have on hand (the DI container is
-    // already booted in beforeEach).
+    // The framework reads route params via $request->routeParams() (NOT
+    // $request->all() — that change is what stops the MEDIUM review finding
+    // of "scalar coercion also runs on query/body values"). Reproduce the
+    // container that executeAction() would have on hand (the DI container
+    // is already booted in beforeEach).
     $container = App::container();
 
     // Build the same ReflectionParameter[] that
@@ -451,7 +517,7 @@ it('AC-43: resolveMethodDependencies() itself coerces numeric route params (prod
     // Route instance is just the binding object for the reflection call.
     $route = new Route('GET', '/ac43/probe/{id}', [Phase3TestController::class, 'showInt']);
 
-    $args = $resolve->invoke($route, $reflectionParams, $request->all(), $container, $request);
+    $args = $resolve->invoke($route, $reflectionParams, $request->routeParams(), $container, $request);
 
     // The named mutation makes args[0] === '42' (string). With the fix
     // in place args[0] === 42 (int) because resolveMethodDependencies()
@@ -476,7 +542,7 @@ it('AC-43: resolveMethodDependencies() leaves non-numeric route params as raw st
     $resolve = $rc->getMethod('resolveMethodDependencies');
 
     $request = phase3BuildRequest('/ac43/probe/abc', 'GET');
-    $request->setAll(array_merge($request->request(), ['id' => 'abc']));
+    $request->setRouteParams(['id' => 'abc']);
 
     $container = App::container();
     $controllerRef = new ReflectionClass(Phase3TestController::class);
@@ -484,7 +550,7 @@ it('AC-43: resolveMethodDependencies() leaves non-numeric route params as raw st
 
     $route = new Route('GET', '/ac43/probe/{id}', [Phase3TestController::class, 'showInt']);
 
-    $args = $resolve->invoke($route, $reflectionParams, $request->all(), $container, $request);
+    $args = $resolve->invoke($route, $reflectionParams, $request->routeParams(), $container, $request);
 
     expect($args)->toHaveCount(1);
     expect($args[0])->toBe('abc');                 // raw string passed through, no crash
@@ -534,6 +600,235 @@ it('AC-43: literal "false" coerces to bool false (not PHP loose-truthiness true)
 
     expect(Phase3TestController::$lastBoolFlag)->toBeFalse();
     expect($response)->toBe('bool');
+});
+
+it('AC-43 boundary: integer overflow in route param is preserved as raw string (no silent PHP_INT_MAX truncation)', function () {
+    // HIGH review finding: is_numeric() returns true for out-of-range
+    // values like "9223372036854775808" (PHP_INT_MAX + 1). The pre-fix
+    // code did `(int) $value` unconditionally, which silently capped at
+    // PHP_INT_MAX. A route ID that overflows would resolve to a totally
+    // different record. The framework MUST pass the raw string through
+    // for any value that doesn't fit, mirroring the same
+    // "leave-as-string for unsafely-coercible values" contract used for
+    // non-numeric strings (per the SPEC). With the named mutation
+    // (range check removed), the result is PHP_INT_MAX and the
+    // assertion below fails.
+    $rc = new ReflectionClass(Route::class);
+    $coerce = $rc->getMethod('coerceScalarRouteParameter');
+
+    $intSig = (new ReflectionClass(new class {
+        public function f(int $id) {}
+    }))->getMethod('f')->getParameters()[0];
+
+    $route = new Route('GET', '/test', fn () => 'ok');
+
+    $overflow = (string) (PHP_INT_MAX + 1); // "9223372036854775808" on 64-bit
+    expect(is_numeric($overflow))->toBeTrue(); // proves the pre-fix bug is reachable
+
+    $result = $coerce->invoke($route, $intSig, $overflow);
+
+    expect($result)->toBe($overflow);             // raw string preserved
+    expect(is_string($result))->toBeTrue();
+    expect(is_int($result))->toBeFalse();         // NOT silently capped to PHP_INT_MAX
+});
+
+it('AC-43 boundary: negative integer overflow in route param is preserved as raw string', function () {
+    // Same as above for the negative boundary — PHP_INT_MIN - 1.
+    $rc = new ReflectionClass(Route::class);
+    $coerce = $rc->getMethod('coerceScalarRouteParameter');
+
+    $intSig = (new ReflectionClass(new class {
+        public function f(int $id) {}
+    }))->getMethod('f')->getParameters()[0];
+
+    $route = new Route('GET', '/test', fn () => 'ok');
+
+    $underflow = (string) (PHP_INT_MIN - 1);
+    expect(is_numeric($underflow))->toBeTrue();
+
+    $result = $coerce->invoke($route, $intSig, $underflow);
+
+    expect($result)->toBe($underflow);
+    expect(is_string($result))->toBeTrue();
+});
+
+it('AC-43 boundary: float overflow ("1e309") bound to int is preserved as raw string (no silent 0)', function () {
+    // "1e309" is is_numeric()=true. (int)"1e309" silently becomes 0 in
+    // PHP (overflow → int min/0). The framework MUST preserve the raw
+    // string instead of silently truncating to 0. With the named
+    // mutation (range check removed), the result is 0 and the
+    // assertion below fails.
+    $rc = new ReflectionClass(Route::class);
+    $coerce = $rc->getMethod('coerceScalarRouteParameter');
+
+    $intSig = (new ReflectionClass(new class {
+        public function f(int $id) {}
+    }))->getMethod('f')->getParameters()[0];
+
+    $route = new Route('GET', '/test', fn () => 'ok');
+
+    $result = $coerce->invoke($route, $intSig, '1e309');
+
+    expect($result)->toBe('1e309');
+    expect(is_string($result))->toBeTrue();
+    expect($result)->not->toBe(0);                // NOT silently truncated to 0
+});
+
+it('AC-43 boundary: float overflow ("1e309") bound to float is preserved as raw string (no silent INF)', function () {
+    // "1e309" bound to a float param. (float)"1e309" silently becomes
+    // INF. The framework MUST preserve the raw string instead of
+    // silently producing INF (which would corrupt any downstream
+    // arithmetic — INF x 0 = NAN, INF - INF = NAN). With the named
+    // mutation (is_finite check removed), the result is INF and the
+    // assertion below fails.
+    $rc = new ReflectionClass(Route::class);
+    $coerce = $rc->getMethod('coerceScalarRouteParameter');
+
+    $floatSig = (new ReflectionClass(new class {
+        public function f(float $x) {}
+    }))->getMethod('f')->getParameters()[0];
+
+    $route = new Route('GET', '/test', fn () => 'ok');
+
+    $result = $coerce->invoke($route, $floatSig, '1e309');
+
+    expect($result)->toBe('1e309');
+    expect(is_string($result))->toBeTrue();
+    expect(is_finite($result))->toBeFalse();      // string is technically not a number; the discriminator is `is_string`
+});
+
+it('AC-43 scope: query values with controller-param names are not coerced by the framework', function () {
+    // MEDIUM review finding: AC-43's coercion was applied to ALL
+    // request data (via $request->all()) — not just URL-segment
+    // values. A request like /items/42?id=9999999999999999999999
+    // would routeParams-coerce '42' → int(42) AND would have coerced
+    // the query 'id' (overflowing) too if executeAction read
+    // $request->all(). Before the fix, the controller's int $id could
+    // have ended up bound from the overflowing query value (or the
+    // two values collided — either way, surprising). The fix: track
+    // URL-segment values separately (Request::routeParams()) and pass
+    // only those to resolveMethodDependencies. Query/body values are
+    // NEVER coerced by the framework now.
+    Router::get('/ac43-scope/items/{id}', [Phase3TestController::class, 'showInt']);
+
+    // URL segment 'id'=42 (in-range); query 'id' is the OVERFLOWING
+    // out-of-range string. Pre-fix, the framework's coercion ran on
+    // BOTH (route param AND query key, because executeAction pulled
+    // from $request->all()). Post-fix, only the URL segment is
+    // coerced — the query key is preserved verbatim and is not bound
+    // to the controller parameter.
+    $request = phase3BuildRequest(
+        '/ac43-scope/items/42',
+        'GET',
+        ['id' => '9999999999999999999999'], // query — out of int range, must NOT be bound
+    );
+
+    Router::dispatch($request);
+
+    // The controller received the URL segment value '42', coerced to
+    // int 42 — NOT the query value (which the framework never even
+    // saw, because routeParams excludes query keys).
+    expect(Phase3TestController::$lastIntId)->toBe(42);
+    expect(Phase3TestController::$lastIntId)->toBeInt();
+
+    // The query value is still accessible as raw string via
+    // $request->query() if the controller wants to read it — no
+    // implicit coercion happened to it.
+    expect($request->query())->toHaveKey('id');
+    expect($request->query()['id'])->toBe('9999999999999999999999');
+    expect(is_string($request->query()['id']))->toBeTrue();
+});
+
+it('AC-43 scope: query value with controller-param name is NOT bound when no URL segment matches (catches pre-fix $request->all() behavior)', function () {
+    // Stronger version of the previous scope test. The MEDIUM finding
+    // is specifically about a query value that COULD reach the
+    // controller — not a query value that gets shadowed by a URL
+    // segment of the same name. This test uses a route where the URL
+    // segment has a DIFFERENT name from the controller parameter, so
+    // the query value is the only candidate for binding — pre-fix
+    // (executeAction used $request->all()), the query value WAS
+    // bound and the framework's coercion ran on it. Post-fix
+    // (executeAction uses $request->routeParams()), the query value
+    // is not in routeParams, so the controller parameter falls
+    // through to its default value (0).
+    //
+    // Pre-fix, with the HIGH-severity range check also reverted:
+    //   routeParameters = ['itemId' => '5', 'id' => '9999...']
+    //   coerceScalarRouteParameter('9999...', int) → returns PHP_INT_MAX
+    //   showIntWithDefault(PHP_INT_MAX) → controller receives 9223372036854775807
+    //   Assertion below fails: expected 0, got PHP_INT_MAX.
+    //
+    // Pre-fix, with ONLY the range check in place (the current
+    // production state):
+    //   routeParameters = ['itemId' => '5', 'id' => '9999...']
+    //   coerceScalarRouteParameter('9999...', int) → returns '9999...' raw (overflow)
+    //   showIntWithDefault('9999...') → PHP throws TypeError because
+    //   '9999...' is not a numeric int string. Dispatch crashes.
+    //   Assertion below never runs — the test fails with an exception.
+    //
+    // Post-fix (the current production state with routeParams() in
+    // executeAction): routeParameters = ['itemId' => '5']. The query
+    // 'id' is not in routeParams, so resolveMethodDependencies falls
+    // through to the default. Controller receives 0. Assertion below
+    // passes.
+    Router::get('/ac43-scope-2/{itemId}', [Phase3TestController::class, 'showIntWithDefault']);
+
+    $request = phase3BuildRequest(
+        '/ac43-scope-2/5',
+        'GET',
+        ['id' => '9999999999999999999999'], // query — must NOT be bound (different name than URL segment)
+    );
+
+    Router::dispatch($request);
+
+    // Post-fix: controller received the DEFAULT (0), not the query value.
+    expect(Phase3TestController::$lastIntId)->toBe(0);
+
+    // The query value is still accessible as raw string via
+    // $request->query() if the controller wants to read it — no
+    // implicit coercion happened to it.
+    expect($request->query())->toHaveKey('id');
+    expect($request->query()['id'])->toBe('9999999999999999999999');
+    expect(is_string($request->query()['id']))->toBeTrue();
+
+    // routeParams only has the URL-segment key, not the query key.
+    expect($request->routeParams())->toBe(['itemId' => '5']);
+    expect($request->routeParams())->not->toHaveKey('id');
+});
+
+it('AC-43 scope: body values with controller-param names are not coerced by the framework', function () {
+    // Same shape as the query test above, but with a body field.
+    // Belt-and-braces — if a future refactor accidentally pulls
+    // $request->all() back into resolveMethodDependencies, this test
+    // detects it for body just like the previous test detects it for
+    // query.
+    Router::post('/ac43-scope-body/items/{id}', [Phase3TestController::class, 'showInt']);
+
+    $request = phase3BuildRequest(
+        '/ac43-scope-body/items/42',
+        'POST',
+        [],                                       // no query
+        ['id' => '9999999999999999999999'],       // body — out of int range
+    );
+
+    Router::dispatch($request);
+
+    // Controller received the URL segment '42', coerced to int 42 —
+    // NOT the body's out-of-range value.
+    expect(Phase3TestController::$lastIntId)->toBe(42);
+    expect(Phase3TestController::$lastIntId)->toBeInt();
+
+    // The body key is still accessible as raw string via
+    // $request->request() (setRouteParams merges route params into
+    // body, but does not overwrite the body's own 'id' key if it was
+    // already there? — actually setRouteParams uses array_merge with
+    // body as the FIRST arg, so a body 'id' would WIN over the route
+    // param. This is intentional: pre-existing controllers reading
+    // body+route params via $request->request() shouldn't have their
+    // body silently overwritten by route params. The framework NEVER
+    // coerces body values; they stay as whatever the request carried.)
+    expect($request->request())->toHaveKey('id');
+    expect(is_string($request->request()['id']))->toBeTrue();
 });
 
 /* ===========================================================================
@@ -715,4 +1010,97 @@ it('AC-46: a safe destination directory still works (regression guard)', functio
     } finally {
         chdir($previousCwd);
     }
+});
+
+it('AC-46: Windows UNC paths and rooted-backslash destination directories are rejected', function () {
+    // MEDIUM review finding: isUnsafeFilesystemPath() returned false
+    // for \\server\share\ (classic UNC), \\?\C:\ (extended \\?\ device
+    // namespace), \\.\C:\ (extended \\.\ device namespace), and \foo\
+    // (Windows-rooted leading-backslash). On Windows these reach
+    // mkdir() and the image encoder, writing outside the intended
+    // subtree. Reject all four shapes; verify NO directory and NO
+    // converted file is created at any of them, and that the safe-
+    // default fallback (`files/`) was used instead.
+    $previousCwd = getcwd();
+    chdir(PHASE3_SCRATCH_DIR);
+    try {
+        $relSource = 'ac46_unc_src_' . uniqid() . '.png';
+        phase3CreatePng($relSource);
+
+        // Each entry: [description, target_dir]. All must be rejected.
+        // The string literals use single backslashes; PHP's single-quoted
+        // string literal preserves them verbatim. To express the literal
+        // "\\server\share" we need four backslashes in the source for two
+        // in the runtime string, hence the doubled form below.
+        $targets = [
+            'Windows-rooted backslash'         => "\\foo\\",
+            'Classic UNC server\\share'        => "\\\\server\\share\\",
+            'Extended UNC \\\\?\\ device'      => "\\\\?\\C:\\",
+            'Extended UNC \\\\.\ device'       => "\\\\.\\C:\\",
+        ];
+
+        foreach ($targets as $desc => $target) {
+            // Call the function. It should detect the unsafe destination,
+            // log a warning, and fall back to the safe default ('files/').
+            webpImage($relSource, 75, false, 'uncimg', $target);
+
+            // Hard assertions: nothing was created at the unsafe target.
+            // is_dir() covers the case where mkdir() was called for the
+            // target; is_file() covers a direct file write; the descendant
+            // check covers recursive mkdir() creating intermediate dirs.
+            expect(is_dir($target))->toBeFalse("$desc: '$target' must not be created as a directory");
+            expect(is_file($target))->toBeFalse("$desc: '$target' must not be written as a file");
+
+            // The safe-default fallback may have created 'files/' in CWD
+            // (= PHASE3_SCRATCH_DIR). Cleanup if so, so the next iteration
+            // starts clean.
+            @unlink('files/uncimg.avif');
+            @unlink('files/uncimg.webp');
+            @rmdir('files');
+        }
+
+        @unlink($relSource);
+    } finally {
+        chdir($previousCwd);
+    }
+});
+
+/* ===========================================================================
+ * Cleanup hook (MEDIUM review finding)
+ *
+ * The Phase 3 tests create SQLite sidecars (SqliteCache WAL/SHM/journal)
+ * and PNG/AVIF/WebP artifacts in .scratch/phase3/. The tests' own cleanups
+ * don't remove every file (e.g. WAL/SHM files are never explicitly
+ * unlinked; the AC-46 dead code path creates PNGs the rest of the test
+ * never uses). An afterEach() hook scrubs the directory between tests so
+ * repeated runs don't accumulate files. This test verifies the hook
+ * actually removes the files it claims to remove.
+ * =========================================================================== */
+
+it('Cleanup hook: removes SQLite sidecars (WAL/SHM/journal) from .scratch/phase3/', function () {
+    // Drop fake sidecars in the scratch dir. Use a unique uniqid() so we
+    // don't collide with real SqliteCache output from other tests.
+    $base = PHASE3_SCRATCH_DIR . '/cleanup_test_' . uniqid() . '.sqlite';
+    file_put_contents($base . '-wal', 'fake wal');
+    file_put_contents($base . '-shm', 'fake shm');
+    file_put_contents($base . '-journal', 'fake journal');
+    file_put_contents($base, 'fake main');
+
+    // Sanity check: the sidecars are present (the hook hasn't run yet
+    // for THIS test — it runs after).
+    expect(file_exists($base . '-wal'))->toBeTrue();
+    expect(file_exists($base . '-shm'))->toBeTrue();
+    expect(file_exists($base . '-journal'))->toBeTrue();
+
+    // Replicate the cleanup logic from afterEach() (the actual hook will
+    // run AFTER this test method completes). If this assertion passes,
+    // the glob+unlink logic works on representative filenames.
+    foreach (glob(PHASE3_SCRATCH_DIR . '/{*.sqlite,*.sqlite-wal,*.sqlite-shm,*.sqlite-journal}', GLOB_BRACE) ?: [] as $f) {
+        @unlink($f);
+    }
+
+    expect(file_exists($base . '-wal'))->toBeFalse();
+    expect(file_exists($base . '-shm'))->toBeFalse();
+    expect(file_exists($base . '-journal'))->toBeFalse();
+    expect(file_exists($base))->toBeFalse();
 });

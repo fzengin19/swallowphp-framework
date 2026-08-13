@@ -172,15 +172,21 @@ class Router
                     $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
                     // URL-decode all parameters
                     $params = array_map('urldecode', $params);
-                    // Add route parameters to the body-only accessor. Using
-                    // $request->all() here would re-pull query-string keys into
-                    // the body (Request::all() returns query+request combined)
-                    // and silently smuggle them into $request->request() after
-                    // setAll() overwrites the body property — code that reads
-                    // $request->request() specifically to distinguish body-only
-                    // input (e.g. a security-sensitive check) would see query
-                    // values it shouldn't. The query accessor is unaffected.
-                    $request->setAll(array_merge($request->request(), $params));
+                    // Track URL-segment params separately from query/body. Two
+                    // concerns this fixes:
+                    //   1) Route::executeAction() now reads $request->routeParams()
+                    //      (not $request->all()) when binding values to controller
+                    //      method arguments, so the scalar coercion in
+                    //      coerceScalarRouteParameter() only widens coercion for
+                    //      values that came from the URL — query-string and body
+                    //      values keep PHP's loose string semantics.
+                    //   2) setRouteParams() also merges into the body accessor,
+                    //      so existing controllers reading route params via
+                    //      $request->request() / $request->all() still work —
+                    //      but it does NOT pull in $request->query(), so the
+                    //      body-only accessor is no longer contaminated with
+                    //      query-string keys.
+                    $request->setRouteParams($params);
 
                     // Store the matched route before executing
                     self::$matchedRoute = $route;

@@ -384,10 +384,12 @@ if (!function_exists('redirect')) {
 if (!function_exists('isUnsafeFilesystemPath')) {
     /**
      * Returns true if the given filesystem path is unsafe — contains a '..'
-     * traversal segment, starts with '/' (POSIX absolute), matches a Windows
-     * drive letter (e.g. 'C:\\' or 'C:/'), or contains a null byte. Used by
-     * webpImage() to reject attacker-controlled source / destination values
-     * before any filesystem operation runs.
+     * traversal segment, starts with '/' (POSIX absolute), starts with '\'
+     * (Windows-rooted), matches a Windows drive letter (e.g. 'C:\\' or 'C:/'),
+     * matches a UNC path (e.g. '\\server\share' or extended '\\?\'/'\\.\'),
+     * or contains a null byte. Used by webpImage() to reject attacker-
+     * controlled source / destination values before any filesystem operation
+     * runs.
      *
      * @param string $path
      * @return bool
@@ -402,10 +404,28 @@ if (!function_exists('isUnsafeFilesystemPath')) {
         if (str_starts_with($path, '/')) {
             return true;
         }
+        // Windows-rooted path (leading backslash), e.g. '\foo' or '\foo\bar'.
+        // On POSIX this is just a relative path with a literal '\' in the
+        // first segment, but rejecting it is the safest portable choice — a
+        // relative Windows-path style input from a non-Windows request is
+        // almost certainly attacker-controlled.
+        if (str_starts_with($path, '\\')) {
+            return true;
+        }
         // Windows drive letter, e.g. 'C:\\foo' or 'C:/foo'.
         if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path) === 1) {
             return true;
         }
+        // Windows UNC paths (\\server\share, \\?\C:\, \\.\C:\) all start with
+        // a backslash, so the leading-backslash check above already catches
+        // them. No additional UNC regex is needed; trying to express it in
+        // one regex led to subtle escape-count errors (a regex like
+        // '^\\\\(?:[?.]\\\\|[^\\\\\\/]+\\\\)' that LOOKS right actually
+        // matches only one leading backslash, not two, because each '\\' in
+        // the regex source already consumes one literal backslash). The
+        // leading-backslash check is the correct, sufficient defense — keep
+        // the structure here explicit so a future refactor that tries to add
+        // a separate UNC regex knows it would be redundant.
         // Path-traversal segment (split on both separators to catch POSIX and
         // Windows-style input).
         foreach (preg_split('/[\\\\\\/]+/', $path) as $segment) {

@@ -418,9 +418,13 @@ configured upload limits. It is applied globally in `App::run()`.
 
 #### How It Works
 
-1. For all non-idempotent methods (`POST`, `PUT`, `PATCH`, `DELETE`),
-   checks the `CONTENT_LENGTH` server variable against PHP's
-   `post_max_size` ini setting.
+1. For requests using one of the body-bearing methods (`POST`, `PUT`,
+   `PATCH`, `DELETE` — the explicit list in
+   `ValidatePostSize::handle()`), checks the `CONTENT_LENGTH` server
+   variable against PHP's `post_max_size` ini setting. (DELETE is
+   included here even though the HTTP spec considers it idempotent,
+   because DELETE bodies are permitted and the middleware exists to
+   protect PHP from receiving them when they are too large.)
 2. For multipart uploads (when `$_FILES` has entries), also inspects each
    file's `error` code for `UPLOAD_ERR_INI_SIZE` / `UPLOAD_ERR_FORM_SIZE`,
    which is how PHP signals that a per-file `upload_max_filesize` (or
@@ -464,5 +468,7 @@ Content-Type: application/json
 With `app.debug = true` the original exception message (one of the two
 strings above) is included instead of the generic user-facing copy, and
 `exception` / `file` / `line` / `trace` fields are added. Non-JSON
-requests render the `errors.413` view (falling back to a plain-HTML error
-page when the view is missing).
+requests are rendered through the view fallback chain in
+`ExceptionHandler::render()`: first `errors.413` is attempted, then
+`errors.default` if the status-specific view is missing, and finally a
+plain-HTML error page if neither view is found.

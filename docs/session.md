@@ -209,9 +209,11 @@ session()->keep(['success', 'warning']);
    which moves `_flash.new` → `_flash.old` (and clears `_flash.new`).
    `session()->getFlash('success')` reads from `_flash.old` and returns
    `'Saved!'` — and any number of reads in this same request N+1 will see it.
-3. **Request N+2:** `ageFlashData()` deletes `_flash.old` (it was already
-   cleared in N+1's start, but the bucket is wiped again as part of the
-   aging cycle); `session()->getFlash('success')` returns `null`.
+3. **Request N+2:** `ageFlashData()` runs again — the very first step is to
+   remove `_flash.old` (which is what finally discards the data aged in
+   step 2), then it would move whatever is in `_flash.new` (nothing in
+   the plain `flash()` flow) into `_flash.old`, and clear `_flash.new`.
+   `session()->getFlash('success')` now returns `null`.
 
 ---
 

@@ -381,6 +381,43 @@ if (!function_exists('redirect')) {
 }
 
 
+if (!function_exists('isUnsafeFilesystemPath')) {
+    /**
+     * Returns true if the given filesystem path is unsafe — contains a '..'
+     * traversal segment, starts with '/' (POSIX absolute), matches a Windows
+     * drive letter (e.g. 'C:\\' or 'C:/'), or contains a null byte. Used by
+     * webpImage() to reject attacker-controlled source / destination values
+     * before any filesystem operation runs.
+     *
+     * @param string $path
+     * @return bool
+     */
+    function isUnsafeFilesystemPath(string $path): bool
+    {
+        // Null byte terminates the path at the syscall layer — never legitimate.
+        if (strpos($path, "\0") !== false) {
+            return true;
+        }
+        // POSIX absolute path.
+        if (str_starts_with($path, '/')) {
+            return true;
+        }
+        // Windows drive letter, e.g. 'C:\\foo' or 'C:/foo'.
+        if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path) === 1) {
+            return true;
+        }
+        // Path-traversal segment (split on both separators to catch POSIX and
+        // Windows-style input).
+        foreach (preg_split('/[\\\\\\/]+/', $path) as $segment) {
+            if ($segment === '..') {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+
 if (!function_exists('webpImage')) {
     /**
      * Attempts to convert a source image to AVIF format.
@@ -402,6 +439,19 @@ if (!function_exists('webpImage')) {
             return $source;
         }
 
+        // Reject path-traversal / absolute / null-byte source paths before any
+        // filesystem operation. $source is used directly as a local path
+        // (file_exists/is_readable/filesize + imagecreatefrom*) and so an
+        // attacker-controlled source would let them read arbitrary files and
+        // coerce them into an AVIF/WebP. Fall back to the function's own
+        // default destination and return the source unchanged — matching the
+        // function's existing "log and return original $source" style for
+        // other failures.
+        if (isUnsafeFilesystemPath($source)) {
+            logger()->warning("Unsafe source path rejected: " . $source);
+            return $source;
+        }
+
         // Dosya boyutu kontrolü (isteğe bağlı, 10MB sınırı)
         $maxFileSize = 20 * 1024 * 1024; // 10MB
         if (filesize($source) > $maxFileSize) {
@@ -411,6 +461,19 @@ if (!function_exists('webpImage')) {
 
         // Dizin güvenlik kontrolleri
         $destinationDir = rtrim($destinationDir, '/') . '/';
+        // Reject path-traversal / absolute / null-byte destination directories
+        // before any mkdir()/imageavif()/imagewebp() would run. The filename
+        // component ($baseOutputName) is already sanitized; $destinationDir
+        // was not, and a request-controlled value here would let a caller
+        // write the converted file outside the intended subtree (or to an
+        // absolute path). Fall back to the function's own default rather than
+        // silently succeeding with the dangerous value.
+        if (isUnsafeFilesystemPath($destinationDir)) {
+            logger()->warning("Unsafe destination directory rejected: " . $destinationDir . " — falling back to default 'files/'.");
+            $destinationDir = 'files/';
+            $destinationDir = rtrim($destinationDir, '/') . '/';
+        }
+
         if (!is_dir($destinationDir)) {
             if (!@mkdir($destinationDir, 0755, true)) {
                 logger()->error("Failed to create directory: " . $destinationDir);

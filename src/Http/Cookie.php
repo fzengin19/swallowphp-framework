@@ -260,7 +260,9 @@ class Cookie
             return false;
         }
 
-        $ciphertext = openssl_encrypt($jsonData, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+        [$encKey, $macKey] = self::deriveKeys($key);
+
+        $ciphertext = openssl_encrypt($jsonData, 'aes-256-cbc', $encKey, OPENSSL_RAW_DATA, $iv);
         if ($ciphertext === false) {
              $error = openssl_error_string();
              $logMsg = "Cookie encryption failed: openssl_encrypt failed.";
@@ -268,7 +270,7 @@ class Cookie
             return false;
         }
 
-        $mac = hash_hmac('sha256', $iv . $ciphertext, $key, true);
+        $mac = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
         return base64_encode($iv . $ciphertext . $mac);
     }
 
@@ -291,7 +293,10 @@ class Cookie
         $iv = substr($decoded, 0, 16);
         $mac = substr($decoded, -32);
         $ciphertext = substr($decoded, 16, -32);
-        $expectedMac = hash_hmac('sha256', $iv . $ciphertext, $key, true);
+
+        [$encKey, $macKey] = self::deriveKeys($key);
+
+        $expectedMac = hash_hmac('sha256', $iv . $ciphertext, $macKey, true);
 
         if (!hash_equals($expectedMac, $mac)) {
             $logMsg = "Cookie decryption failed: HMAC verification failed (MAC mismatch). Cookie may have been tampered with.";
@@ -299,12 +304,12 @@ class Cookie
             return null;
         }
 
-        $decryptedJson = openssl_decrypt($ciphertext, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+        $decryptedJson = openssl_decrypt($ciphertext, 'aes-256-cbc', $encKey, OPENSSL_RAW_DATA, $iv);
         if ($decryptedJson === false) {
              $error = openssl_error_string();
              $logMsg = "Cookie decryption failed: openssl_decrypt failed after HMAC verification.";
              if ($logger) $logger->error($logMsg, ['openssl_error' => $error ?: 'N/A']); else error_log($logMsg . " OpenSSL Error: " . ($error ?: 'N/A'));
-            return null;
+             return null;
         }
 
         try {
@@ -315,6 +320,25 @@ class Cookie
              return null;
         }
         return $data;
+    }
+
+    /**
+     * Derive two independent 32-byte subkeys from the single app-derived $key
+     * via HMAC-based derivation. The single app key MUST NOT be reused across
+     * the AES-256-CBC encryption primitive and the HMAC-SHA-256 MAC primitive
+     * (key-reuse across different primitives is a well-known crypto
+     * anti-pattern). Cookies issued before this derivation existed are
+     * rejected under the new scheme — they will fail MAC verification and be
+     * treated as invalid/tampered, the same as any other invalid cookie.
+     *
+     * @param string $key The raw binary 32-byte app key.
+     * @return array{0: string, 1: string} [$encKey, $macKey]
+     */
+    private static function deriveKeys(string $key): array
+    {
+        $encKey = hash_hmac('sha256', 'swallowphp-cookie-enc', $key, true);
+        $macKey = hash_hmac('sha256', 'swallowphp-cookie-mac', $key, true);
+        return [$encKey, $macKey];
     }
 
      /** Gets and decodes the application key from the configuration. */

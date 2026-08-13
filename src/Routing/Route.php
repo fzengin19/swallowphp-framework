@@ -114,7 +114,15 @@ class Route
     // We'll pass the whole request object and let container/reflection handle it.
     $routeParameters = $request->all(); // Get all request data, including route params
 
-    if (is_callable($this->action)) {
+    // Array-callable (e.g. [Controller::class, 'method']) MUST be checked BEFORE
+    // is_callable(): PHP considers an array of [class, method] callable even
+    // for non-static instance methods, so is_callable() returns true and would
+    // send us into the ReflectionFunction branch with a TypeError (that helper
+    // only accepts Closure|string). A bare Closure is never an array, so this
+    // ordering is safe for the closure case.
+    if (is_array($this->action) && count($this->action) === 2 && is_string($this->action[0]) && is_string($this->action[1])) {
+      [$controllerName, $method] = $this->action;
+    } elseif (is_callable($this->action)) {
       // Resolve parameters for the closure using reflection and container
       $reflector = new ReflectionFunction($this->action);
       $args = $this->resolveMethodDependencies($reflector->getParameters(), $routeParameters, $container, $request);
@@ -122,8 +130,6 @@ class Route
 
     } elseif (is_string($this->action)) {
       [$controllerName, $method] = explode('@', $this->action);
-    } elseif (is_array($this->action) && count($this->action) === 2 && is_string($this->action[0]) && is_string($this->action[1])) {
-      [$controllerName, $method] = $this->action;
     } else {
       throw new Exception('Invalid action definition', 500);
     }
@@ -174,8 +180,15 @@ class Route
       $paramType = $this->getParameterClassName($param);
 
       if (array_key_exists($paramName, $routeParameters)) {
-        // Match by route parameter name
-        $args[] = $routeParameters[$paramName];
+        // Match by route parameter name. URL segments arrive as strings; if the
+        // declared parameter type is a scalar (int/float/bool/string) and the
+        // string is safely coercible, widen PHP's implicit numeric-string
+        // coercion to cover more values (e.g. leading-zero IDs, the booleans
+        // "0"/"1"). Values that are NOT safely coercible (e.g. "abc" for an
+        // int) are passed through as the raw string — this AC widens the
+        // common-case coercion only and does not invent a 404 or a TypeError
+        // for the malformed case.
+        $args[] = $this->coerceScalarRouteParameter($param, $routeParameters[$paramName]);
       } elseif ($paramType === Request::class || is_subclass_of($paramType, Request::class)) {
         // Match by Request type hint
         $args[] = $request;
@@ -306,5 +319,58 @@ class Route
     }
 
     return null;
+  }
+
+  /**
+   * Coerce a string route-parameter value to a declared scalar parameter type
+   * when safely coercible. Values that are NOT safely coercible are returned
+   * unchanged so the caller does not introduce a new crash or a new silent
+   * "not found" behavior for the malformed-input case.
+   *
+   * @param ReflectionParameter $param
+   * @param mixed $value
+   * @return mixed
+   */
+  protected function coerceScalarRouteParameter(ReflectionParameter $param, mixed $value): mixed
+  {
+    if (!is_string($value)) {
+      return $value;
+    }
+
+    $type = $param->getType();
+    if (!$type instanceof \ReflectionNamedType || !$type->isBuiltin()) {
+      return $value;
+    }
+
+    $builtin = $type->getName();
+    switch ($builtin) {
+      case 'int':
+        // is_numeric() rejects "abc" but accepts "42", "3.14", "1e2", "  42", etc.
+        // is_numeric() also accepts floats, which (int) truncates — that's the
+        // same trade-off PHP itself makes for numeric-string coercion.
+        if (is_numeric($value)) {
+          return (int) $value;
+        }
+        return $value;
+      case 'float':
+        if (is_numeric($value)) {
+          return (float) $value;
+        }
+        return $value;
+      case 'bool':
+        // Only coerce the literal forms a reasonable route param would use;
+        // PHP's loose truthiness rules for arbitrary strings are surprising.
+        $lower = strtolower($value);
+        if ($value === '1' || $lower === 'true') {
+          return true;
+        }
+        if ($value === '0' || $lower === 'false') {
+          return false;
+        }
+        return $value;
+      case 'string':
+        return $value;
+    }
+    return $value;
   }
 }

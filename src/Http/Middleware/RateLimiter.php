@@ -7,6 +7,7 @@ use SwallowPHP\Framework\Contracts\CacheInterface; // Use the interface
 use SwallowPHP\Framework\Foundation\App; // Need container access
 use SwallowPHP\Framework\Routing\Route;
 use SwallowPHP\Framework\Http\Request; // Need access to getClientIp
+use Psr\Log\LoggerInterface; // For logger type hint
 
 class RateLimiter
 {
@@ -35,6 +36,21 @@ class RateLimiter
 
         $cacheTTL = $route->getTimeToLive() ?? config('cache.ttl', 60); // Use TTL from route or default
         $ipAddress = Request::getClientIp(); // Get client IP
+        if ($ipAddress === null) {
+            // Without a usable client IP we cannot safely bucket per client.
+            // Using an empty-string suffix would collapse every unresolvable
+            // client into one shared bucket — one such client exhausting the
+            // limit locks out every other unresolvable-IP client on that route
+            // for the TTL window. Skip rate limiting for this request (fail
+            // open) and warn so the misconfiguration is visible in logs.
+            try {
+                $logger = App::container()->get(LoggerInterface::class);
+                $logger->warning('Rate limiting skipped: client IP could not be resolved for route ' . ($route->getName() ?? $route->getUri()) . '.');
+            } catch (\Throwable $e) {
+                error_log('Rate limiting skipped: client IP could not be resolved.');
+            }
+            return;
+        }
         $routeName = $route->getName() ?? $route->getUri(); // Use name or URI for key
         $cacheKey = 'rate_limit:' . $routeName . ':' . $ipAddress;
 

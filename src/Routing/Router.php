@@ -172,8 +172,15 @@ class Router
                     $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
                     // URL-decode all parameters
                     $params = array_map('urldecode', $params);
-                    // Add route parameters to the request object (overwriting query/body params with same name)
-                    $request->setAll(array_merge($request->all(), $params));
+                    // Add route parameters to the body-only accessor. Using
+                    // $request->all() here would re-pull query-string keys into
+                    // the body (Request::all() returns query+request combined)
+                    // and silently smuggle them into $request->request() after
+                    // setAll() overwrites the body property — code that reads
+                    // $request->request() specifically to distinguish body-only
+                    // input (e.g. a security-sensitive check) would see query
+                    // values it shouldn't. The query accessor is unaffected.
+                    $request->setAll(array_merge($request->request(), $params));
 
                     // Store the matched route before executing
                     self::$matchedRoute = $route;

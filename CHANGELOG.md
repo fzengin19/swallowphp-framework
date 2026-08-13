@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-08-13
+
+### Fixed
+- Documentation now matches the actual v2.0.0 API across 11 files
+  (README.md, docs/authentication.md, docs/configuration.md,
+  docs/database.md, docs/helpers.md, docs/http.md, docs/logging.md,
+  docs/middleware.md, docs/routing.md, docs/session.md, docs/views.md).
+  Highlights: removed references to a nonexistent `auth()` helper and
+  `Model::all()`; corrected `Model::on()` event-callback examples (the
+  callback receives the model instance, not a data array) and documented
+  the return-`false` abort signal; documented `Database::deleteAll()` and
+  the v2.0.0 no-WHERE `delete()` exception; documented `update()`'s
+  `int|false` return; documented `whereNull()`/`whereNotNull()` and
+  `where(col, null)` → `IS NULL` translation; fixed the `paginate()`
+  example's nonexistent 4-argument form; fixed `request()->query($key)`
+  examples to use `getQuery($key)`; fixed flash-message examples that
+  read via plain `session($key)` (which misses the flash bucket) to use
+  `getFlash()`/`hasFlash()`; corrected `getClientIp()` to the documented
+  `getIp()` helper; corrected the remember-me cookie example to the real
+  string format; corrected `ViewNotFoundException`'s HTTP status (404,
+  not 500); corrected the `raw()` helper's return type documentation;
+  documented `app.trusted_proxies`; and several smaller signature/import
+  corrections. No source code changed in this release.
+- Added `tests/Feature/DocsConsistencyTest.php` — a Pest regression suite
+  (47 tests) that pins the corrected documentation claims above against
+  the live source, including source-aware checks for the middleware
+  pipeline order, the CSRF `/api/*` exemption, and the upload-size 413
+  response body, so these docs can't silently drift again.
+
 ## [2.0.0] - 2026-08-13
 
 ### Action required

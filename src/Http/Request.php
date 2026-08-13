@@ -9,6 +9,7 @@ class Request
     public string $method;
     public array $query = []; // Query parameters (?foo=bar) - Now RAW
     public array $request = []; // Parsed body parameters (POST, JSON etc.) - Now RAW
+    public array $routeParams = []; // URL segment parameters (set by Router::dispatch)
     public array $headers = []; // Headers - Now RAW
     public array $server = []; // Subset of $_SERVER relevant to the request
     public string $rawInput = '';
@@ -238,6 +239,22 @@ class Request
      }
 
     /**
+     * Get URL segment parameters (route params) — the named captures from the
+     * route's regex match, set by Router::dispatch(). Distinct from query/body
+     * parameters so the framework's scalar coercion (see Route::coerceScalarRouteParameter)
+     * only widens coercion for values that came from the URL — a query-string
+     * `?flag=false` keeps PHP's loose string-truthiness semantics, and a body
+     * field `{"id": "42"}` keeps its string type, instead of silently flipping
+     * the semantics of the existing public surface.
+     *
+     * @return array
+     */
+    public function routeParams(): array
+    {
+        return $this->routeParams;
+    }
+
+    /**
      * Get a specific input value (checks body first, then query).
      * Returns RAW data by default.
      * @param string $key The key to retrieve.
@@ -298,6 +315,21 @@ class Request
         // Store data RAW
         $this->request = $data;
         // Removed: $this->request = $this->sanitizeData($data);
+    }
+
+    /**
+     * Set URL segment parameters (route params). Also merges them into the
+     * body accessor so existing controllers that read route params via
+     * $request->request() / $request->get() / $request->all() keep working
+     * — the addition is a new routeParams() accessor for callers that need
+     * to distinguish URL-segment values from query/body values.
+     *
+     * @param array $params
+     */
+    public function setRouteParams(array $params): void
+    {
+        $this->routeParams = $params;
+        $this->request = array_merge($this->request, $params);
     }
 
     /** Get the request URI (path + query string). */

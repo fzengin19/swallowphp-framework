@@ -111,10 +111,24 @@ class Route
   {
     $container = App::container(); // Get the DI container
     // Route parameters are already added to the request object in Router::dispatch
-    // We'll pass the whole request object and let container/reflection handle it.
-    $routeParameters = $request->all(); // Get all request data, including route params
+    // via setRouteParams(). We use routeParams() (not all()) so the scalar
+    // coercion in resolveMethodDependencies() only widens coercion for values
+    // that came from URL segments — query-string and body values keep PHP's
+    // loose string semantics. routeParams() is set by Router::dispatch and
+    // does NOT include query/body keys.
+    $routeParameters = $request->routeParams();
 
-    if (is_callable($this->action)) {
+    // Array-callable (e.g. [Controller::class, 'method']) MUST be checked BEFORE
+    // is_callable(): PHP's is_callable([ClassNameString, 'method']) returns true
+    // ONLY when 'method' is a STATIC method (false for a non-static instance
+    // method). For a static-method array action, is_callable() would return
+    // true and send us into the ReflectionFunction branch below, which throws
+    // TypeError (that helper only accepts Closure|string, not an array). A
+    // bare Closure is never an array, so this ordering is safe for the
+    // closure case regardless.
+    if (is_array($this->action) && count($this->action) === 2 && is_string($this->action[0]) && is_string($this->action[1])) {
+      [$controllerName, $method] = $this->action;
+    } elseif (is_callable($this->action)) {
       // Resolve parameters for the closure using reflection and container
       $reflector = new ReflectionFunction($this->action);
       $args = $this->resolveMethodDependencies($reflector->getParameters(), $routeParameters, $container, $request);
@@ -122,8 +136,6 @@ class Route
 
     } elseif (is_string($this->action)) {
       [$controllerName, $method] = explode('@', $this->action);
-    } elseif (is_array($this->action) && count($this->action) === 2 && is_string($this->action[0]) && is_string($this->action[1])) {
-      [$controllerName, $method] = $this->action;
     } else {
       throw new Exception('Invalid action definition', 500);
     }
@@ -151,8 +163,35 @@ class Route
     $reflectionParams = $reflectionMethod->getParameters();
     $args = $this->resolveMethodDependencies($reflectionParams, $routeParameters, $container, $request);
 
-    // Invoke the method with resolved dependencies
-    return $reflectionMethod->invokeArgs($controller, $args);
+    // Invoke the method with resolved dependencies. A route parameter that
+    // can't be coerced to its declared scalar type (e.g. "abc" for an `int`
+    // parameter — coerceScalarRouteParameter() intentionally leaves those
+    // as the raw string rather than inventing new behavior for them) would
+    // otherwise reach this call and raise a raw, unhandled TypeError. Catch
+    // that specific case here and translate it into the same
+    // MethodNotFoundException/404 contract this function already uses for
+    // "this URL doesn't resolve to a valid call".
+    try {
+      return $reflectionMethod->invokeArgs($controller, $args);
+    } catch (\TypeError $e) {
+      // PHP's argument-binding TypeError always has this exact shape
+      // ("Class::method(): Argument #N ($param) must be of type X, Y
+      // given") and is raised before the method body ever runs. A
+      // TypeError thrown FROM INSIDE the controller method's own body has
+      // an arbitrary message and does not match this pattern — re-throw
+      // those unchanged so a genuine application bug is never
+      // mis-reported as "route not found."
+      if (preg_match('/^' . preg_quote("$controllerName::$method(): Argument #", '/') . '\d+/', $e->getMessage())) {
+        // MethodNotFoundException::$previous only accepts ?Exception, and
+        // \TypeError extends \Error, not \Exception — cannot chain it as
+        // the previous exception here.
+        throw new MethodNotFoundException(
+          "Route parameters for \"$method\" on \"$controllerName\" do not match the expected argument types.",
+          404
+        );
+      }
+      throw $e;
+    }
   }
 
   /**
@@ -174,8 +213,15 @@ class Route
       $paramType = $this->getParameterClassName($param);
 
       if (array_key_exists($paramName, $routeParameters)) {
-        // Match by route parameter name
-        $args[] = $routeParameters[$paramName];
+        // Match by route parameter name. URL segments arrive as strings; if the
+        // declared parameter type is a scalar (int/float/bool/string) and the
+        // string is safely coercible, widen PHP's implicit numeric-string
+        // coercion to cover more values (e.g. leading-zero IDs, the booleans
+        // "0"/"1"). Values that are NOT safely coercible (e.g. "abc" for an
+        // int) are passed through as the raw string — this AC widens the
+        // common-case coercion only and does not invent a 404 or a TypeError
+        // for the malformed case.
+        $args[] = $this->coerceScalarRouteParameter($param, $routeParameters[$paramName]);
       } elseif ($paramType === Request::class || is_subclass_of($paramType, Request::class)) {
         // Match by Request type hint
         $args[] = $request;
@@ -306,5 +352,111 @@ class Route
     }
 
     return null;
+  }
+
+  /**
+   * Coerce a string route-parameter value to a declared scalar parameter type
+   * when safely coercible. Values that are NOT safely coercible are returned
+   * unchanged so the caller does not introduce a new crash or a new silent
+   * "not found" behavior for the malformed-input case.
+   *
+   * @param ReflectionParameter $param
+   * @param mixed $value
+   * @return mixed
+   */
+  protected function coerceScalarRouteParameter(ReflectionParameter $param, mixed $value): mixed
+  {
+    if (!is_string($value)) {
+      return $value;
+    }
+
+    $type = $param->getType();
+    if (!$type instanceof \ReflectionNamedType || !$type->isBuiltin()) {
+      return $value;
+    }
+
+    $builtin = $type->getName();
+    switch ($builtin) {
+      case 'int':
+        // is_numeric() rejects "abc" but accepts "42", "3.14", "1e2", "  42", etc.
+        // is_numeric() also accepts floats, which (int) truncates — that's the
+        // same trade-off PHP itself makes for numeric-string coercion.
+        if (is_numeric($value)) {
+          // EXACT integer-range validation via string comparison. Float
+          // comparison cannot detect overflow at the PHP_INT_MAX / MIN
+          // boundary: both "9223372036854775808" (PHP_INT_MAX + 1) and
+          // PHP_INT_MAX itself round to the same IEEE-754 double
+          // (9.2233720368548E+18), so $asFloat > PHP_INT_MAX is false
+          // even though the value is out of range — and (int) then
+          // silently produces PHP_INT_MAX, mapping a different route ID
+          // to the same record. Compare the magnitude as a string
+          // against PHP_INT_MAX/MIN instead.
+          //
+          // For pure-integer strings (no decimal point, no exponent,
+          // optional leading sign), validate length + lexicographic
+          // comparison. For everything else is_numeric accepts
+          // ("3.14", "1e2", "1e309") fall back to the float comparison
+          // — float is sufficient there because is_finite() catches
+          // the INF/NaN cases that would otherwise slip through.
+          $trimmed = trim($value);
+          if (preg_match('/^-?\d+$/', $trimmed)) {
+            $isNegative = $trimmed[0] === '-';
+            $abs = $isNegative ? substr($trimmed, 1) : $trimmed;
+            // Strip leading zeros before the length comparison below, or a
+            // harmless, in-range value like "00000000000000000000000042"
+            // gets misjudged as out-of-range purely because of its zero
+            // padding (26 digits > PHP_INT_MAX's 19) and is wrongly left as
+            // a string instead of becoming int 42. Keep at least one digit.
+            $abs = ltrim($abs, '0');
+            if ($abs === '') {
+              $abs = '0';
+            }
+            $bound = $isNegative
+              ? substr((string) PHP_INT_MIN, 1)  // "9223372036854775808"
+              : (string) PHP_INT_MAX;            // "9223372036854775807"
+            $absLen = strlen($abs);
+            $boundLen = strlen($bound);
+            if ($absLen > $boundLen || ($absLen === $boundLen && strcmp($abs, $bound) > 0)) {
+              // Out of int range — preserve the raw string so the
+              // controller sees the original URL segment instead of
+              // a silently-mangled value.
+              return $value;
+            }
+            return (int) $value;
+          }
+          $asFloat = (float) $value;
+          if (!is_finite($asFloat) || $asFloat < PHP_INT_MIN || $asFloat > PHP_INT_MAX) {
+            return $value;
+          }
+          return (int) $value;
+        }
+        return $value;
+      case 'float':
+        if (is_numeric($value)) {
+          // is_numeric() accepts "1e309" / "-1e309" — (float) yields INF.
+          // is_finite() catches both, and (float) "nan"/"inf" are also
+          // numeric strings in PHP that produce NaN/INF; reject those too.
+          $asFloat = (float) $value;
+          if (!is_finite($asFloat)) {
+            return $value;
+          }
+          return $asFloat;
+        }
+        return $value;
+      case 'bool':
+        // Only coerce the literal forms a reasonable route param would use;
+        // PHP's loose truthiness rules for arbitrary strings are surprising.
+        $lower = strtolower($value);
+        if ($value === '1' || $lower === 'true') {
+          return true;
+        }
+        if ($value === '0' || $lower === 'false') {
+          return false;
+        }
+        return $value;
+      case 'string':
+        return $value;
+    }
+    return $value;
   }
 }

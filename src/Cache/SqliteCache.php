@@ -26,6 +26,9 @@ class SqliteCache implements CacheInterface
         if (empty($dbPath)) {
             throw new Psr16InvalidArgumentException("SQLite database path cannot be empty.");
         }
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $tableName)) {
+            throw new \InvalidArgumentException("SQLite cache table name '{$tableName}' is invalid; only ASCII letters, digits, and underscores are allowed.");
+        }
         $this->dbPath = $dbPath;
         $this->tableName = $tableName; // Set table name
         // Ensure directory exists

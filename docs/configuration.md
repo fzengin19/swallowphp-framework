@@ -251,7 +251,7 @@ Database connection configuration.
 | `slow_threshold_ms` | int | `500` | Slow query threshold (ms) |
 | `log_bindings` | bool | `true` | Include bindings in query logs |
 
-> **Note on connection fields.** The connection layer (`src/Database/Database.php`) reads all connection fields.
+> **Note on connection fields.** The connection layer (`src/Database/Database.php`) reads only `driver`, `host`, `port`, `database`, `username`, `password`, `charset`, and `options`. The fields `unix_socket`, `collation`, `prefix`, `strict`, and `engine` are accepted in the connection config but **not currently consumed by the connection layer** — they have no runtime effect on how the connection is opened or used.
 
 #### MySQL Connection
 

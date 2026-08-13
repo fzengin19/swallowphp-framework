@@ -709,9 +709,18 @@ it('AC-25: docs/configuration.md session.php table has no active row for connect
     $end = strpos($rest, "\n### ");
     $section = $end === false ? $rest : substr($rest, 0, $end);
 
-    foreach (['`connection`', '`table`', '`lottery`'] as $key) {
+    foreach (['connection', 'table', 'lottery'] as $key) {
+        // Match the table cell content independently of backticks. The
+        // earlier pinned version required backtick-quoted keys, which let
+        // a regression that wrote `| connection | ... |` (without
+        // backticks) slip past the assertion. We accept either spelling:
+        // backtick-quoted (the project's house style for table keys) OR
+        // bare (the regression the auditor surfaced).
         $escaped = preg_quote($key, '/');
-        $hasActiveRow = preg_match('/^\|\s*' . $escaped . '\s*\|/m', $section) === 1;
+        $hasActiveRow = preg_match(
+            '/^\|\s*(?:`' . $escaped . '`|' . $escaped . ')\s*\|/m',
+            $section
+        ) === 1;
         expect($hasActiveRow)->toBeFalse(
             "AC-25: session.php table must not contain an active row for {$key}"
         );
@@ -1109,23 +1118,45 @@ it('AC-32: docs/database.md cursor-pagination note also flags total() as not mea
     $section = $end === false ? $rest : substr($rest, 0, $end);
 
     $totalLineFound = false;
-    $totalNegated = false;
-    foreach (explode("\n", $section) as $line) {
+    $totalMeaningless = false;
+    $lines = explode("\n", $section);
+    foreach ($lines as $i => $line) {
         if (stripos($line, 'total()') !== false) {
             $totalLineFound = true;
-            $negated = stripos($line, 'not meaningful') !== false
-                || stripos($line, 'not applicable') !== false
-                || stripos($line, 'is not') !== false;
-            if ($negated) {
-                $totalNegated = true;
+            // Per SPEC, the required wording is "are not meaningful"
+            // (or equivalent "is not meaningful" — the SPEC's exact phrase
+            // has a plural subject `lastPage()`/`total()` so it reads
+            // naturally as "are not meaningful", but a singular-verb form
+            // next to `total()` alone is also acceptable). Do NOT accept
+            // generic negations like "not applicable" — that's a
+            // different limitation wording the SPEC did not pin, and a
+            // mutant that drops the SPEC's phrasing while keeping only
+            // "not applicable" still has to fail this check.
+            //
+            // Look at this line plus the next few to tolerate line
+            // wrapping (e.g. `total()` at end of one line, `not meaningful`
+            // at start of the next). Strip Markdown blockquote markers
+            // (`> `) from the context lines — otherwise a wrapped
+            // blockquote like `... \`total()\` are\n> not meaningful ...`
+            // reads as `... \`total()\` are > not meaningful ...`, which
+            // the phrase match misses.
+            $contextParts = [$line];
+            for ($j = 1; $j <= 3; $j++) {
+                $next = $lines[$i + $j] ?? '';
+                $contextParts[] = preg_replace('/^>\s*/', '', $next);
+            }
+            $context = implode(' ', $contextParts);
+            if (stripos($context, 'are not meaningful') !== false
+                || stripos($context, 'is not meaningful') !== false) {
+                $totalMeaningless = true;
             }
         }
     }
     expect($totalLineFound)->toBeTrue(
         'AC-32: cursor-pagination note must contain a total() mention'
     );
-    expect($totalNegated)->toBeTrue(
-        'AC-32: cursor-pagination note must negate the total() claim (not meaningful / not applicable / is not)'
+    expect($totalMeaningless)->toBeTrue(
+        'AC-32: cursor-pagination note must describe total() as "not meaningful" (the SPEC\'s exact wording)'
     );
 });
 

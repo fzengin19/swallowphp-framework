@@ -12,6 +12,87 @@ that contains breaking changes needing explicit migration steps gets one
 `Action required` block listing the specific call signatures or behaviors that
 changed and the one-line migration a consumer needs to apply.
 
+## [3.0.0] - 2026-08-13
+
+Continuation of the correctness/security hardening series (v2.0.0, v2.0.1):
+a second, deeper documentation-consistency pass (15 more findings — config
+field accuracy, driver-support claims, formatting) plus six previously
+deferred, now-verified code-level fixes. Three of the code fixes are
+deliberate behavior changes — hence the major version bump.
+
+### Action required
+- `Cookie`'s encryption and MAC now use two independently-derived keys
+  instead of reusing one key for both (closes a key-reuse anti-pattern).
+  Any session/remember-me cookie issued before this deploy fails its MAC
+  check under the new derivation and is treated as invalid — the same
+  code path as any other tampered cookie (rejected cleanly, not a crash).
+  Practical effect: every user is signed out on first request after
+  upgrading; no other action needed.
+- `Router::dispatch()` no longer merges query-string values into
+  `Request::request()` (the body-only accessor) — it now only adds the
+  route's own URL parameters. Code that read `$request->request()`
+  expecting query-string values to be present there needs to switch to
+  `$request->all()` (which still merges query + body, unchanged) or
+  `$request->query()`.
+- `RateLimiter` now skips rate limiting entirely (instead of applying it
+  against one shared bucket) when the client's IP can't be resolved. If
+  you depend on rate limiting for anonymous/unresolvable-IP traffic
+  specifically, note that such requests are now unlimited rather than
+  incorrectly sharing one limit across all such clients.
+
+### Fixed
+- `Cookie::encrypt()`/`decrypt()` derive separate encryption and MAC keys
+  via HMAC-based key derivation instead of reusing one key for both
+  primitives (see Action required above).
+- `SqliteCache` validates its table name against `/^[A-Za-z0-9_]+$/` in
+  the constructor before interpolating it into SQL, closing a
+  defense-in-depth gap (not reachable via attacker input in the default
+  config, but hardened regardless).
+- `Route::executeAction()` now checks for an array-form controller action
+  (`[Controller::class, 'method']`) before the `is_callable()` closure
+  check. `is_callable()` returns `true` for an array naming a **static**
+  method, which previously sent it into the closure-reflection branch and
+  crashed with `TypeError` (array-form actions naming non-static methods
+  were never affected by this).
+- A route parameter that can't be coerced to a controller method's
+  declared scalar type (e.g. `/items/abc` against `show(int $id)`)
+  previously crashed with a raw, unhandled `TypeError`. It now throws the
+  same `MethodNotFoundException` (404) this function already uses for
+  other "route doesn't resolve to a valid call" cases. A genuine
+  `TypeError` thrown from inside a controller method's own body is not
+  affected — only the specific argument-binding error is translated.
+  Purely-numeric route segments continue to coerce correctly, including
+  zero-padded ones (e.g. `/items/00042` → `42`) and out-of-range values
+  (which are preserved as the raw string rather than silently truncated
+  to `PHP_INT_MAX`).
+- `Router::dispatch()` no longer smuggles query-string values into the
+  request body accessor (see Action required above); route parameters
+  remain available via a new dedicated `Request::routeParams()` accessor
+  as well as the existing `request()`/`all()`.
+- `RateLimiter::execute()` no longer collapses every client with an
+  unresolvable IP into one shared cache bucket (which let one such client
+  exhaust the limit and lock out every other one); it now skips limiting
+  for that request and logs a warning (see Action required above).
+- `webpImage()` rejects a `$destinationDir` (or `$source`) containing
+  `..` path-traversal segments, an absolute path, or a null byte, falling
+  back to the function's existing default output directory instead of
+  writing outside the intended subtree.
+- 15 more documentation findings from the same audit that produced v2.0.1
+  (config fields documented as active when they're not consumed by any
+  driver; PostgreSQL listed as supported despite MySQL/SQLite-only
+  identifier quoting; cache TTL semantics; cursor-pagination's broken
+  `hasMorePages()`/nonexistent `nextCursor()` corrected to the working
+  `nextPageUrl()`; session/cache config accuracy; CHANGELOG date
+  placeholders; a documented middleware pipeline order; and more).
+
+### Added
+- `tests/Feature/Phase3HardeningTest.php` — a Pest regression suite
+  covering all of the above code fixes, including source-aware dispatch
+  tests (not just unit tests of the underlying helpers) and named
+  mutations for each fix.
+- Extended `tests/Feature/DocsConsistencyTest.php` with the 15 new
+  documentation findings above.
+
 ## [2.0.1] - 2026-08-13
 
 ### Fixed

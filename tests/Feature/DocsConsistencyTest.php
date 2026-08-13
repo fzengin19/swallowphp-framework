@@ -1160,6 +1160,41 @@ it('AC-32: docs/database.md cursor-pagination note also flags total() as not mea
     );
 });
 
+/**
+ * AC-32 (review fix) — the cursor-pagination note must not recommend the
+ * nonexistent `Paginator::nextCursor()` or the broken `hasMorePages()`
+ * (which returns false for cursor pagination because `last_page` is 0).
+ * It must point readers at `nextPageUrl()`, the only accessor that
+ * actually reflects the cursor `has_more_pages` state.
+ */
+it('AC-32: docs/database.md cursor note points at nextPageUrl, not nextCursor()/hasMorePages()', function () {
+    $content = doc('docs/database.md');
+    $start = strpos($content, '### Cursor Pagination');
+    expect($start)->toBeGreaterThan(0, 'AC-32: Cursor Pagination subsection must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+    $flat = preg_replace('/\s*\n>?\s*/', ' ', $section);
+
+    expect(stripos($flat, 'nextPageUrl()') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must name nextPageUrl() as the has-more signal'
+    );
+    // No "use hasMorePages()/nextCursor() instead" recommendation.
+    expect(preg_match('/use[^.]*`?(hasMorePages|nextCursor)\(\)`?[^.]*instead/i', $flat))->toBe(
+        0,
+        'AC-32: cursor-pagination note must not recommend hasMorePages()/nextCursor()'
+    );
+    // Both broken APIs must be explicitly flagged.
+    expect(preg_match('/hasMorePages\(\)`?[^.]*(always returns `?false|not applicable)/i', $flat))->toBe(
+        1,
+        'AC-32: note must state hasMorePages() always returns false / is not applicable'
+    );
+    expect(preg_match('/no `?nextCursor\(\)`? accessor/i', $flat))->toBe(
+        1,
+        'AC-32: note must state the Paginator exposes no nextCursor() accessor'
+    );
+});
+
 /* ===========================================================================
  * AC-33 — README.md / docs/configuration.md: invalid APP_KEY example length
  * =========================================================================== */

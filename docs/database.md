@@ -677,9 +677,13 @@ $users = User::cursorPaginate(20, $cursor);
 > **Note.** `Database::cursorPaginate()` does not compute a total page
 > count the way offset pagination does: `lastPage()` is always `0` and
 > `total()` is not meaningful (the value passed through is the count of
-> items on the current page, not the total). For cursor pagination, use
-> `hasMorePages()` and `nextCursor()` instead, and treat `lastPage()` /
-> `total()` as not applicable.
+> items on the current page, not the total). Because `lastPage()` is `0`,
+> `Paginator::hasMorePages()` (which compares `currentPage < lastPage`)
+> also always returns `false` for cursor pagination, and the `Paginator`
+> exposes no `nextCursor()` accessor at all. The only supported "is there
+> more?" signal is `nextPageUrl()`: it is non-`null` (and carries the next
+> `?cursor=` value) when another page exists, and `null` on the last page.
+> Treat `lastPage()`, `total()` and `hasMorePages()` as not applicable here.
 
 ### Paginator Methods
 

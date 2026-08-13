@@ -128,7 +128,7 @@ class LogRequestMiddleware extends Middleware
         logger()->info('Request received', [
             'method' => $request->getMethod(),
             'path' => $request->getPath(),
-            'ip' => $request->getClientIp(),
+            'ip' => getIp(),
         ]);
         
         // Execute request
@@ -167,7 +167,10 @@ Router::get('/admin', [AdminController::class, 'index'])
 
 ### Execution Order
 
-Middleware is executed in a stack (LIFO for the request, FIFO for the response):
+Middleware is executed in registration order: the first-added middleware
+runs first on the incoming request, and the last-added middleware's "after"
+logic runs first on the outgoing response (i.e. the response unwinds back
+through the middlewares in reverse order):
 
 ```php
 Router::get('/admin', ...)
@@ -254,7 +257,9 @@ class VerifyCsrfToken extends BaseVerifier
 
 Pattern matching:
 - Exact match: `'/webhook'`
-- Wildcard: `'/api/*'` (matches `/api`, `/api/users`, `/api/users/1`, etc.)
+- Wildcard: `'/api/*'` (matches `/api/...` only — the trailing slash is
+  required, so the bare path `/api` does **not** match. Add an explicit
+  `'/api'` entry if you need to exempt it.)
 
 #### Token Mismatch
 
@@ -407,13 +412,22 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 
 **Class:** `SwallowPHP\Framework\Http\Middleware\ValidatePostSize`
 
-This middleware validates that incoming POST requests don't exceed PHP's configured upload limits. It's applied globally in `App::run()`.
+This middleware validates that incoming requests don't exceed PHP's
+configured upload limits. It is applied globally in `App::run()`.
 
 #### How It Works
 
-1. Checks `CONTENT_LENGTH` header against `post_max_size` PHP setting
-2. For multipart uploads, also validates against `upload_max_filesize`
-3. If exceeded, throws `PayloadTooLargeException` (HTTP 413)
+1. For all non-idempotent methods (`POST`, `PUT`, `PATCH`, `DELETE`),
+   checks the `CONTENT_LENGTH` server variable against PHP's
+   `post_max_size` ini setting.
+2. For multipart uploads (when `$_FILES` has entries), also inspects each
+   file's `error` code for `UPLOAD_ERR_INI_SIZE` / `UPLOAD_ERR_FORM_SIZE`,
+   which is how PHP signals that a per-file `upload_max_filesize` (or
+   `MAX_FILE_SIZE` form directive) was exceeded.
+3. If either check fails, throws `PayloadTooLargeException` (HTTP 413).
+   The exception's message is either `"The request payload exceeds the
+   server post_max_size limit."` (content-length path) or
+   `"Uploaded file exceeds the allowed size limit."` (upload-error path).
 
 #### Why This Matters
 
@@ -433,14 +447,21 @@ upload_max_filesize = 2M
 
 #### Response
 
-When a request exceeds the limit:
+When a request exceeds the limit, the framework's `ExceptionHandler`
+returns a 413 with a JSON body (when the request's `Accept` header asks
+for JSON) shaped like:
 
 ```
 HTTP/1.1 413 Payload Too Large
 Content-Type: application/json
 
 {
-    "error": "Payload Too Large",
-    "message": "The uploaded content exceeds the server limit of 8M."
+    "message": "Uploaded data is too large. Please reduce the file size and try again."
 }
 ```
+
+With `app.debug = true` the original exception message (one of the two
+strings above) is included instead of the generic user-facing copy, and
+`exception` / `file` / `line` / `trace` fields are added. Non-JSON
+requests render the `errors.413` view (falling back to a plain-HTML error
+page when the view is missing).

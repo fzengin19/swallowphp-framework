@@ -35,7 +35,7 @@ return [
         ],
         
         'stderr' => [
-            'driver' => 'stderr',
+            'driver' => 'errorlog',
             'level' => LogLevel::DEBUG,
         ],
     ],
@@ -47,7 +47,7 @@ return [
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `default` | string | `'file'` | Default channel name |
-| `channels.*.driver` | string | - | Log driver (`single`, `stderr`) |
+| `channels.*.driver` | string | - | Log driver (`single`, `errorlog`) |
 | `channels.*.path` | string | - | Path to log file (for `single`) |
 | `channels.*.level` | string | `'debug'` | Minimum log level |
 
@@ -336,7 +336,7 @@ class BaseController
         logger()->info('Request received', [
             'method' => $request->getMethod(),
             'path' => $request->getPath(),
-            'ip' => $request->getClientIp(),
+            'ip' => getIp(),
         ]);
     }
     

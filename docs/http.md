@@ -104,7 +104,11 @@ $host = $request->getHost();  // example.com
 $fullUrl = $request->fullUrl();  // https://example.com/users?page=2
 
 // Client IP address
-$ip = $request->getClientIp();  // 192.168.1.1
+$ip = getIp();  // 192.168.1.1 (uses the framework's helper; see Request::getClientIp for the static accessor)
+
+// When deploying behind a reverse proxy / load balancer, also configure
+// `app.trusted_proxies` in config/app.php so `getIp()` honors the
+// `X-Forwarded-For` header — see [Configuration → app.php](configuration.md#appphp).
 
 // Raw request body
 $raw = $request->rawInput();
@@ -411,6 +415,7 @@ This provides additional browser protection.
 
 namespace App\Controllers;
 
+use App\Models\User;
 use SwallowPHP\Framework\Http\Request;
 use SwallowPHP\Framework\Http\Response;
 
@@ -420,10 +425,10 @@ class ApiController
     {
         $page = $request->getQuery('page', 1);
         $limit = $request->getQuery('limit', 10);
-        
+
         $users = User::query()
-            ->paginate($limit, ['*'], 'page', $page);
-        
+            ->paginate($limit, $page);
+
         return Response::json([
             'data' => $users->items(),
             'meta' => [
@@ -459,27 +464,23 @@ class ApiController
 
 ### Remember Me Implementation
 
+Remember-me cookies are handled end-to-end by the framework's `Auth` class
+— there is no need to hand-roll a cookie format. Pass `remember: true` to
+`Auth::authenticate()` and the framework generates a 32-byte random token,
+hashes it, stores the hash on the user row, and sets an encrypted cookie
+holding `"{$userId}|{$rawToken}"`. On subsequent requests `Auth::isAuthenticated()`
+checks that cookie automatically. See
+[Authentication — Remember Me](authentication.md#remember-me) for the
+canonical example and the brute-force / lockout interaction.
+
 ```php
-use SwallowPHP\Framework\Http\Cookie;
+use SwallowPHP\Framework\Auth\Auth;
 
-// On login with "remember me"
-$token = bin2hex(random_bytes(32));
-Cookie::set('remember_me', [
-    'user_id' => $user->id,
-    'token' => hash('sha256', $token),
-], 30);  // 30 days
+// On login
+$success = Auth::authenticate($email, $password, remember: true);
 
-// On subsequent requests
-$remember = Cookie::get('remember_me');
-if ($remember) {
-    $user = User::find($remember['user_id']);
-    if ($user && hash_equals($user->remember_token, $remember['token'])) {
-        // Log user in
-    }
-}
-
-// On logout
-Cookie::delete('remember_me');
+// On logout (clears the remember-me cookie too)
+Auth::logout();
 ```
 
 ---

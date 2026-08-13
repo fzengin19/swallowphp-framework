@@ -170,7 +170,7 @@ if (Auth::isAuthenticated()) {
 }
 
 // Or use the helper function
-if (auth()->check()) {
+if (\SwallowPHP\Framework\Auth\Auth::isAuthenticated()) {
     // User is logged in
 }
 ```
@@ -197,7 +197,7 @@ if ($user) {
 }
 
 // Or use the helper function
-$user = auth()->user();
+$user = \SwallowPHP\Framework\Auth\Auth::user();
 ```
 
 **Returns:** `AuthenticatableModel|null`

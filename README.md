@@ -3,8 +3,8 @@
 A lightweight, modern PHP framework designed for simplicity and rapid development. SwallowPHP provides essential features for building web applications without the complexity of larger frameworks.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![PHP Version](https://img.shields.io/badge/PHP-8.0%2B-blue.svg)](https://php.net)
-[![Version](https://img.shields.io/badge/Version-1.1.0-orange.svg)](https://github.com/swallowphp/framework)
+[![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-blue.svg)](https://php.net)
+[![Version](https://img.shields.io/badge/Version-2.0.0-orange.svg)](https://github.com/swallowphp/framework)
 [![Total Downloads](https://img.shields.io/packagist/dt/swallowphp/framework.svg)](https://packagist.org/packages/swallowphp/framework)
 
 ## Features
@@ -22,7 +22,7 @@ A lightweight, modern PHP framework designed for simplicity and rapid developmen
 
 ## Requirements
 
-- PHP 8.0 or higher
+- PHP 8.2 or higher
 - PDO extension (for database)
 - JSON extension
 - mbstring extension
@@ -247,7 +247,7 @@ SwallowPHP uses the following third-party packages:
 | [league/container](https://container.thephpleague.com/) | ^4.2 | Dependency Injection Container |
 | [phpmailer/phpmailer](https://github.com/PHPMailer/PHPMailer) | ^6.9.1 | Email sending |
 | [psr/simple-cache](https://www.php-fig.org/psr/psr-16/) | ^3.0 | Cache interface |
-| [php-debugbar/php-debugbar](https://github.com/maximebf/php-debugbar) | ^1.23 | Debug toolbar (dev) |
+| [php-debugbar/php-debugbar](https://github.com/maximebf/php-debugbar) | ^1.23 | Debug toolbar |
 
 ## License
 

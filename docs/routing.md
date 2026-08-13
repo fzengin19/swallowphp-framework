@@ -258,6 +258,7 @@ Extend the `Middleware` base class:
 
 namespace App\Middleware;
 
+use SwallowPHP\Framework\Auth\Auth;
 use SwallowPHP\Framework\Http\Middleware\Middleware;
 use SwallowPHP\Framework\Http\Request;
 use Closure;
@@ -269,7 +270,7 @@ class AuthMiddleware extends Middleware
         if (!Auth::isAuthenticated()) {
             return redirect('/login');
         }
-        
+
         return $next($request);
     }
 }

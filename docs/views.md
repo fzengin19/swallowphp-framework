@@ -187,7 +187,7 @@ Set the view path in `config/app.php`:
 
 ### View Not Found
 
-If a view is not found, `ViewNotFoundException` is thrown (HTTP 500).
+If a view is not found, `ViewNotFoundException` is thrown (HTTP 404).
 
 ---
 
@@ -236,7 +236,7 @@ Include partials using PHP's `include`:
 ```php
 <!-- resources/views/users/create.php -->
 <?php 
-$message = session('success');
+$message = session()->hasFlash('success') ? session()->getFlash('success') : null;
 $type = 'success';
 include __DIR__ . '/../partials/alert.php'; 
 ?>
@@ -266,15 +266,15 @@ Use `isRoute()` helper for active navigation:
 Display session flash messages:
 
 ```php
-<?php if (session('success')): ?>
+<?php if (session()->hasFlash('success')): ?>
     <div class="alert alert-success">
-        <?= htmlspecialchars(session('success')) ?>
+        <?= htmlspecialchars(session()->getFlash('success')) ?>
     </div>
 <?php endif ?>
 
-<?php if (session('error')): ?>
+<?php if (session()->hasFlash('error')): ?>
     <div class="alert alert-danger">
-        <?= htmlspecialchars(session('error')) ?>
+        <?= htmlspecialchars(session()->getFlash('error')) ?>
     </div>
 <?php endif ?>
 ```
@@ -318,6 +318,7 @@ For PUT, PATCH, DELETE requests:
 
 namespace App\Controllers;
 
+use App\Models\Post;
 use SwallowPHP\Framework\Http\Request;
 
 class PostController
@@ -354,9 +355,9 @@ class PostController
 <!-- resources/views/posts/index.php -->
 <h1>All Posts</h1>
 
-<?php if (session('success')): ?>
+<?php if (session()->hasFlash('success')): ?>
     <div class="alert alert-success">
-        <?= htmlspecialchars(session('success')) ?>
+        <?= htmlspecialchars(session()->getFlash('success')) ?>
     </div>
 <?php endif ?>
 

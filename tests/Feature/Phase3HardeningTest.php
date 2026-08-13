@@ -48,6 +48,18 @@ class Phase3TestController
     public static bool $listRan = false;
     public static ?Request $capturedRequest = null;
 
+    // AC-43 raw-type probe. PHP does NOT implicitly coerce values for a
+    // `mixed` parameter (it's effectively untyped — accepts anything
+    // without conversion). So whatever the framework passes through
+    // resolveMethodDependencies() arrives at this method verbatim, and
+    // we can record gettype() before PHP's typed-parameter coercion can
+    // hide the bug. With `int $id` declared, PHP would silently coerce
+    // "42" → 42 even if Route.php did no coercion of its own, which is
+    // exactly the BLOCKING gap the test auditor flagged.
+    public static mixed $lastRawValue = null;
+    public static ?string $lastRawType = null;
+    public static bool $probeRawRan = false;
+
     public function showInt(int $id): string
     {
         self::$lastIntId = $id;
@@ -58,6 +70,20 @@ class Phase3TestController
     {
         self::$lastStringId = $id;
         return 'string';
+    }
+
+    /**
+     * Raw-type probe. Receives the argument exactly as Route.php delivers
+     * it — no PHP implicit coercion happens for a `mixed` parameter, so
+     * the recorded type/value directly reflects what the framework did
+     * (or did not do) in coerceScalarRouteParameter().
+     */
+    public function probeRaw(mixed $id): string
+    {
+        self::$lastRawValue = $id;
+        self::$lastRawType = gettype($id);
+        self::$probeRawRan = true;
+        return 'raw';
     }
 
     // Bool param form. The SPEC says: "only cast to bool for the literal
@@ -145,6 +171,9 @@ beforeEach(function () {
     Phase3TestController::$indexRan = false;
     Phase3TestController::$listRan = false;
     Phase3TestController::$capturedRequest = null;
+    Phase3TestController::$lastRawValue = null;
+    Phase3TestController::$lastRawType = null;
+    Phase3TestController::$probeRawRan = false;
 });
 
 // ---------------------------------------------------------------------------
@@ -326,39 +355,77 @@ it('AC-42: array-callable route (static method) dispatches the controller method
  *          non-numeric passes through unchanged (no new crash, no new 404).
  * =========================================================================== */
 
-it('AC-43: numeric route param coerces to the declared int type', function () {
-    $route = Router::get('/ac43/items/{id}', [Phase3TestController::class, 'showInt']);
+it('AC-43: numeric route param is coerced by the framework, not by PHP weak typing', function () {
+    // The test auditor flagged that asserting `int $id` received `42` is
+    // INSUFFICIENT to detect missing coercion: PHP 8.x's implicit
+    // numeric-string coercion converts "42" → int(42) BEFORE the typed
+    // parameter is set, so the assertion passes whether or not
+    // Route.php does any work of its own. The fix is to invoke the
+    // framework's `coerceScalarRouteParameter()` method directly via
+    // reflection, with a fake `ReflectionParameter` constructed from a
+    // fixture class whose method signature declares `int $id`. PHP's
+    // boundary coercion never runs (we never go through invokeArgs), so
+    // what coerceScalarRouteParameter() returns IS exactly what the
+    // framework would have handed to the controller — which is the
+    // observable the test needs. With the cast in place, the result is
+    // int(42); with the cast removed (the named mutation), the result
+    // is string("42") and the test fails.
+    $rc = new ReflectionClass(Route::class);
+    $coerce = $rc->getMethod('coerceScalarRouteParameter');
+    // PHP 8.1+ does not require setAccessible() for reflection access
+    // (it became a no-op). It IS deprecated in 8.5, so we omit it.
 
-    $request = phase3BuildRequest('/ac43/items/42', 'GET');
+    // Construct a fake ReflectionParameter by reflecting on an inline
+    // anonymous class with the required method signature. The framework
+    // inspects getName() / isBuiltin() on the parameter's type, so the
+    // signature of the dummy method determines what coercion branch
+    // runs.
+    $intSig = (new ReflectionClass(new class {
+        public function f(int $id) {}
+    }))->getMethod('f')->getParameters()[0];
 
-    // Router::dispatch() is what populates $request with the route
-    // parameter before executing the controller method.
+    $route = new Route('GET', '/ac43/probe', fn () => 'ok');
+
+    // Numeric → int 42 (the BLOCKING assertion; catches the named mutation)
+    $result = $coerce->invoke($route, $intSig, '42');
+    expect(gettype($result))->toBe('integer');  // NOT 'string'
+    expect($result)->toBe(42);                  // the integer value, not the string "42"
+
+    // Belt-and-braces: end-to-end dispatch with the typed `showInt`
+    // handler also delivers 42. PHP weak-typing hides the missing-
+    // coercion mutation here, but this assertion guards against a
+    // regression where dispatch stops calling the controller entirely.
+    Router::get('/ac43/items-typed/{id}', [Phase3TestController::class, 'showInt']);
+    $request = phase3BuildRequest('/ac43/items-typed/42', 'GET');
     Router::dispatch($request);
-
-    // The handler declared `int $id` and received 42 — not the string '42'.
-    // The coercion also widens the previously implicit numeric-string rule
-    // to any is_numeric() value (e.g. "3.14" → 3 via (int)).
     expect(Phase3TestController::$lastIntId)->toBe(42);
     expect(Phase3TestController::$lastIntId)->toBeInt();
 });
 
-it('AC-43: non-numeric route param passes through as the raw string (no new crash)', function () {
-    // Handler declared string $id so we can assert the raw string was
-    // delivered without crashing. Pre-AC-43 this would still work for
-    // string-typed params (PHP coerces strings to strings). Post-AC-43
-    // it still works for the same reason; the AC explicitly widens the
-    // common numeric case and does NOT introduce new error-handling for
-    // the malformed case.
-    $route = Router::get('/ac43/strings/{id}', [Phase3TestController::class, 'showString']);
+it('AC-43: non-numeric route param reaches the handler as the raw string (no new crash, no new 404)', function () {
+    // With the framework's coercion in place, `is_numeric('abc')` is
+    // false, so the framework leaves the raw string in place. With
+    // coercion removed, the behavior is identical (the framework would
+    // still pass 'abc' through) — so this test cannot detect a missing
+    // coercion via the named mutation. What it DOES detect is any
+    // FUTURE regression that introduces a new error path (404,
+    // TypeError) for the malformed case: if the probe is never called,
+    // $probeRawRan stays false and $lastRawValue stays null, and the
+    // assertions below fail.
+    //
+    // The probe uses an end-to-end dispatch (not reflection) because
+    // the spec's literal assertion is "the raw string reaches the
+    // handler" — which is only observable through the dispatch path.
+    $route = Router::get('/ac43/strings/{id}', [Phase3TestController::class, 'probeRaw']);
 
     $request = phase3BuildRequest('/ac43/strings/abc', 'GET');
 
-    // Router::dispatch() returns whatever the route returned. It should
-    // not throw, and the controller method should have been invoked.
     $response = Router::dispatch($request);
 
-    expect(Phase3TestController::$lastStringId)->toBe('abc');
-    expect($response)->toBe('string');
+    expect(Phase3TestController::$probeRawRan)->toBeTrue();           // no new 404/exception was introduced
+    expect(Phase3TestController::$lastRawType)->toBe('string');       // raw string reached the handler
+    expect(Phase3TestController::$lastRawValue)->toBe('abc');
+    expect($response)->toBe('raw');
 });
 
 it('AC-43: literal "false" coerces to bool false (not PHP loose-truthiness true)', function () {

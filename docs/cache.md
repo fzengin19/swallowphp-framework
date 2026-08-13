@@ -75,7 +75,7 @@ $cache = cache('sqlite');
 ### Common Operations
 
 ```php
-// Store a value (with default TTL from config)
+// Store a value (no TTL — the entry never expires)
 cache()->set('user:123', $userData);
 
 // Store with custom TTL (seconds)
@@ -98,6 +98,13 @@ cache()->delete('user:123');
 // Clear all cache
 cache()->clear();
 ```
+
+> **Note on TTL.** Omitting the TTL argument (or passing `null`) means the
+> cached value **never expires** — there is no separate "default TTL"
+> number applied automatically. To get a finite TTL, always pass an explicit
+> integer (seconds) or `DateInterval`. The `cache.ttl` config value is only
+> used by back-end operations that explicitly reference it (e.g. the
+> `RateLimit` middleware's default window), not by `set()` itself.
 
 ### Using CacheManager Facade
 
@@ -182,7 +189,7 @@ $settings = cache()->get('settings', ['theme' => 'dark']);
 Store a value in the cache.
 
 ```php
-// With default TTL (from config)
+// With no TTL (the entry never expires — there is no default TTL applied)
 cache()->set('key', 'value');
 
 // With TTL in seconds

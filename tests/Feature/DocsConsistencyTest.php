@@ -593,3 +593,422 @@ it('AC-23: README does not label php-debugbar as a (dev) dependency', function (
     docPregMatch('README.md', '/php-debugbar.*\(dev\)/', 0,
         'AC-23: php-debugbar must not be labeled (dev)');
 });
+
+/* ===========================================================================
+ * AC-24 — docs/session.md: no overstated custom-handler support claim
+ * =========================================================================== */
+
+it('AC-24: docs/session.md no longer claims "custom handler support"', function () {
+    // The pre-fix intro phrase was "...flash messages and custom handler support."
+    // The narrowed prose describes the file driver only.
+    docPregMatch('docs/session.md', '/custom handler support/', 0,
+        'AC-24: "custom handler support" claim must be gone');
+});
+
+it('AC-24: docs/session.md narrows the claim to the file driver', function () {
+    // The new intro must explicitly mention the file driver as the only
+    // supported backend, so a reader cannot infer that other handlers can
+    // be plugged in.
+    $content = doc('docs/session.md');
+    expect(stripos($content, 'file driver') !== false)->toBeTrue(
+        'AC-24: intro must reference the file driver'
+    );
+});
+
+/* ===========================================================================
+ * AC-25 — docs/configuration.md: session.connection/table/lottery documented as active
+ * =========================================================================== */
+
+it('AC-25: docs/configuration.md does not list session.connection as an active config row', function () {
+    // The pre-fix table row | `connection` | string | `null` | Database connection (for db driver) |
+    // is gone. We grep for the description text that was unique to that row.
+    docPregMatch('docs/configuration.md', '/Database connection \(for db driver\)/', 0,
+        'AC-25: session.connection active row must be gone');
+});
+
+it('AC-25: docs/configuration.md does not list session.table as an active config row', function () {
+    docPregMatch('docs/configuration.md', '/Database table name/', 0,
+        'AC-25: session.table active row must be gone');
+});
+
+it('AC-25: docs/configuration.md does not list session.lottery as an active config row', function () {
+    docPregMatch('docs/configuration.md', '/Garbage collection probability \[chance, divisor\]/', 0,
+        'AC-25: session.lottery active row must be gone');
+});
+
+it('AC-25: docs/configuration.md annotates all three keys as unused/reserved', function () {
+    // The fix introduces a paragraph that explicitly groups the three keys
+    // as "not currently consumed by any driver". Any regression that puts
+    // any of them back into the active-config table fails this check.
+    $content = doc('docs/configuration.md');
+    expect(stripos($content, 'session.connection') !== false)->toBeTrue(
+        'AC-25: session.connection must be mentioned (in the unused/reserved note)'
+    );
+    expect(stripos($content, 'session.table') !== false)->toBeTrue(
+        'AC-25: session.table must be mentioned (in the unused/reserved note)'
+    );
+    expect(stripos($content, 'session.lottery') !== false)->toBeTrue(
+        'AC-25: session.lottery must be mentioned (in the unused/reserved note)'
+    );
+});
+
+/* ===========================================================================
+ * AC-26 — docs/configuration.md: session.secure typed as bool|null
+ * =========================================================================== */
+
+it('AC-26: docs/configuration.md types session.secure as bool|null', function () {
+    // The pre-fix table row read `bool | null | ...`. The fix types it as
+    // `bool|null` and adds a one-clause note about null auto-detection.
+    $content = doc('docs/configuration.md');
+    // Match the row: `secure` | bool|null | `null` | ...
+    // The file has a literal backslash before the second pipe in `bool\|null`
+    // because the Markdown table cell is a PHP regex context. We accept
+    // either spelling here — `bool|null` (rendered) or `bool\|null` (raw
+    // Markdown source) — to be tolerant of either the literal fix or a
+    // rendering pass.
+    $rowMatches = preg_match('/\| `secure` \| (?:bool\|null|bool\\\\\|null) \| `null` /', $content) === 1
+        || preg_match('/\| `secure` \| bool\|null \| `null` /', $content) === 1;
+    expect($rowMatches)->toBeTrue(
+        'AC-26: session.secure row must have type bool|null'
+    );
+    expect(stripos($content, 'auto-detects from the request') !== false)->toBeTrue(
+        'AC-26: session.secure row must note the null auto-detect behavior'
+    );
+});
+
+/* ===========================================================================
+ * AC-27 — docs/configuration.md: cache.prefix documented as active
+ * =========================================================================== */
+
+it('AC-27: docs/configuration.md does not list cache.prefix as an active config row', function () {
+    // The pre-fix table row was | `prefix` | string | `'swallowphp_cache_'` | Cache key prefix |
+    // The fix removes that row and adds a note that the key is unused.
+    docPregMatch('docs/configuration.md', '/Cache key prefix/', 0,
+        'AC-27: cache.prefix active row must be gone');
+});
+
+it('AC-27: docs/configuration.md annotates cache.prefix as unused', function () {
+    $content = doc('docs/configuration.md');
+    expect(stripos($content, 'cache.prefix') !== false)->toBeTrue(
+        'AC-27: cache.prefix must be mentioned (in the unused note)'
+    );
+    expect(stripos($content, 'not currently applied') !== false)->toBeTrue(
+        'AC-27: cache.prefix unused note must be present'
+    );
+});
+
+/* ===========================================================================
+ * AC-28 — docs/configuration.md: unused database connection fields marked as active
+ * =========================================================================== */
+
+it('AC-28: docs/configuration.md annotates unix_socket, collation, prefix, strict, engine as unused', function () {
+    // The fix replaces the active-claim with an explicit "accepted in config
+    // but not currently consumed" note. We accept either an inline annotation
+    // or a separate "reads only these fields" framing, but the test must
+    // fail if any of the five fields is presented as configuring real
+    // behavior again.
+    $content = doc('docs/configuration.md');
+
+    // The connection layer documents the set of fields it actually reads.
+    expect(stripos($content, 'driver') !== false && stripos($content, 'host') !== false)->toBeTrue(
+        'AC-28: connection-layer field list must still be present'
+    );
+
+    // The framing sentence itself must be present.
+    expect(stripos($content, 'not currently consumed by the connection layer') !== false)->toBeTrue(
+        'AC-28: explicit "not currently consumed by the connection layer" framing must be present'
+    );
+
+    // Locate the position of the framing marker and check each of the five
+    // ignored fields appears within a reasonable window of that marker.
+    // We use a sliding 4000-char window because `prefix` is also a
+    // legitimate config key in other sections (cache.php, session.php),
+    // and we are looking specifically for the database-connection
+    // occurrence that is annotated as unused.
+    $unusedNotePos = stripos($content, 'not currently consumed by the connection layer');
+    expect($unusedNotePos)->not->toBeFalse(
+        'AC-28: "not currently consumed by the connection layer" framing must be present'
+    );
+    $windowStart = max(0, $unusedNotePos - 3000);
+    $windowEnd = $unusedNotePos + 3000;
+    $window = substr($content, $windowStart, $windowEnd - $windowStart);
+
+    foreach (['unix_socket', 'collation', 'prefix', 'strict', 'engine'] as $field) {
+        expect(stripos($window, $field) !== false)->toBeTrue(
+            "AC-28: database connection field `{$field}` must appear within the unused-fields note"
+        );
+    }
+});
+
+/* ===========================================================================
+ * AC-29 — docs/database.md: PostgreSQL is listed as a supported driver
+ * =========================================================================== */
+
+it('AC-29: docs/database.md does not list PostgreSQL as a supported driver', function () {
+    // The pre-fix list was three bare bullets: MySQL, SQLite, PostgreSQL.
+    // The fix tags PostgreSQL as "not currently supported" with a quote
+    // about identifier quoting. We assert the unsupported tag is present
+    // and the old bare "PostgreSQL (`pgsql`)" bullet is gone.
+    $content = doc('docs/database.md');
+    expect(stripos($content, 'PostgreSQL') !== false)->toBeTrue(
+        'AC-29: PostgreSQL must still be mentioned (in the unsupported clause)'
+    );
+    expect(stripos($content, 'not currently supported') !== false)->toBeTrue(
+        'AC-29: PostgreSQL must be marked as not currently supported'
+    );
+    // The old bare bullet listed PostgreSQL under "Supported Drivers"
+    // without any caveat. A regression that drops the annotation fails.
+    expect(preg_match('/\*\*PostgreSQL\*\* \(`pgsql`\)\s*—\s*\*\*(?!.*not currently supported)/', $content) === 0)->toBeTrue(
+        'AC-29: PostgreSQL must not appear as a bare "supported" bullet without the unsupported annotation'
+    );
+});
+
+/* ===========================================================================
+ * AC-30 — docs/cache.md: omitted TTL falls back to a configured default
+ * =========================================================================== */
+
+it('AC-30: docs/cache.md does not say "default TTL from config" is applied to set()', function () {
+    // The pre-fix comment was "Store a value (with default TTL from config)".
+    // The fix replaces it with "no TTL — the entry never expires".
+    docPregMatch('docs/cache.md', '/with default TTL from config/', 0,
+        'AC-30: "default TTL from config" claim must be gone');
+});
+
+it('AC-30: docs/cache.md says an omitted TTL means the entry never expires', function () {
+    // The corrected wording must explicitly say that omitting TTL (or
+    // passing null) means the entry never expires.
+    $content = doc('docs/cache.md');
+    expect(stripos($content, 'never expires') !== false)->toBeTrue(
+        'AC-30: "never expires" wording must be present'
+    );
+});
+
+/* ===========================================================================
+ * AC-31 — docs/routing.md: dependency injection source description
+ * =========================================================================== */
+
+it('AC-31: docs/routing.md says DI resolves from merged request data, not route params alone', function () {
+    // The pre-fix description named "route parameters" as the source. The
+    // fix narrows it to "the merged request data (route parameters, query
+    // string, and request body)".
+    $content = doc('docs/routing.md');
+    expect(stripos($content, 'merged request data') !== false)->toBeTrue(
+        'AC-31: "merged request data" wording must be present'
+    );
+    expect(stripos($content, 'route parameters') !== false)->toBeTrue(
+        'AC-31: "route parameters" must still appear (within the merged-data framing)'
+    );
+    expect(stripos($content, 'query string') !== false)->toBeTrue(
+        'AC-31: "query string" must appear in the resolution-source description'
+    );
+    expect(stripos($content, 'request body') !== false)->toBeTrue(
+        'AC-31: "request body" must appear in the resolution-source description'
+    );
+});
+
+/* ===========================================================================
+ * AC-32 — docs/database.md: cursor pagination's last_page = 0 quirk is undocumented
+ * =========================================================================== */
+
+it('AC-32: docs/database.md documents the cursor pagination last_page quirk', function () {
+    // The fix adds a note under the cursor-pagination section that
+    // lastPage() is always 0 and total() is not meaningful; readers are
+    // pointed at hasMorePages()/nextCursor() instead.
+    $content = doc('docs/database.md');
+    expect(stripos($content, 'lastPage') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must mention lastPage'
+    );
+    // The "always 0" / "not meaningful" wording must be present in the
+    // cursor-pagination context, not just a generic lastPage mention.
+    expect(preg_match('/lastPage\(\)[^.]*?always[^.]*?0/si', $content) === 1)->toBeTrue(
+        'AC-32: cursor-pagination note must say lastPage() is always 0'
+    );
+    expect(stripos($content, 'hasMorePages') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must mention hasMorePages'
+    );
+    expect(stripos($content, 'nextCursor') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must mention nextCursor'
+    );
+});
+
+/* ===========================================================================
+ * AC-33 — README.md / docs/configuration.md: invalid APP_KEY example length
+ * =========================================================================== */
+
+it('AC-33: README.md APP_KEY example decodes to exactly 32 bytes', function () {
+    // The fix replaces the placeholder with a valid 32-byte (base64:) key.
+    // We extract the value, decode the base64 payload, and assert the
+    // decoded length is exactly 32. This is a one-line PHP check that
+    // does not require a Pest test against src/, but we run it here so
+    // the spec's "grep-assert its base64: payload decodes to exactly 32
+    // bytes" gate is enforced automatically.
+    $content = doc('README.md');
+    expect(preg_match('/^APP_KEY=base64:([A-Za-z0-9+\/=]+)\s*$/m', $content, $m) === 1)->toBeTrue(
+        'AC-33: README.md must contain an APP_KEY=base64:... line'
+    );
+    $decoded = base64_decode($m[1], true);
+    expect($decoded)->toBeString('AC-33: APP_KEY base64 payload must decode');
+    expect(strlen($decoded))->toBe(32, 'AC-33: decoded APP_KEY must be exactly 32 bytes');
+});
+
+it('AC-33: docs/configuration.md APP_KEY example decodes to exactly 32 bytes', function () {
+    $content = doc('docs/configuration.md');
+    expect(preg_match('/^APP_KEY=base64:([A-Za-z0-9+\/=]+)\s*$/m', $content, $m) === 1)->toBeTrue(
+        'AC-33: docs/configuration.md must contain an APP_KEY=base64:... line'
+    );
+    $decoded = base64_decode($m[1], true);
+    expect($decoded)->toBeString('AC-33: APP_KEY base64 payload must decode');
+    expect(strlen($decoded))->toBe(32, 'AC-33: decoded APP_KEY must be exactly 32 bytes');
+});
+
+it('AC-33: neither doc uses the wrong-length placeholder', function () {
+    // The pre-fix placeholder was `your-32-character-secret-key-here`,
+    // which is not a base64 string at all and does not decode to 32 bytes.
+    // Any regression that re-introduces the literal placeholder fails this.
+    docContains('README.md', 'your-32-character-secret-key-here', false,
+        'AC-33: README.md must not use the wrong-length placeholder');
+    docContains('docs/configuration.md', 'your-32-character-secret-key-here', false,
+        'AC-33: docs/configuration.md must not use the wrong-length placeholder');
+});
+
+/* ===========================================================================
+ * AC-34 — docs/authentication.md: cache-key notation (sha1($email))
+ * =========================================================================== */
+
+it('AC-34: docs/authentication.md uses the literal sha1($email) in the cache-key description', function () {
+    $content = doc('docs/authentication.md');
+    expect(stripos($content, 'sha1($email)') !== false)->toBeTrue(
+        'AC-34: sha1($email) must appear in the cache-key description'
+    );
+});
+
+it('AC-34: docs/authentication.md no longer uses the generic {email_hash} placeholder', function () {
+    docPregMatch('docs/authentication.md', '/\{email_hash\}/', 0,
+        'AC-34: {email_hash} placeholder must be gone');
+});
+
+/* ===========================================================================
+ * AC-35 — CHANGELOG.md: Action required subsection convention is documented
+ * =========================================================================== */
+
+it('AC-35: CHANGELOG.md intro documents the Action required convention', function () {
+    $content = doc('CHANGELOG.md');
+    // The convention mentions both "Action required" and the standard
+    // subsections in the same intro paragraph. Either ordering is fine;
+    // we just want to make sure both are referenced together.
+    expect(stripos($content, 'Action required') !== false)->toBeTrue(
+        'AC-35: CHANGELOG intro must mention "Action required"'
+    );
+    expect(stripos($content, 'convention') !== false)->toBeTrue(
+        'AC-35: CHANGELOG intro must mention the convention'
+    );
+});
+
+/* ===========================================================================
+ * AC-36 — CHANGELOG.md: 2024-12-XX date placeholders are gone
+ * =========================================================================== */
+
+it('AC-36: CHANGELOG.md no longer contains the 2024-12-XX placeholder', function () {
+    docPregMatch('CHANGELOG.md', '/2024-12-XX/', 0,
+        'AC-36: 2024-12-XX placeholder must be gone');
+});
+
+/* ===========================================================================
+ * AC-37 — docs/middleware.md: global middleware pipeline order subsection
+ * =========================================================================== */
+
+it('AC-37: docs/middleware.md has a global-middleware-pipeline-order subsection listing all four middlewares', function () {
+    $content = doc('docs/middleware.md');
+    // The new subsection heading must be present.
+    expect(stripos($content, 'Global middleware pipeline order') !== false)->toBeTrue(
+        'AC-37: "Global middleware pipeline order" subsection must be present'
+    );
+    require_once __DIR__ . '/../../src/Http/Middleware/ValidatePostSize.php';
+    require_once __DIR__ . '/../../src/Http/Middleware/VerifyCsrfToken.php';
+    require_once __DIR__ . '/../../src/Http/Middleware/AddContentSecurityPolicyHeader.php';
+    // All four ordered classes must appear in the doc body as class names.
+    // The route action is a stage, not a class, so we only check the three
+    // middleware classes plus the explicit "Route action" stage label.
+    foreach (['ValidatePostSize', 'VerifyCsrfToken', 'AddContentSecurityPolicyHeader'] as $class) {
+        expect(stripos($content, $class) !== false)->toBeTrue(
+            "AC-37: {$class} must appear in middleware.md"
+        );
+    }
+    expect(stripos($content, 'Route action') !== false)->toBeTrue(
+        'AC-37: "Route action" stage must appear in the ordered pipeline list'
+    );
+});
+
+it('AC-37: docs/middleware.md lists the four pipeline stages in the real execution order', function () {
+    // The real order is ValidatePostSize -> VerifyCsrfToken -> Route action
+    // -> AddContentSecurityPolicyHeader. The check below extracts the line
+    // numbers of each class-name and asserts that they appear in the
+    // correct order.
+    $content = doc('docs/middleware.md');
+    $classNames = ['ValidatePostSize', 'VerifyCsrfToken', 'AddContentSecurityPolicyHeader'];
+    $lineNumbers = [];
+    foreach ($classNames as $class) {
+        // Find the first line in the doc that contains the class name.
+        $lines = explode("\n", $content);
+        $found = -1;
+        foreach ($lines as $i => $line) {
+            if (strpos($line, $class) !== false) {
+                $found = $i + 1;
+                break;
+            }
+        }
+        expect($found)->toBeGreaterThan(0, "AC-37: {$class} must appear in middleware.md");
+        $lineNumbers[$class] = $found;
+    }
+    expect($lineNumbers['ValidatePostSize'])->toBeLessThan($lineNumbers['VerifyCsrfToken'],
+        'AC-37: ValidatePostSize must be listed before VerifyCsrfToken');
+    expect($lineNumbers['VerifyCsrfToken'])->toBeLessThan($lineNumbers['AddContentSecurityPolicyHeader'],
+        'AC-37: VerifyCsrfToken must be listed before AddContentSecurityPolicyHeader');
+});
+
+/* ===========================================================================
+ * AC-38 — docs/views.md: view-fallback claim needs narrowing
+ * =========================================================================== */
+
+it('AC-38: docs/views.md narrows the view-resolution claim to the application view path', function () {
+    $content = doc('docs/views.md');
+    // The narrowed claim must explicitly say view() resolves only from
+    // the application's configured view directory. The doc wraps the line
+    // across a soft break, so we look for both halves and assert they
+    // appear close together, OR assert the full phrase if a future edit
+    // joins them.
+    $hasApp = stripos($content, "application's") !== false;
+    $hasConfiguredViewDir = stripos($content, 'configured view directory') !== false;
+    expect($hasApp && $hasConfiguredViewDir)->toBeTrue(
+        'AC-38: view-resolution must reference the application\'s configured view directory'
+    );
+    // The phrase "not ... fall back to any framework-bundled views" must
+    // also be present so the negative claim is anchored to a noun, not
+    // just an isolated list of places.
+    expect(stripos($content, 'fall back to any framework-bundled views') !== false
+        || stripos($content, 'fall back to') !== false && stripos($content, 'framework-bundled') !== false
+        || stripos($content, 'not') !== false && stripos($content, 'fall back to') !== false
+            && stripos($content, 'framework-bundled views') !== false)->toBeTrue(
+        'AC-38: view-resolution must explicitly negate the framework-bundled-views fallback'
+    );
+});
+
+it('AC-38: docs/views.md does not claim view() falls back to framework views for application code', function () {
+    // The pre-fix line was "Framework views: Framework's built-in views (fallback)".
+    // A regression that re-introduces the bare "framework views ... fallback"
+    // framing fails this check.
+    docPregMatch('docs/views.md', '/Framework\'s built-in views \(fallback\)/', 0,
+        'AC-38: old "framework views (fallback)" claim must be gone');
+});
+
+/* ===========================================================================
+ * AC-39 — README.md: php-debugbar fix from Tier 1 is still intact
+ * =========================================================================== */
+
+it('AC-39: AC-23 (php-debugbar (dev) label) is still passing in this run', function () {
+    // Tier 1 added the (dev) label fix in README.md. AC-23 has its own test
+    // block above; this AC just guards against a regression by re-running
+    // the same grep. If AC-23 ever stops passing, this test fails too.
+    docPregMatch('README.md', '/php-debugbar.*\(dev\)/', 0,
+        'AC-39: AC-23 regression guard — php-debugbar (dev) label must remain gone');
+});

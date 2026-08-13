@@ -64,7 +64,7 @@ APP_NAME=MyApp
 APP_ENV=local
 APP_DEBUG=true
 APP_URL=http://localhost:8000
-APP_KEY=your-32-character-secret-key-here
+APP_KEY=base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
 
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1

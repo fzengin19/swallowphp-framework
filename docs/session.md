@@ -1,6 +1,6 @@
 # Session Management
 
-SwallowPHP provides a robust session management system with flash messages and custom handler support.
+SwallowPHP provides a robust session management system with flash messages. The file driver is the only storage backend wired up by the framework — there is no handler-registration API for plugging in a custom session driver.
 
 ## Table of Contents
 

@@ -613,6 +613,15 @@ it('AC-43 boundary: integer overflow in route param is preserved as raw string (
     // non-numeric strings (per the SPEC). With the named mutation
     // (range check removed), the result is PHP_INT_MAX and the
     // assertion below fails.
+    //
+    // Use the EXACT decimal boundary string, not `(string) (PHP_INT_MAX + 1)`.
+    // The latter is a float in PHP and casts to scientific notation
+    // ("9.2233720368548E+18"), which is NOT the same string as the
+    // decimal overflow boundary — and crucially, the float comparison
+    // route happened to detect overflow via the IEEE-754 rounding
+    // difference, so the test passed even on the buggy code. The
+    // decimal literal is the actually-reachable failure shape (URL
+    // segments are plain strings, not floats).
     $rc = new ReflectionClass(Route::class);
     $coerce = $rc->getMethod('coerceScalarRouteParameter');
 
@@ -622,8 +631,10 @@ it('AC-43 boundary: integer overflow in route param is preserved as raw string (
 
     $route = new Route('GET', '/test', fn () => 'ok');
 
-    $overflow = (string) (PHP_INT_MAX + 1); // "9223372036854775808" on 64-bit
+    $overflow = '9223372036854775808'; // exact decimal: PHP_INT_MAX + 1 on 64-bit
     expect(is_numeric($overflow))->toBeTrue(); // proves the pre-fix bug is reachable
+    expect(strlen($overflow))->toBe(19);       // sanity: same length as PHP_INT_MAX
+    expect((float) $overflow === (float) PHP_INT_MAX)->toBeTrue(); // the float-rounding equality that the buggy code relied on
 
     $result = $coerce->invoke($route, $intSig, $overflow);
 
@@ -634,6 +645,8 @@ it('AC-43 boundary: integer overflow in route param is preserved as raw string (
 
 it('AC-43 boundary: negative integer overflow in route param is preserved as raw string', function () {
     // Same as above for the negative boundary — PHP_INT_MIN - 1.
+    // Use the EXACT decimal literal, not `(string) (PHP_INT_MIN - 1)`
+    // (which is a float and casts to scientific notation in PHP).
     $rc = new ReflectionClass(Route::class);
     $coerce = $rc->getMethod('coerceScalarRouteParameter');
 
@@ -643,13 +656,14 @@ it('AC-43 boundary: negative integer overflow in route param is preserved as raw
 
     $route = new Route('GET', '/test', fn () => 'ok');
 
-    $underflow = (string) (PHP_INT_MIN - 1);
+    $underflow = '-9223372036854775809'; // exact decimal: PHP_INT_MIN - 1 on 64-bit
     expect(is_numeric($underflow))->toBeTrue();
 
     $result = $coerce->invoke($route, $intSig, $underflow);
 
     expect($result)->toBe($underflow);
     expect(is_string($result))->toBeTrue();
+    expect(is_int($result))->toBeFalse();
 });
 
 it('AC-43 boundary: float overflow ("1e309") bound to int is preserved as raw string (no silent 0)', function () {

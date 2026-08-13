@@ -353,14 +353,39 @@ class Route
         // is_numeric() also accepts floats, which (int) truncates — that's the
         // same trade-off PHP itself makes for numeric-string coercion.
         if (is_numeric($value)) {
-          // is_numeric() ALSO accepts out-of-range values ("9223372036854775808",
-          // "-9999999999999999999") and overflowing exponents ("1e309"). Casting
-          // those silently produces PHP_INT_MAX / 0 / INF — the route ID would
-          // resolve to a completely different record. Validate via float first
-          // (float has the larger range, is_finite() catches INF/NaN, and the
-          // boundary check catches int overflow), then return the raw string
-          // for any value that doesn't fit. This widens the safe common-case
-          // coercion without silently mangling out-of-range input.
+          // EXACT integer-range validation via string comparison. Float
+          // comparison cannot detect overflow at the PHP_INT_MAX / MIN
+          // boundary: both "9223372036854775808" (PHP_INT_MAX + 1) and
+          // PHP_INT_MAX itself round to the same IEEE-754 double
+          // (9.2233720368548E+18), so $asFloat > PHP_INT_MAX is false
+          // even though the value is out of range — and (int) then
+          // silently produces PHP_INT_MAX, mapping a different route ID
+          // to the same record. Compare the magnitude as a string
+          // against PHP_INT_MAX/MIN instead.
+          //
+          // For pure-integer strings (no decimal point, no exponent,
+          // optional leading sign), validate length + lexicographic
+          // comparison. For everything else is_numeric accepts
+          // ("3.14", "1e2", "1e309") fall back to the float comparison
+          // — float is sufficient there because is_finite() catches
+          // the INF/NaN cases that would otherwise slip through.
+          $trimmed = trim($value);
+          if (preg_match('/^-?\d+$/', $trimmed)) {
+            $isNegative = $trimmed[0] === '-';
+            $abs = $isNegative ? substr($trimmed, 1) : $trimmed;
+            $bound = $isNegative
+              ? substr((string) PHP_INT_MIN, 1)  // "9223372036854775808"
+              : (string) PHP_INT_MAX;            // "9223372036854775807"
+            $absLen = strlen($abs);
+            $boundLen = strlen($bound);
+            if ($absLen > $boundLen || ($absLen === $boundLen && strcmp($abs, $bound) > 0)) {
+              // Out of int range — preserve the raw string so the
+              // controller sees the original URL segment instead of
+              // a silently-mangled value.
+              return $value;
+            }
+            return (int) $value;
+          }
           $asFloat = (float) $value;
           if (!is_finite($asFloat) || $asFloat < PHP_INT_MIN || $asFloat > PHP_INT_MAX) {
             return $value;

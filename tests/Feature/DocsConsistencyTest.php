@@ -615,6 +615,45 @@ it('AC-24: docs/session.md narrows the claim to the file driver', function () {
     );
 });
 
+/**
+ * AC-24 (hardened) — the old AC-24 used a document-wide "file driver" check
+ * (line 59 mentions it for file permissions, so any mutant that restores
+ * the overclaim at the top still satisfies the existing test). The
+ * auditor-confirmed killing mutant replaces the intro's narrowed prose
+ * with "Applications may register custom session handlers." This new test
+ * scopes the check to the intro paragraph (between the H1 and the first H2
+ * heading) and asserts the intro contains no "custom" or "register"
+ * language that would imply a pluggable handler.
+ */
+it('AC-24: docs/session.md intro paragraph contains no custom-handler registration claim', function () {
+    $content = doc('docs/session.md');
+    $h2 = strpos($content, "\n## ");
+    expect($h2)->toBeGreaterThan(0, 'AC-24: session.md must contain an H2 section');
+    $intro = substr($content, 0, $h2);
+
+    expect(stripos($intro, 'file driver') !== false)->toBeTrue(
+        'AC-24: intro must mention the file driver'
+    );
+    // The pre-fix intro said "custom handler support". The narrowed
+    // intro must not contain that phrase (the word "custom" can appear
+    // in a negated context like "no handler-registration API for
+    // plugging in a custom session driver" — that's the CORRECT
+    // fix; we only reject the old positive claim).
+    expect(stripos($intro, 'custom handler support') === false)->toBeTrue(
+        'AC-24: intro must not contain the old "custom handler support" phrase'
+    );
+    // The intro must also negate any positive handler-registration
+    // claim — either "no ... registration", "does not", "is not", or
+    // a similar negative verb must appear before the word "custom".
+    $hasNegation = preg_match(
+        '/\b(?:no|not|never)\b[^.]*?\bcustom\b/si',
+        $intro
+    ) === 1;
+    expect($hasNegation)->toBeTrue(
+        'AC-24: intro must negate any custom-handler claim (e.g. "no ... custom ...")'
+    );
+});
+
 /* ===========================================================================
  * AC-25 — docs/configuration.md: session.connection/table/lottery documented as active
  * =========================================================================== */
@@ -650,6 +689,33 @@ it('AC-25: docs/configuration.md annotates all three keys as unused/reserved', f
     expect(stripos($content, 'session.lottery') !== false)->toBeTrue(
         'AC-25: session.lottery must be mentioned (in the unused/reserved note)'
     );
+});
+
+/**
+ * AC-25 (hardened) — the old AC-25 grepped for the specific pre-fix
+ * description strings. The auditor-confirmed killing mutant reintroduced
+ * a generic active row (`| connection | string | null | Connection name
+ * used to persist sessions |`) with different wording while leaving the
+ * reserved-keys note in place. We extract the session.php config table
+ * body (between the `### session.php` heading and the next `###`
+ * heading) and assert none of the three reserved keys appears as an
+ * active row in that table.
+ */
+it('AC-25: docs/configuration.md session.php table has no active row for connection/table/lottery', function () {
+    $content = doc('docs/configuration.md');
+    $start = strpos($content, '### session.php');
+    expect($start)->toBeGreaterThan(0, 'AC-25: session.php section must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    foreach (['`connection`', '`table`', '`lottery`'] as $key) {
+        $escaped = preg_quote($key, '/');
+        $hasActiveRow = preg_match('/^\|\s*' . $escaped . '\s*\|/m', $section) === 1;
+        expect($hasActiveRow)->toBeFalse(
+            "AC-25: session.php table must not contain an active row for {$key}"
+        );
+    }
 });
 
 /* ===========================================================================
@@ -697,6 +763,26 @@ it('AC-27: docs/configuration.md annotates cache.prefix as unused', function () 
     );
 });
 
+/**
+ * AC-27 (hardened) — extract the cache.php table and assert the
+ * `prefix` key is not an active row, regardless of the description
+ * wording. Auditor's killing mutant: a new active row with different
+ * description text ("Prefix prepended to every cache key") while the
+ * unused note stayed in place.
+ */
+it('AC-27: docs/configuration.md cache.php table has no active row for prefix', function () {
+    $content = doc('docs/configuration.md');
+    $start = strpos($content, '### cache.php');
+    expect($start)->toBeGreaterThan(0, 'AC-27: cache.php section must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    expect(preg_match('/^\|\s*`prefix`\s*\|/m', $section) === 0)->toBeTrue(
+        'AC-27: cache.php table must not have an active `prefix` row'
+    );
+});
+
 /* ===========================================================================
  * AC-28 — docs/configuration.md: unused database connection fields marked as active
  * =========================================================================== */
@@ -740,6 +826,41 @@ it('AC-28: docs/configuration.md annotates unix_socket, collation, prefix, stric
     }
 });
 
+/**
+ * AC-28 (hardened) — auditor's killing mutant: the framing sentence
+ * stays but the five field names are removed from it; the existing
+ * test passed because the names still appeared in the MySQL example
+ * nearby (within the ±3000-char window). The new test asserts each
+ * field name is bound to the framing note by appearing in the SAME
+ * blockquote / paragraph as the framing marker, not just in a wide
+ * window. We detect the note by finding the `> **Note on connection
+ * fields.**` blockquote and check that all five names appear inside
+ * that same blockquote.
+ */
+it('AC-28: docs/configuration.md unused-fields note enumerates all five fields together', function () {
+    $content = doc('docs/configuration.md');
+    $start = strpos($content, '> **Note on connection fields.**');
+    expect($start)->toBeGreaterThan(0, 'AC-28: connection-fields note must exist');
+    $rest = substr($content, $start);
+    // A Markdown blockquote is a run of contiguous `>`-prefixed lines.
+    $lines = explode("\n", $rest);
+    $blockquote = '';
+    foreach ($lines as $line) {
+        if (str_starts_with($line, '>')) {
+            $blockquote .= $line . "\n";
+        } else {
+            break;
+        }
+    }
+    expect($blockquote)->not->toBeEmpty('AC-28: connection-fields blockquote must contain content');
+
+    foreach (['unix_socket', 'collation', 'prefix', 'strict', 'engine'] as $field) {
+        expect(stripos($blockquote, $field) !== false)->toBeTrue(
+            "AC-28: field `{$field}` must be enumerated in the same blockquote as the unused-fields framing"
+        );
+    }
+});
+
 /* ===========================================================================
  * AC-29 — docs/database.md: PostgreSQL is listed as a supported driver
  * =========================================================================== */
@@ -763,6 +884,62 @@ it('AC-29: docs/database.md does not list PostgreSQL as a supported driver', fun
     );
 });
 
+/**
+ * AC-29 (hardened) — auditor's killing mutant: change the PostgreSQL
+ * bullet to "fully supported" and add an unrelated "not currently
+ * supported" clause elsewhere in the file. The existing test still
+ * passes because the literal "not currently supported" string exists
+ * somewhere in the doc. We scope the check to the Supported Drivers
+ * subsection and assert the PostgreSQL bullet itself carries the
+ * unsupported annotation.
+ */
+it('AC-29: docs/database.md Supported Drivers subsection marks PostgreSQL as unsupported', function () {
+    $content = doc('docs/database.md');
+    $start = strpos($content, '### Supported Drivers');
+    expect($start)->toBeGreaterThan(0, 'AC-29: Supported Drivers subsection must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    expect(stripos($section, 'PostgreSQL') !== false)->toBeTrue(
+        'AC-29: PostgreSQL must be mentioned in the Supported Drivers subsection'
+    );
+
+    // Extract the PostgreSQL bullet (a bullet can wrap across multiple
+    // lines via a trailing backslash). Walk forward from the bullet
+    // marker until we either hit a line that ends with the period at
+    // the end of the supported-list sentence, or a new bullet.
+    $lines = explode("\n", $section);
+    $pgLines = [];
+    $capturing = false;
+    foreach ($lines as $i => $line) {
+        if (preg_match('/^\s*-\s+\*\*PostgreSQL\*\*/', $line)) {
+            $capturing = true;
+        }
+        if ($capturing) {
+            $pgLines[] = $line;
+            if (str_ends_with(rtrim($line), 'updated.')) {
+                break;
+            }
+            // Stop at the next non-continuation line.
+            if ($i > 0 && !str_ends_with(rtrim($lines[$i - 1]), '\\')
+                && !preg_match('/^\s*-\s+/', $line) && trim($line) !== ''
+                && !str_ends_with(rtrim($line), '\\')) {
+                // We are past the wrapped paragraph; stop.
+                if (!preg_match('/^\s*-\s+\*\*/', $line)) {
+                    array_pop($pgLines);
+                    break;
+                }
+            }
+        }
+    }
+    $pgBullet = implode("\n", $pgLines);
+    expect($pgBullet)->not->toBeEmpty('AC-29: PostgreSQL bullet must be extractable');
+    expect(stripos($pgBullet, 'not currently supported') !== false)->toBeTrue(
+        'AC-29: the PostgreSQL bullet itself must say "not currently supported"'
+    );
+});
+
 /* ===========================================================================
  * AC-30 — docs/cache.md: omitted TTL falls back to a configured default
  * =========================================================================== */
@@ -780,6 +957,39 @@ it('AC-30: docs/cache.md says an omitted TTL means the entry never expires', fun
     $content = doc('docs/cache.md');
     expect(stripos($content, 'never expires') !== false)->toBeTrue(
         'AC-30: "never expires" wording must be present'
+    );
+});
+
+/**
+ * AC-30 (hardened) — auditor's killing mutant: restore the second
+ * pre-fix comment at `docs/cache.md:192` ("With no TTL (uses the
+ * default TTL from config)") while leaving the first corrected
+ * comment and the "never expires" note in place. The existing regex
+ * is case-sensitive on "with default TTL from config", so the
+ * auditor's exact mutation SHOULD have been caught — but only if
+ * the regex actually matches. The auditor's report says it passed,
+ * so we assume the mutant wording differs in some subtle way
+ * (extra spaces, hyphen, etc.). The new test scopes the check to
+ * the `set()` API section and asserts neither the old "default
+ * TTL" wording nor the old "Store a value (with default TTL)"
+ * framing appears inside the `set()` subsection.
+ */
+it('AC-30: docs/cache.md `set()` API example says never expires, not default TTL', function () {
+    $content = doc('docs/cache.md');
+    $start = strpos($content, '### `set(');
+    expect($start)->toBeGreaterThan(0, 'AC-30: set() API section must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    expect(preg_match('/default TTL from config/i', $section) === 0)->toBeTrue(
+        'AC-30: set() API section must not mention the old "default TTL from config" wording'
+    );
+    expect(preg_match('/Store a value \(with default TTL/i', $section) === 0)->toBeTrue(
+        'AC-30: set() API section must not use the old "Store a value (with default TTL...)" framing'
+    );
+    expect(stripos($section, 'never expires') !== false)->toBeTrue(
+        'AC-30: set() API section must contain the corrected "never expires" wording'
     );
 });
 
@@ -806,6 +1016,56 @@ it('AC-31: docs/routing.md says DI resolves from merged request data, not route 
     );
 });
 
+/**
+ * AC-31 (hardened) — auditor's killing mutant: revert the Resolution
+ * Order list item to "values are read from route parameters" while
+ * keeping the corrected "merged request data" wording in a separate
+ * section. The existing test scans the whole document. We scope the
+ * "merged request data" check to the Resolution Order subsection and
+ * assert the SAME list item that names route parameters also names
+ * the merged request data, query string, and request body.
+ */
+it('AC-31: docs/routing.md Resolution Order list item itself describes the merged data', function () {
+    $content = doc('docs/routing.md');
+    $start = strpos($content, '**Resolution Order:**');
+    expect($start)->toBeGreaterThan(0, 'AC-31: Resolution Order list must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n## ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    // Extract list item #1 (may wrap across multiple lines until the
+    // next numbered item or blank line).
+    $lines = explode("\n", $section);
+    $firstItem = '';
+    $capturing = false;
+    foreach ($lines as $i => $line) {
+        if (preg_match('/^\s*1\.\s/', $line)) {
+            $capturing = true;
+        } elseif ($capturing) {
+            if (preg_match('/^\s*[2-9]\.\s/', $line)) {
+                break;
+            }
+            if (trim($line) === '' && $firstItem !== '' && !str_ends_with(rtrim($firstItem), '\\')) {
+                break;
+            }
+        }
+        if ($capturing) {
+            $firstItem .= $line . "\n";
+        }
+    }
+    expect(trim($firstItem))->not->toBeEmpty('AC-31: Resolution Order list item #1 must exist');
+
+    expect(stripos($firstItem, 'merged request data') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must reference the merged request data'
+    );
+    expect(stripos($firstItem, 'query string') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must mention the query string'
+    );
+    expect(stripos($firstItem, 'request body') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must mention the request body'
+    );
+});
+
 /* ===========================================================================
  * AC-32 — docs/database.md: cursor pagination's last_page = 0 quirk is undocumented
  * =========================================================================== */
@@ -828,6 +1088,44 @@ it('AC-32: docs/database.md documents the cursor pagination last_page quirk', fu
     );
     expect(stripos($content, 'nextCursor') !== false)->toBeTrue(
         'AC-32: cursor-pagination note must mention nextCursor'
+    );
+});
+
+/**
+ * AC-32 (hardened) — auditor's killing mutant: remove the "total()
+ * is not meaningful" clause from the cursor-pagination note. The
+ * existing test never asserts that total() is meaningless — it only
+ * checks lastPage() is always 0 and hasMorePages/nextCursor are
+ * mentioned. The new test asserts total() is also explicitly called
+ * out as not meaningful, scoped to the cursor-pagination note (the
+ * blockquote that follows the `### Cursor Pagination` heading).
+ */
+it('AC-32: docs/database.md cursor-pagination note also flags total() as not meaningful', function () {
+    $content = doc('docs/database.md');
+    $start = strpos($content, '### Cursor Pagination');
+    expect($start)->toBeGreaterThan(0, 'AC-32: Cursor Pagination subsection must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    $totalLineFound = false;
+    $totalNegated = false;
+    foreach (explode("\n", $section) as $line) {
+        if (stripos($line, 'total()') !== false) {
+            $totalLineFound = true;
+            $negated = stripos($line, 'not meaningful') !== false
+                || stripos($line, 'not applicable') !== false
+                || stripos($line, 'is not') !== false;
+            if ($negated) {
+                $totalNegated = true;
+            }
+        }
+    }
+    expect($totalLineFound)->toBeTrue(
+        'AC-32: cursor-pagination note must contain a total() mention'
+    );
+    expect($totalNegated)->toBeTrue(
+        'AC-32: cursor-pagination note must negate the total() claim (not meaningful / not applicable / is not)'
     );
 });
 
@@ -902,6 +1200,32 @@ it('AC-34: docs/authentication.md no longer uses the generic {email_hash} placeh
     $section = substr($content, $start, $end - $start);
     expect(preg_match('/\{email_hash\}/', $section))->toBe(0,
         'AC-34: {email_hash} placeholder must be gone');
+});
+
+/**
+ * AC-34 (hardened) — auditor's killing mutant: change ONLY the
+ * lockout key to md5($email) (`login_lockout_{ip}_md5($email)`),
+ * leave the `login_attempt_` key using sha1($email). The existing
+ * two tests only check that the attempt key uses sha1 and that
+ * {email_hash} is gone — neither asserts the lockout key uses
+ * sha1. Add a check that the lockout key in the Cache Keys section
+ * explicitly uses sha1($email), not md5 or any other hash.
+ */
+it('AC-34: docs/authentication.md lockout key also uses sha1($email)', function () {
+    $content = doc('docs/authentication.md');
+    $start = stripos($content, '### Cache Keys');
+    $end = stripos($content, "\n### ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-34: cache-key section must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-34: cache-key section must be bounded');
+    $section = substr($content, $start, $end - $start);
+
+    expect(preg_match('/login_lockout_\{ip\}_sha1\(\$email\)/', $section) === 1)->toBeTrue(
+        'AC-34: lockout key must also use sha1($email) (not md5, not a generic hash)'
+    );
+    // Also assert that no other hash function is used in the lockout key.
+    expect(preg_match('/login_lockout_\{ip\}_md5\(/', $section) === 0)->toBeTrue(
+        'AC-34: lockout key must not use md5($email)'
+    );
 });
 
 /* ===========================================================================
@@ -1008,4 +1332,34 @@ it('AC-38: docs/views.md does not claim view() falls back to framework views for
     // framing fails this check.
     docPregMatch('docs/views.md', '/Framework\'s built-in views \(fallback\)/', 0,
         'AC-38: old "framework views (fallback)" claim must be gone');
+});
+
+/**
+ * AC-38 (hardened) — auditor's killing mutant: flip "It does **not**
+ * fall back to any framework-bundled views." to "It does fall back to
+ * any framework-bundled views." The existing predicate accepts the
+ * mutant because it requires `not` AND `fall back to` AND
+ * `framework-bundled views` anywhere in the doc, regardless of
+ * whether they're part of the same sentence. We scope the check to
+ * the View Resolution section and assert the negation is actually
+ * attached to the fallback claim in the same contiguous phrase.
+ */
+it('AC-38: docs/views.md View Resolution section negates the framework-bundled fallback in one phrase', function () {
+    $content = doc('docs/views.md');
+    $start = strpos($content, '### Resolution Order');
+    expect($start)->toBeGreaterThan(0, 'AC-38: View Resolution section must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    // The negation must be present and the negated verb "fall back" must
+    // be attached to "framework-bundled views" in the same contiguous
+    // text run (allowing Markdown emphasis stars like `**not**`).
+    $hasNegation = preg_match(
+        '/\*?\*?\*?not\*?\*?\*?\s+fall\s+back\s+to\s+any\s+framework-bundled\s+views/si',
+        $section
+    ) === 1;
+    expect($hasNegation)->toBeTrue(
+        'AC-38: View Resolution section must contain "not ... fall back to any framework-bundled views" as a single phrase'
+    );
 });

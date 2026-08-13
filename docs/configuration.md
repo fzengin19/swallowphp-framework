@@ -30,7 +30,8 @@ APP_NAME=MyApplication
 APP_ENV=local
 APP_DEBUG=true
 APP_URL=http://localhost:8000
-APP_KEY=your-32-character-secret-key-here
+# EXAMPLE ONLY — generate your own key before using this configuration
+APP_KEY=base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
 
 # Database
 DB_CONNECTION=mysql
@@ -251,6 +252,8 @@ Database connection configuration.
 | `slow_threshold_ms` | int | `500` | Slow query threshold (ms) |
 | `log_bindings` | bool | `true` | Include bindings in query logs |
 
+> **Note on connection fields.** The connection layer (`src/Database/Database.php`) reads only `driver`, `host`, `port`, `database`, `username`, `password`, `charset`, and `options`. The fields `unix_socket`, `collation`, `prefix`, `strict`, and `engine` are accepted in the connection config but **not currently consumed by the connection layer** — they have no runtime effect on how the connection is opened or used.
+
 #### MySQL Connection
 
 ```php
@@ -319,15 +322,20 @@ Session configuration.
 | `lifetime` | int | `120` | Session lifetime in minutes |
 | `expire_on_close` | bool | `false` | Expire when browser closes |
 | `files` | string | `null` | File storage path |
-| `connection` | string | `null` | Database connection (for db driver) |
-| `table` | string | `'sessions'` | Database table name |
 | `cookie` | string | `'swallow_session'` | Session cookie name |
 | `path` | string | `'/'` | Cookie path |
 | `domain` | string | `null` | Cookie domain |
-| `secure` | bool | `null` | HTTPS only (auto-detected) |
+| `secure` | bool\|null | `null` | HTTPS only (auto-detected; `null` auto-detects from the request) |
 | `http_only` | bool | `true` | HTTP only access |
 | `same_site` | string | `'Lax'` | SameSite policy (Lax, Strict, None) |
-| `lottery` | array | `[2, 100]` | Garbage collection probability [chance, divisor] |
+
+The following keys are accepted in `config/session.php` but **not currently consumed by any driver** in the framework — they are reserved for a future database-backed driver and have no runtime effect today:
+
+- `session.connection` — would name the database connection to use for a `database` driver.
+- `session.table` — would name the database table that stores session rows.
+- `session.lottery` — would set the garbage-collection probability for a file driver.
+
+If you set them, the framework will read them silently and ignore them.
 
 **Example:**
 
@@ -360,7 +368,8 @@ Cache configuration.
 | `default` | string | `'file'` | Default cache driver |
 | `ttl` | int | `3600` | Default TTL in seconds |
 | `stores` | array | - | Cache store configurations |
-| `prefix` | string | `'swallowphp_cache_'` | Cache key prefix |
+
+The `cache.prefix` key is accepted in `config/cache.php` but **not currently applied** by either `FileCache` or `SqliteCache` — cache keys are stored exactly as passed to `set()` / `get()`, with no prefix prepended. The key is reserved for a future prefixing layer.
 
 #### File Store
 

@@ -185,6 +185,27 @@ Response flow: `Action → Admin → Log → Auth`
 
 ---
 
+## Global Middleware Pipeline Order
+
+`App::run()` builds an outer middleware onion around every request. The
+four global stages run in the following order (`src/Foundation/App.php`):
+
+1. **`ValidatePostSize`** — first. Rejects payloads larger than PHP's
+   `post_max_size` / `upload_max_filesize` with a 413 before any other
+   middleware touches the request.
+2. **`VerifyCsrfToken`** — second. Validates the CSRF token on
+   state-changing methods (`POST`, `PUT`, `PATCH`, `DELETE`).
+3. **Route action** — third. The matched route's controller/closure
+   runs, with any per-route middleware applied to its own inner onion.
+4. **`AddContentSecurityPolicyHeader`** — last. Runs *after* the
+   response body has been generated, but before the response is sent,
+   so it can attach the `Content-Security-Policy` header to the final
+   response.
+
+Request flow: `ValidatePostSize → VerifyCsrfToken → Route action → AddContentSecurityPolicyHeader → Response sent`
+
+---
+
 ## Built-in Middleware
 
 ### CSRF Protection

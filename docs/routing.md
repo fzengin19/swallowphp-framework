@@ -236,7 +236,10 @@ public function store(Request $request, LoggerInterface $logger)
 ```
 
 **Resolution Order:**
-1. Route parameter name match (e.g., `$id` matches `{id}`)
+1. Route parameter name match (e.g., `$id` matches `{id}`) — values are read
+   from the **merged request data** (route parameters, query string, and
+   request body), not from route parameters alone. Route parameters are
+   merged into the request by the router before `execute()` runs.
 2. `Request` type-hint → current request object
 3. Type-hint exists in container → resolved from container
 4. Has default value → uses default

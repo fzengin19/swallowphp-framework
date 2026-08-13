@@ -175,7 +175,7 @@ Both `users/profile.php` and `layouts/main.php` can access `$user` and `$title`.
 The framework looks for views in this order:
 
 1. **Application views:** `config('app.view_path')` (e.g., `resources/views/`)
-2. **Framework views:** Framework's built-in views (fallback)
+2. **Framework views:** Framework's built-in views (fallback at `src/resources/views/`, e.g. `components/pagination.php`, `errors/404.php`, `errors/500.php`, `errors/default.php`)
 
 ### Configuration
 

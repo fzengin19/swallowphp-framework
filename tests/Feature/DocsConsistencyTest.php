@@ -593,3 +593,844 @@ it('AC-23: README does not label php-debugbar as a (dev) dependency', function (
     docPregMatch('README.md', '/php-debugbar.*\(dev\)/', 0,
         'AC-23: php-debugbar must not be labeled (dev)');
 });
+
+/* ===========================================================================
+ * AC-24 — docs/session.md: no overstated custom-handler support claim
+ * =========================================================================== */
+
+it('AC-24: docs/session.md no longer claims "custom handler support"', function () {
+    // The pre-fix intro phrase was "...flash messages and custom handler support."
+    // The narrowed prose describes the file driver only.
+    docPregMatch('docs/session.md', '/custom handler support/', 0,
+        'AC-24: "custom handler support" claim must be gone');
+});
+
+it('AC-24: docs/session.md narrows the claim to the file driver', function () {
+    // The new intro must explicitly mention the file driver as the only
+    // supported backend, so a reader cannot infer that other handlers can
+    // be plugged in.
+    $content = doc('docs/session.md');
+    expect(stripos($content, 'file driver') !== false)->toBeTrue(
+        'AC-24: intro must reference the file driver'
+    );
+});
+
+/**
+ * AC-24 (hardened) — the old AC-24 used a document-wide "file driver" check
+ * (line 59 mentions it for file permissions, so any mutant that restores
+ * the overclaim at the top still satisfies the existing test). The
+ * auditor-confirmed killing mutant replaces the intro's narrowed prose
+ * with "Applications may register custom session handlers." This new test
+ * scopes the check to the intro paragraph (between the H1 and the first H2
+ * heading) and asserts the intro contains no "custom" or "register"
+ * language that would imply a pluggable handler.
+ */
+it('AC-24: docs/session.md intro paragraph contains no custom-handler registration claim', function () {
+    $content = doc('docs/session.md');
+    $h2 = strpos($content, "\n## ");
+    expect($h2)->toBeGreaterThan(0, 'AC-24: session.md must contain an H2 section');
+    $intro = substr($content, 0, $h2);
+
+    expect(stripos($intro, 'file driver') !== false)->toBeTrue(
+        'AC-24: intro must mention the file driver'
+    );
+    // The pre-fix intro said "custom handler support". The narrowed
+    // intro must not contain that phrase (the word "custom" can appear
+    // in a negated context like "no handler-registration API for
+    // plugging in a custom session driver" — that's the CORRECT
+    // fix; we only reject the old positive claim).
+    expect(stripos($intro, 'custom handler support') === false)->toBeTrue(
+        'AC-24: intro must not contain the old "custom handler support" phrase'
+    );
+    // The intro must also negate any positive handler-registration
+    // claim — either "no ... registration", "does not", "is not", or
+    // a similar negative verb must appear before the word "custom".
+    $hasNegation = preg_match(
+        '/\b(?:no|not|never)\b[^.]*?\bcustom\b/si',
+        $intro
+    ) === 1;
+    expect($hasNegation)->toBeTrue(
+        'AC-24: intro must negate any custom-handler claim (e.g. "no ... custom ...")'
+    );
+});
+
+/* ===========================================================================
+ * AC-25 — docs/configuration.md: session.connection/table/lottery documented as active
+ * =========================================================================== */
+
+it('AC-25: docs/configuration.md does not list session.connection as an active config row', function () {
+    // The pre-fix table row | `connection` | string | `null` | Database connection (for db driver) |
+    // is gone. We grep for the description text that was unique to that row.
+    docPregMatch('docs/configuration.md', '/Database connection \(for db driver\)/', 0,
+        'AC-25: session.connection active row must be gone');
+});
+
+it('AC-25: docs/configuration.md does not list session.table as an active config row', function () {
+    docPregMatch('docs/configuration.md', '/Database table name/', 0,
+        'AC-25: session.table active row must be gone');
+});
+
+it('AC-25: docs/configuration.md does not list session.lottery as an active config row', function () {
+    docPregMatch('docs/configuration.md', '/Garbage collection probability \[chance, divisor\]/', 0,
+        'AC-25: session.lottery active row must be gone');
+});
+
+it('AC-25: docs/configuration.md annotates all three keys as unused/reserved', function () {
+    // The fix introduces a paragraph that explicitly groups the three keys
+    // as "not currently consumed by any driver". Any regression that puts
+    // any of them back into the active-config table fails this check.
+    $content = doc('docs/configuration.md');
+    expect(stripos($content, 'session.connection') !== false)->toBeTrue(
+        'AC-25: session.connection must be mentioned (in the unused/reserved note)'
+    );
+    expect(stripos($content, 'session.table') !== false)->toBeTrue(
+        'AC-25: session.table must be mentioned (in the unused/reserved note)'
+    );
+    expect(stripos($content, 'session.lottery') !== false)->toBeTrue(
+        'AC-25: session.lottery must be mentioned (in the unused/reserved note)'
+    );
+});
+
+/**
+ * AC-25 (hardened) — the old AC-25 grepped for the specific pre-fix
+ * description strings. The auditor-confirmed killing mutant reintroduced
+ * a generic active row (`| connection | string | null | Connection name
+ * used to persist sessions |`) with different wording while leaving the
+ * reserved-keys note in place. We extract the session.php config table
+ * body (between the `### session.php` heading and the next `###`
+ * heading) and assert none of the three reserved keys appears as an
+ * active row in that table.
+ */
+it('AC-25: docs/configuration.md session.php table has no active row for connection/table/lottery', function () {
+    $content = doc('docs/configuration.md');
+    $start = strpos($content, '### session.php');
+    expect($start)->toBeGreaterThan(0, 'AC-25: session.php section must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    foreach (['connection', 'table', 'lottery'] as $key) {
+        // Match the table cell content independently of backticks. The
+        // earlier pinned version required backtick-quoted keys, which let
+        // a regression that wrote `| connection | ... |` (without
+        // backticks) slip past the assertion. We accept either spelling:
+        // backtick-quoted (the project's house style for table keys) OR
+        // bare (the regression the auditor surfaced).
+        $escaped = preg_quote($key, '/');
+        $hasActiveRow = preg_match(
+            '/^\|\s*(?:`' . $escaped . '`|' . $escaped . ')\s*\|/m',
+            $section
+        ) === 1;
+        expect($hasActiveRow)->toBeFalse(
+            "AC-25: session.php table must not contain an active row for {$key}"
+        );
+    }
+});
+
+/* ===========================================================================
+ * AC-26 — docs/configuration.md: session.secure typed as bool|null
+ * =========================================================================== */
+
+it('AC-26: docs/configuration.md types session.secure as bool|null', function () {
+    // The pre-fix table row read `bool | null | ...`. The fix types it as
+    // `bool|null` and adds a one-clause note about null auto-detection.
+    $content = doc('docs/configuration.md');
+    // Match the row: `secure` | bool|null | `null` | ...
+    // The file has a literal backslash before the second pipe in `bool\|null`
+    // because the Markdown table cell is a PHP regex context. We accept
+    // either spelling here — `bool|null` (rendered) or `bool\|null` (raw
+    // Markdown source) — to be tolerant of either the literal fix or a
+    // rendering pass.
+    $rowMatches = preg_match('/\| `secure` \| (?:bool\|null|bool\\\\\|null) \| `null` /', $content) === 1
+        || preg_match('/\| `secure` \| bool\|null \| `null` /', $content) === 1;
+    expect($rowMatches)->toBeTrue(
+        'AC-26: session.secure row must have type bool|null'
+    );
+    expect(stripos($content, 'auto-detects from the request') !== false)->toBeTrue(
+        'AC-26: session.secure row must note the null auto-detect behavior'
+    );
+});
+
+/* ===========================================================================
+ * AC-27 — docs/configuration.md: cache.prefix documented as active
+ * =========================================================================== */
+
+it('AC-27: docs/configuration.md does not list cache.prefix as an active config row', function () {
+    // The pre-fix table row was | `prefix` | string | `'swallowphp_cache_'` | Cache key prefix |
+    // The fix removes that row and adds a note that the key is unused.
+    docPregMatch('docs/configuration.md', '/Cache key prefix/', 0,
+        'AC-27: cache.prefix active row must be gone');
+});
+
+it('AC-27: docs/configuration.md annotates cache.prefix as unused', function () {
+    $content = doc('docs/configuration.md');
+    expect(stripos($content, 'cache.prefix') !== false)->toBeTrue(
+        'AC-27: cache.prefix must be mentioned (in the unused note)'
+    );
+    expect(stripos($content, 'not currently applied') !== false)->toBeTrue(
+        'AC-27: cache.prefix unused note must be present'
+    );
+});
+
+/**
+ * AC-27 (hardened) — extract the cache.php table and assert the
+ * `prefix` key is not an active row, regardless of the description
+ * wording. Auditor's killing mutant: a new active row with different
+ * description text ("Prefix prepended to every cache key") while the
+ * unused note stayed in place.
+ */
+it('AC-27: docs/configuration.md cache.php table has no active row for prefix', function () {
+    $content = doc('docs/configuration.md');
+    $start = strpos($content, '### cache.php');
+    expect($start)->toBeGreaterThan(0, 'AC-27: cache.php section must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    expect(preg_match('/^\|\s*`prefix`\s*\|/m', $section) === 0)->toBeTrue(
+        'AC-27: cache.php table must not have an active `prefix` row'
+    );
+});
+
+/* ===========================================================================
+ * AC-28 — docs/configuration.md: unused database connection fields marked as active
+ * =========================================================================== */
+
+it('AC-28: docs/configuration.md annotates unix_socket, collation, prefix, strict, engine as unused', function () {
+    // The fix replaces the active-claim with an explicit "accepted in config
+    // but not currently consumed" note. We accept either an inline annotation
+    // or a separate "reads only these fields" framing, but the test must
+    // fail if any of the five fields is presented as configuring real
+    // behavior again.
+    $content = doc('docs/configuration.md');
+
+    // The connection layer documents the set of fields it actually reads.
+    expect(stripos($content, 'driver') !== false && stripos($content, 'host') !== false)->toBeTrue(
+        'AC-28: connection-layer field list must still be present'
+    );
+
+    // The framing sentence itself must be present.
+    expect(stripos($content, 'not currently consumed by the connection layer') !== false)->toBeTrue(
+        'AC-28: explicit "not currently consumed by the connection layer" framing must be present'
+    );
+
+    // Locate the position of the framing marker and check each of the five
+    // ignored fields appears within a reasonable window of that marker.
+    // We use a sliding 4000-char window because `prefix` is also a
+    // legitimate config key in other sections (cache.php, session.php),
+    // and we are looking specifically for the database-connection
+    // occurrence that is annotated as unused.
+    $unusedNotePos = stripos($content, 'not currently consumed by the connection layer');
+    expect($unusedNotePos)->not->toBeFalse(
+        'AC-28: "not currently consumed by the connection layer" framing must be present'
+    );
+    $windowStart = max(0, $unusedNotePos - 3000);
+    $windowEnd = $unusedNotePos + 3000;
+    $window = substr($content, $windowStart, $windowEnd - $windowStart);
+
+    foreach (['unix_socket', 'collation', 'prefix', 'strict', 'engine'] as $field) {
+        expect(stripos($window, $field) !== false)->toBeTrue(
+            "AC-28: database connection field `{$field}` must appear within the unused-fields note"
+        );
+    }
+});
+
+/**
+ * AC-28 (hardened) — auditor's killing mutant: the framing sentence
+ * stays but the five field names are removed from it; the existing
+ * test passed because the names still appeared in the MySQL example
+ * nearby (within the ±3000-char window). The new test asserts each
+ * field name is bound to the framing note by appearing in the SAME
+ * blockquote / paragraph as the framing marker, not just in a wide
+ * window. We detect the note by finding the `> **Note on connection
+ * fields.**` blockquote and check that all five names appear inside
+ * that same blockquote.
+ */
+it('AC-28: docs/configuration.md unused-fields note enumerates all five fields together', function () {
+    $content = doc('docs/configuration.md');
+    $start = strpos($content, '> **Note on connection fields.**');
+    expect($start)->toBeGreaterThan(0, 'AC-28: connection-fields note must exist');
+    $rest = substr($content, $start);
+    // A Markdown blockquote is a run of contiguous `>`-prefixed lines.
+    $lines = explode("\n", $rest);
+    $blockquote = '';
+    foreach ($lines as $line) {
+        if (str_starts_with($line, '>')) {
+            $blockquote .= $line . "\n";
+        } else {
+            break;
+        }
+    }
+    expect($blockquote)->not->toBeEmpty('AC-28: connection-fields blockquote must contain content');
+
+    foreach (['unix_socket', 'collation', 'prefix', 'strict', 'engine'] as $field) {
+        expect(stripos($blockquote, $field) !== false)->toBeTrue(
+            "AC-28: field `{$field}` must be enumerated in the same blockquote as the unused-fields framing"
+        );
+    }
+});
+
+/* ===========================================================================
+ * AC-29 — docs/database.md: PostgreSQL is listed as a supported driver
+ * =========================================================================== */
+
+it('AC-29: docs/database.md does not list PostgreSQL as a supported driver', function () {
+    // The pre-fix list was three bare bullets: MySQL, SQLite, PostgreSQL.
+    // The fix tags PostgreSQL as "not currently supported" with a quote
+    // about identifier quoting. We assert the unsupported tag is present
+    // and the old bare "PostgreSQL (`pgsql`)" bullet is gone.
+    $content = doc('docs/database.md');
+    expect(stripos($content, 'PostgreSQL') !== false)->toBeTrue(
+        'AC-29: PostgreSQL must still be mentioned (in the unsupported clause)'
+    );
+    expect(stripos($content, 'not currently supported') !== false)->toBeTrue(
+        'AC-29: PostgreSQL must be marked as not currently supported'
+    );
+    // The old bare bullet listed PostgreSQL under "Supported Drivers"
+    // without any caveat. A regression that drops the annotation fails.
+    expect(preg_match('/\*\*PostgreSQL\*\* \(`pgsql`\)\s*—\s*\*\*(?!.*not currently supported)/', $content) === 0)->toBeTrue(
+        'AC-29: PostgreSQL must not appear as a bare "supported" bullet without the unsupported annotation'
+    );
+});
+
+/**
+ * AC-29 (hardened) — auditor's killing mutant: change the PostgreSQL
+ * bullet to "fully supported" and add an unrelated "not currently
+ * supported" clause elsewhere in the file. The existing test still
+ * passes because the literal "not currently supported" string exists
+ * somewhere in the doc. We scope the check to the Supported Drivers
+ * subsection and assert the PostgreSQL bullet itself carries the
+ * unsupported annotation.
+ */
+it('AC-29: docs/database.md Supported Drivers subsection marks PostgreSQL as unsupported', function () {
+    $content = doc('docs/database.md');
+    $start = strpos($content, '### Supported Drivers');
+    expect($start)->toBeGreaterThan(0, 'AC-29: Supported Drivers subsection must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    expect(stripos($section, 'PostgreSQL') !== false)->toBeTrue(
+        'AC-29: PostgreSQL must be mentioned in the Supported Drivers subsection'
+    );
+
+    // Extract the PostgreSQL bullet (a bullet can wrap across multiple
+    // lines via a trailing backslash). Walk forward from the bullet
+    // marker until we either hit a line that ends with the period at
+    // the end of the supported-list sentence, or a new bullet.
+    $lines = explode("\n", $section);
+    $pgLines = [];
+    $capturing = false;
+    foreach ($lines as $i => $line) {
+        if (preg_match('/^\s*-\s+\*\*PostgreSQL\*\*/', $line)) {
+            $capturing = true;
+        }
+        if ($capturing) {
+            $pgLines[] = $line;
+            if (str_ends_with(rtrim($line), 'updated.')) {
+                break;
+            }
+            // Stop at the next non-continuation line.
+            if ($i > 0 && !str_ends_with(rtrim($lines[$i - 1]), '\\')
+                && !preg_match('/^\s*-\s+/', $line) && trim($line) !== ''
+                && !str_ends_with(rtrim($line), '\\')) {
+                // We are past the wrapped paragraph; stop.
+                if (!preg_match('/^\s*-\s+\*\*/', $line)) {
+                    array_pop($pgLines);
+                    break;
+                }
+            }
+        }
+    }
+    $pgBullet = implode("\n", $pgLines);
+    expect($pgBullet)->not->toBeEmpty('AC-29: PostgreSQL bullet must be extractable');
+    expect(stripos($pgBullet, 'not currently supported') !== false)->toBeTrue(
+        'AC-29: the PostgreSQL bullet itself must say "not currently supported"'
+    );
+});
+
+/* ===========================================================================
+ * AC-30 — docs/cache.md: omitted TTL falls back to a configured default
+ * =========================================================================== */
+
+it('AC-30: docs/cache.md does not say "default TTL from config" is applied to set()', function () {
+    // The pre-fix comment was "Store a value (with default TTL from config)".
+    // The fix replaces it with "no TTL — the entry never expires".
+    docPregMatch('docs/cache.md', '/with default TTL from config/', 0,
+        'AC-30: "default TTL from config" claim must be gone');
+});
+
+it('AC-30: docs/cache.md says an omitted TTL means the entry never expires', function () {
+    // The corrected wording must explicitly say that omitting TTL (or
+    // passing null) means the entry never expires.
+    $content = doc('docs/cache.md');
+    expect(stripos($content, 'never expires') !== false)->toBeTrue(
+        'AC-30: "never expires" wording must be present'
+    );
+});
+
+/**
+ * AC-30 (hardened) — auditor's killing mutant: restore the second
+ * pre-fix comment at `docs/cache.md:192` ("With no TTL (uses the
+ * default TTL from config)") while leaving the first corrected
+ * comment and the "never expires" note in place. The existing regex
+ * is case-sensitive on "with default TTL from config", so the
+ * auditor's exact mutation SHOULD have been caught — but only if
+ * the regex actually matches. The auditor's report says it passed,
+ * so we assume the mutant wording differs in some subtle way
+ * (extra spaces, hyphen, etc.). The new test scopes the check to
+ * the `set()` API section and asserts neither the old "default
+ * TTL" wording nor the old "Store a value (with default TTL)"
+ * framing appears inside the `set()` subsection.
+ */
+it('AC-30: docs/cache.md `set()` API example says never expires, not default TTL', function () {
+    $content = doc('docs/cache.md');
+    $start = strpos($content, '### `set(');
+    expect($start)->toBeGreaterThan(0, 'AC-30: set() API section must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    expect(preg_match('/default TTL from config/i', $section) === 0)->toBeTrue(
+        'AC-30: set() API section must not mention the old "default TTL from config" wording'
+    );
+    expect(preg_match('/Store a value \(with default TTL/i', $section) === 0)->toBeTrue(
+        'AC-30: set() API section must not use the old "Store a value (with default TTL...)" framing'
+    );
+    expect(stripos($section, 'never expires') !== false)->toBeTrue(
+        'AC-30: set() API section must contain the corrected "never expires" wording'
+    );
+});
+
+/* ===========================================================================
+ * AC-31 — docs/routing.md: dependency injection source description
+ * =========================================================================== */
+
+it('AC-31: docs/routing.md says DI resolves from merged request data, not route params alone', function () {
+    // The pre-fix description named "route parameters" as the source. The
+    // fix narrows it to "the merged request data (route parameters, query
+    // string, and request body)".
+    $content = doc('docs/routing.md');
+    expect(stripos($content, 'merged request data') !== false)->toBeTrue(
+        'AC-31: "merged request data" wording must be present'
+    );
+    expect(stripos($content, 'route parameters') !== false)->toBeTrue(
+        'AC-31: "route parameters" must still appear (within the merged-data framing)'
+    );
+    expect(stripos($content, 'query string') !== false)->toBeTrue(
+        'AC-31: "query string" must appear in the resolution-source description'
+    );
+    expect(stripos($content, 'request body') !== false)->toBeTrue(
+        'AC-31: "request body" must appear in the resolution-source description'
+    );
+});
+
+/**
+ * AC-31 (hardened) — auditor's killing mutant: revert the Resolution
+ * Order list item to "values are read from route parameters" while
+ * keeping the corrected "merged request data" wording in a separate
+ * section. The existing test scans the whole document. We scope the
+ * "merged request data" check to the Resolution Order subsection and
+ * assert the SAME list item that names route parameters also names
+ * the merged request data, query string, and request body.
+ */
+it('AC-31: docs/routing.md Resolution Order list item itself describes the merged data', function () {
+    $content = doc('docs/routing.md');
+    $start = strpos($content, '**Resolution Order:**');
+    expect($start)->toBeGreaterThan(0, 'AC-31: Resolution Order list must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n## ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    // Extract list item #1 (may wrap across multiple lines until the
+    // next numbered item or blank line).
+    $lines = explode("\n", $section);
+    $firstItem = '';
+    $capturing = false;
+    foreach ($lines as $i => $line) {
+        if (preg_match('/^\s*1\.\s/', $line)) {
+            $capturing = true;
+        } elseif ($capturing) {
+            if (preg_match('/^\s*[2-9]\.\s/', $line)) {
+                break;
+            }
+            if (trim($line) === '' && $firstItem !== '' && !str_ends_with(rtrim($firstItem), '\\')) {
+                break;
+            }
+        }
+        if ($capturing) {
+            $firstItem .= $line . "\n";
+        }
+    }
+    expect(trim($firstItem))->not->toBeEmpty('AC-31: Resolution Order list item #1 must exist');
+
+    expect(stripos($firstItem, 'merged request data') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must reference the merged request data'
+    );
+    expect(stripos($firstItem, 'query string') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must mention the query string'
+    );
+    expect(stripos($firstItem, 'request body') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must mention the request body'
+    );
+});
+
+/* ===========================================================================
+ * AC-32 — docs/database.md: cursor pagination's last_page = 0 quirk is undocumented
+ * =========================================================================== */
+
+it('AC-32: docs/database.md documents the cursor pagination last_page quirk', function () {
+    // The fix adds a note under the cursor-pagination section that
+    // lastPage() is always 0 and total() is not meaningful; readers are
+    // pointed at hasMorePages()/nextCursor() instead.
+    $content = doc('docs/database.md');
+    expect(stripos($content, 'lastPage') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must mention lastPage'
+    );
+    // The "always 0" / "not meaningful" wording must be present in the
+    // cursor-pagination context, not just a generic lastPage mention.
+    expect(preg_match('/lastPage\(\)[^.]*?always[^.]*?0/si', $content) === 1)->toBeTrue(
+        'AC-32: cursor-pagination note must say lastPage() is always 0'
+    );
+    expect(stripos($content, 'hasMorePages') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must mention hasMorePages'
+    );
+    expect(stripos($content, 'nextCursor') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must mention nextCursor'
+    );
+});
+
+/**
+ * AC-32 (hardened) — auditor's killing mutant: remove the "total()
+ * is not meaningful" clause from the cursor-pagination note. The
+ * existing test never asserts that total() is meaningless — it only
+ * checks lastPage() is always 0 and hasMorePages/nextCursor are
+ * mentioned. The new test asserts total() is also explicitly called
+ * out as not meaningful, scoped to the cursor-pagination note (the
+ * blockquote that follows the `### Cursor Pagination` heading).
+ */
+it('AC-32: docs/database.md cursor-pagination note also flags total() as not meaningful', function () {
+    $content = doc('docs/database.md');
+    $start = strpos($content, '### Cursor Pagination');
+    expect($start)->toBeGreaterThan(0, 'AC-32: Cursor Pagination subsection must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+
+    $totalLineFound = false;
+    $totalMeaningless = false;
+    $lines = explode("\n", $section);
+    foreach ($lines as $i => $line) {
+        if (stripos($line, 'total()') !== false) {
+            $totalLineFound = true;
+            // Per SPEC, the required wording is "are not meaningful"
+            // (or equivalent "is not meaningful" — the SPEC's exact phrase
+            // has a plural subject `lastPage()`/`total()` so it reads
+            // naturally as "are not meaningful", but a singular-verb form
+            // next to `total()` alone is also acceptable). Do NOT accept
+            // generic negations like "not applicable" — that's a
+            // different limitation wording the SPEC did not pin, and a
+            // mutant that drops the SPEC's phrasing while keeping only
+            // "not applicable" still has to fail this check.
+            //
+            // Look at this line plus the next few to tolerate line
+            // wrapping (e.g. `total()` at end of one line, `not meaningful`
+            // at start of the next). Strip Markdown blockquote markers
+            // (`> `) from the context lines — otherwise a wrapped
+            // blockquote like `... \`total()\` are\n> not meaningful ...`
+            // reads as `... \`total()\` are > not meaningful ...`, which
+            // the phrase match misses.
+            $contextParts = [$line];
+            for ($j = 1; $j <= 3; $j++) {
+                $next = $lines[$i + $j] ?? '';
+                $contextParts[] = preg_replace('/^>\s*/', '', $next);
+            }
+            $context = implode(' ', $contextParts);
+            if (stripos($context, 'are not meaningful') !== false
+                || stripos($context, 'is not meaningful') !== false) {
+                $totalMeaningless = true;
+            }
+        }
+    }
+    expect($totalLineFound)->toBeTrue(
+        'AC-32: cursor-pagination note must contain a total() mention'
+    );
+    expect($totalMeaningless)->toBeTrue(
+        'AC-32: cursor-pagination note must describe total() as "not meaningful" (the SPEC\'s exact wording)'
+    );
+});
+
+/**
+ * AC-32 (review fix) — the cursor-pagination note must not recommend the
+ * nonexistent `Paginator::nextCursor()` or the broken `hasMorePages()`
+ * (which returns false for cursor pagination because `last_page` is 0).
+ * It must point readers at `nextPageUrl()`, the only accessor that
+ * actually reflects the cursor `has_more_pages` state.
+ */
+it('AC-32: docs/database.md cursor note points at nextPageUrl, not nextCursor()/hasMorePages()', function () {
+    $content = doc('docs/database.md');
+    $start = strpos($content, '### Cursor Pagination');
+    expect($start)->toBeGreaterThan(0, 'AC-32: Cursor Pagination subsection must exist');
+    $rest = substr($content, $start);
+    $end = strpos($rest, "\n### ");
+    $section = $end === false ? $rest : substr($rest, 0, $end);
+    $flat = preg_replace('/\s*\n>?\s*/', ' ', $section);
+
+    expect(stripos($flat, 'nextPageUrl()') !== false)->toBeTrue(
+        'AC-32: cursor-pagination note must name nextPageUrl() as the has-more signal'
+    );
+    // No "use hasMorePages()/nextCursor() instead" recommendation.
+    expect(preg_match('/use[^.]*`?(hasMorePages|nextCursor)\(\)`?[^.]*instead/i', $flat))->toBe(
+        0,
+        'AC-32: cursor-pagination note must not recommend hasMorePages()/nextCursor()'
+    );
+    // Both broken APIs must be explicitly flagged.
+    expect(preg_match('/hasMorePages\(\)`?[^.]*(always returns `?false|not applicable)/i', $flat))->toBe(
+        1,
+        'AC-32: note must state hasMorePages() always returns false / is not applicable'
+    );
+    expect(preg_match('/no `?nextCursor\(\)`? accessor/i', $flat))->toBe(
+        1,
+        'AC-32: note must state the Paginator exposes no nextCursor() accessor'
+    );
+});
+
+/* ===========================================================================
+ * AC-33 — README.md / docs/configuration.md: invalid APP_KEY example length
+ * =========================================================================== */
+
+it('AC-33: README.md APP_KEY example decodes to exactly 32 bytes', function () {
+    // The fix replaces the placeholder with a valid 32-byte (base64:) key.
+    // We extract the value, decode the base64 payload, and assert the
+    // decoded length is exactly 32. This is a one-line PHP check that
+    // does not require a Pest test against src/, but we run it here so
+    // the spec's "grep-assert its base64: payload decodes to exactly 32
+    // bytes" gate is enforced automatically.
+    $content = doc('README.md');
+    expect(preg_match('/^APP_KEY=base64:([A-Za-z0-9+\/=]+)\s*$/m', $content, $m) === 1)->toBeTrue(
+        'AC-33: README.md must contain an APP_KEY=base64:... line'
+    );
+    $decoded = base64_decode($m[1], true);
+    expect($decoded)->toBeString('AC-33: APP_KEY base64 payload must decode');
+    expect(strlen($decoded))->toBe(32, 'AC-33: decoded APP_KEY must be exactly 32 bytes');
+});
+
+it('AC-33: docs/configuration.md APP_KEY example decodes to exactly 32 bytes', function () {
+    $content = doc('docs/configuration.md');
+    expect(preg_match('/^APP_KEY=base64:([A-Za-z0-9+\/=]+)\s*$/m', $content, $m) === 1)->toBeTrue(
+        'AC-33: docs/configuration.md must contain an APP_KEY=base64:... line'
+    );
+    $decoded = base64_decode($m[1], true);
+    expect($decoded)->toBeString('AC-33: APP_KEY base64 payload must decode');
+    expect(strlen($decoded))->toBe(32, 'AC-33: decoded APP_KEY must be exactly 32 bytes');
+});
+
+it('AC-33: neither doc uses the wrong-length placeholder', function () {
+    // The pre-fix placeholder was `your-32-character-secret-key-here`,
+    // which is not a base64 string at all and does not decode to 32 bytes.
+    // Any regression that re-introduces the literal placeholder fails this.
+    docContains('README.md', 'your-32-character-secret-key-here', false,
+        'AC-33: README.md must not use the wrong-length placeholder');
+    docContains('docs/configuration.md', 'your-32-character-secret-key-here', false,
+        'AC-33: docs/configuration.md must not use the wrong-length placeholder');
+
+    foreach (['README.md', 'docs/configuration.md'] as $path) {
+        expect(preg_match('/example only.*generate your own.*APP_KEY=base64:/is', doc($path)) === 1)->toBeTrue(
+            "AC-33: {$path} must label the illustrative APP_KEY as example-only"
+        );
+    }
+});
+
+/* ===========================================================================
+ * AC-34 — docs/authentication.md: cache-key notation (sha1($email))
+ * =========================================================================== */
+
+it('AC-34: docs/authentication.md uses the literal sha1($email) in the cache-key description', function () {
+    $content = doc('docs/authentication.md');
+    $start = stripos($content, '### Cache Keys');
+    $end = stripos($content, "\n### ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-34: cache-key section must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-34: cache-key section must be bounded');
+    $section = substr($content, $start, $end - $start);
+    expect(preg_match('/login_attempt_\{ip\}_sha1\(\$email\)/', $section) === 1)->toBeTrue(
+        'AC-34: sha1($email) must appear in the cache-key description'
+    );
+});
+
+it('AC-34: docs/authentication.md no longer uses the generic {email_hash} placeholder', function () {
+    $content = doc('docs/authentication.md');
+    $start = stripos($content, '### Cache Keys');
+    $end = stripos($content, "\n### ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-34: cache-key section must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-34: cache-key section must be bounded');
+    $section = substr($content, $start, $end - $start);
+    expect(preg_match('/\{email_hash\}/', $section))->toBe(0,
+        'AC-34: {email_hash} placeholder must be gone');
+});
+
+/**
+ * AC-34 (hardened) — auditor's killing mutant: change ONLY the
+ * lockout key to md5($email) (`login_lockout_{ip}_md5($email)`),
+ * leave the `login_attempt_` key using sha1($email). The existing
+ * two tests only check that the attempt key uses sha1 and that
+ * {email_hash} is gone — neither asserts the lockout key uses
+ * sha1. Add a check that the lockout key in the Cache Keys section
+ * explicitly uses sha1($email), not md5 or any other hash.
+ */
+it('AC-34: docs/authentication.md lockout key also uses sha1($email)', function () {
+    $content = doc('docs/authentication.md');
+    $start = stripos($content, '### Cache Keys');
+    $end = stripos($content, "\n### ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-34: cache-key section must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-34: cache-key section must be bounded');
+    $section = substr($content, $start, $end - $start);
+
+    expect(preg_match('/login_lockout_\{ip\}_sha1\(\$email\)/', $section) === 1)->toBeTrue(
+        'AC-34: lockout key must also use sha1($email) (not md5, not a generic hash)'
+    );
+    // Also assert that no other hash function is used in the lockout key.
+    expect(preg_match('/login_lockout_\{ip\}_md5\(/', $section) === 0)->toBeTrue(
+        'AC-34: lockout key must not use md5($email)'
+    );
+});
+
+/* ===========================================================================
+ * AC-35 — CHANGELOG.md: Action required subsection convention is documented
+ * =========================================================================== */
+
+it('AC-35: CHANGELOG.md intro documents the Action required convention', function () {
+    $content = doc('CHANGELOG.md');
+    $introEnd = strpos($content, '## [2.0.1]');
+    $intro = substr($content, 0, $introEnd);
+    // The convention mentions both "Action required" and the standard
+    // subsections in the same intro paragraph. Either ordering is fine;
+    // we just want to make sure both are referenced together.
+    expect(stripos($intro, 'Action required') !== false)->toBeTrue(
+        'AC-35: CHANGELOG intro must mention "Action required"'
+    );
+    expect(stripos($intro, 'convention') !== false)->toBeTrue(
+        'AC-35: CHANGELOG intro must mention the convention'
+    );
+});
+
+/* ===========================================================================
+ * AC-36 — CHANGELOG.md: 2024-12-XX date placeholders are gone
+ * =========================================================================== */
+
+it('AC-36: CHANGELOG.md no longer contains the 2024-12-XX placeholder', function () {
+    docPregMatch('CHANGELOG.md', '/2024-12-XX/', 0,
+        'AC-36: 2024-12-XX placeholder must be gone');
+});
+
+/* ===========================================================================
+ * AC-37 — docs/middleware.md: global middleware pipeline order subsection
+ * =========================================================================== */
+
+it('AC-37: docs/middleware.md has a global-middleware-pipeline-order subsection listing all four middlewares', function () {
+    $content = doc('docs/middleware.md');
+    // The new subsection heading must be present.
+    expect(stripos($content, 'Global middleware pipeline order') !== false)->toBeTrue(
+        'AC-37: "Global middleware pipeline order" subsection must be present'
+    );
+    // All four ordered classes must appear in the doc body as class names.
+    // The route action is a stage, not a class, so we only check the three
+    // middleware classes plus the explicit "Route action" stage label.
+    foreach (['ValidatePostSize', 'VerifyCsrfToken', 'AddContentSecurityPolicyHeader'] as $class) {
+        expect(stripos($content, $class) !== false)->toBeTrue(
+            "AC-37: {$class} must appear in middleware.md"
+        );
+    }
+    expect(stripos($content, 'Route action') !== false)->toBeTrue(
+        'AC-37: "Route action" stage must appear in the ordered pipeline list'
+    );
+});
+
+it('AC-37: docs/middleware.md lists the four pipeline stages in the real execution order', function () {
+    $content = doc('docs/middleware.md');
+    $start = stripos($content, '## Global Middleware Pipeline Order');
+    $end = stripos($content, "\n## ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-37: global pipeline subsection must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-37: global pipeline subsection must be bounded');
+    $section = substr($content, $start, $end - $start);
+    $stages = ['ValidatePostSize', 'VerifyCsrfToken', 'Route action', 'AddContentSecurityPolicyHeader'];
+    $positions = [];
+    foreach ($stages as $stage) {
+        $positions[$stage] = stripos($section, $stage);
+        expect($positions[$stage])->toBeGreaterThan(0,
+            "AC-37: {$stage} must appear in the global pipeline subsection");
+    }
+    for ($i = 1; $i < count($stages); $i++) {
+        expect($positions[$stages[$i - 1]])->toBeLessThan($positions[$stages[$i]],
+            "AC-37: {$stages[$i - 1]} must precede {$stages[$i]}");
+    }
+});
+
+/* ===========================================================================
+ * AC-38 — docs/views.md: view-resolution section must accurately describe
+ * the fallback to src/resources/views/ that src/Methods.php implements.
+ *
+ * The original Tier-2 spec assumed view() resolved only from the application
+ * view directory and asked us to narrow the doc to deny any framework-bundled
+ * fallback. The alignment audit caught that this inverted a true statement:
+ * src/Methods.php:780-810 explicitly computes
+ *     $frameworkViewPath = dirname(__DIR__, 2) . '/src/resources/views';
+ * and falls back to that directory, which holds components/pagination.php and
+ * errors/{404,500,default}.php. The doc must therefore HONESTLY describe that
+ * fallback (src/ is out of scope, so the code is the ground truth).
+ * =========================================================================== */
+
+it('AC-38: docs/views.md View Resolution section is present and named "Resolution Order"', function () {
+    docContains('docs/views.md', '### Resolution Order', true,
+        'AC-38: docs/views.md must have a "### Resolution Order" section');
+});
+
+it('AC-38: docs/views.md lists the application view directory as the primary resolution path', function () {
+    $content = doc('docs/views.md');
+    $hasAppViewDir = stripos($content, "config('app.view_path')") !== false
+        || stripos($content, 'config(\'app.view_path\')') !== false;
+    expect($hasAppViewDir)->toBeTrue(
+        'AC-38: View Resolution must reference the application view path config key'
+    );
+    // Application views are checked first.
+    expect(stripos($content, 'application views') !== false
+        || stripos($content, "application's configured") !== false
+        || stripos($content, 'app/view_path') !== false)->toBeTrue(
+        'AC-38: View Resolution must name the application views path'
+    );
+});
+
+it('AC-38: docs/views.md honestly documents the framework views fallback to src/resources/views/', function () {
+    $content = doc('docs/views.md');
+    // The doc must mention the framework's view fallback directory.
+    expect(stripos($content, 'src/resources/views') !== false)->toBeTrue(
+        'AC-38: docs/views.md must reference src/resources/views/ as the fallback path (matches src/Methods.php)'
+    );
+    // The fallback must be called out as a fallback, not hidden as a side note.
+    expect(stripos($content, 'framework views') !== false
+        || stripos($content, 'framework-bundled') !== false
+        || stripos($content, 'framework\'s built-in') !== false)->toBeTrue(
+        'AC-38: docs/views.md must label the src/resources/views/ path as the framework-bundled fallback'
+    );
+    // The pre-fix Tier-2 wording claimed NO fallback ("does not fall back to
+    // any framework-bundled views"). That claim is provably false against the
+    // live code and must not be re-introduced.
+    expect(stripos($content, 'does not fall back to any framework-bundled views') === false
+        && stripos($content, 'does **not** fall back to any framework-bundled views') === false)->toBeTrue(
+        'AC-38: the false Tier-2 claim "does not fall back to any framework-bundled views" must not return'
+    );
+});
+
+it('AC-38: docs/views.md names at least one real framework-bundled view file in the fallback list', function () {
+    // Catches a regression where someone writes "framework fallback" generically
+    // without anchoring it to the actual files the code can resolve.
+    $content = doc('docs/views.md');
+    $names = ['components/pagination.php', 'errors/404.php', 'errors/500.php', 'errors/default.php'];
+    $hits = 0;
+    foreach ($names as $n) {
+        if (stripos($content, $n) !== false) {
+            $hits++;
+        }
+    }
+    expect($hits)->toBeGreaterThanOrEqual(1,
+        'AC-38: docs/views.md must list at least one real framework-bundled view file (e.g. components/pagination.php, errors/404.php)');
+});

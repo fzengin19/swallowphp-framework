@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+In addition to the standard Keep-a-Changelog subsections (Added / Changed /
+Deprecated / Removed / Fixed / Security), this project uses an additional
+`### Action required` subsection as a documented convention: any release entry
+that contains breaking changes needing explicit migration steps gets one
+`Action required` block listing the specific call signatures or behaviors that
+changed and the one-line migration a consumer needs to apply.
+
 ## [2.0.1] - 2026-08-13
 
 ### Fixed
@@ -143,7 +150,7 @@ failure reporting (see "Fixed" below for the bugs they close).
 - Queued cookies are now properly sent on redirect responses
 - Large file uploads return 413 (Payload Too Large) instead of incorrect CSRF 419 error
 
-## [1.0.1] - 2024-12-XX
+## [1.0.1] - 2025-12-23
 
 ### Fixed
 - BASE_PATH fallback for Composer installations
@@ -152,7 +159,7 @@ failure reporting (see "Fixed" below for the bugs they close).
 - Allow colon character in cache keys
 - Standard `app.log` filename in logging config
 
-## [1.0.0] - 2024-12-XX
+## [1.0.0] - 2025-12-22
 
 ### Added
 - Initial framework release

@@ -119,11 +119,13 @@ class Route
     $routeParameters = $request->routeParams();
 
     // Array-callable (e.g. [Controller::class, 'method']) MUST be checked BEFORE
-    // is_callable(): PHP considers an array of [class, method] callable even
-    // for non-static instance methods, so is_callable() returns true and would
-    // send us into the ReflectionFunction branch with a TypeError (that helper
-    // only accepts Closure|string). A bare Closure is never an array, so this
-    // ordering is safe for the closure case.
+    // is_callable(): PHP's is_callable([ClassNameString, 'method']) returns true
+    // ONLY when 'method' is a STATIC method (false for a non-static instance
+    // method). For a static-method array action, is_callable() would return
+    // true and send us into the ReflectionFunction branch below, which throws
+    // TypeError (that helper only accepts Closure|string, not an array). A
+    // bare Closure is never an array, so this ordering is safe for the
+    // closure case regardless.
     if (is_array($this->action) && count($this->action) === 2 && is_string($this->action[0]) && is_string($this->action[1])) {
       [$controllerName, $method] = $this->action;
     } elseif (is_callable($this->action)) {
@@ -161,8 +163,35 @@ class Route
     $reflectionParams = $reflectionMethod->getParameters();
     $args = $this->resolveMethodDependencies($reflectionParams, $routeParameters, $container, $request);
 
-    // Invoke the method with resolved dependencies
-    return $reflectionMethod->invokeArgs($controller, $args);
+    // Invoke the method with resolved dependencies. A route parameter that
+    // can't be coerced to its declared scalar type (e.g. "abc" for an `int`
+    // parameter — coerceScalarRouteParameter() intentionally leaves those
+    // as the raw string rather than inventing new behavior for them) would
+    // otherwise reach this call and raise a raw, unhandled TypeError. Catch
+    // that specific case here and translate it into the same
+    // MethodNotFoundException/404 contract this function already uses for
+    // "this URL doesn't resolve to a valid call".
+    try {
+      return $reflectionMethod->invokeArgs($controller, $args);
+    } catch (\TypeError $e) {
+      // PHP's argument-binding TypeError always has this exact shape
+      // ("Class::method(): Argument #N ($param) must be of type X, Y
+      // given") and is raised before the method body ever runs. A
+      // TypeError thrown FROM INSIDE the controller method's own body has
+      // an arbitrary message and does not match this pattern — re-throw
+      // those unchanged so a genuine application bug is never
+      // mis-reported as "route not found."
+      if (preg_match('/^' . preg_quote("$controllerName::$method(): Argument #", '/') . '\d+/', $e->getMessage())) {
+        // MethodNotFoundException::$previous only accepts ?Exception, and
+        // \TypeError extends \Error, not \Exception — cannot chain it as
+        // the previous exception here.
+        throw new MethodNotFoundException(
+          "Route parameters for \"$method\" on \"$controllerName\" do not match the expected argument types.",
+          404
+        );
+      }
+      throw $e;
+    }
   }
 
   /**
@@ -373,6 +402,15 @@ class Route
           if (preg_match('/^-?\d+$/', $trimmed)) {
             $isNegative = $trimmed[0] === '-';
             $abs = $isNegative ? substr($trimmed, 1) : $trimmed;
+            // Strip leading zeros before the length comparison below, or a
+            // harmless, in-range value like "00000000000000000000000042"
+            // gets misjudged as out-of-range purely because of its zero
+            // padding (26 digits > PHP_INT_MAX's 19) and is wrongly left as
+            // a string instead of becoming int 42. Keep at least one digit.
+            $abs = ltrim($abs, '0');
+            if ($abs === '') {
+              $abs = '0';
+            }
             $bound = $isNegative
               ? substr((string) PHP_INT_MIN, 1)  // "9223372036854775808"
               : (string) PHP_INT_MAX;            // "9223372036854775807"

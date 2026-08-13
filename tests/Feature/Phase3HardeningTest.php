@@ -21,6 +21,7 @@
 namespace Tests\Feature;
 
 use SwallowPHP\Framework\Cache\SqliteCache;
+use SwallowPHP\Framework\Exceptions\MethodNotFoundException;
 use SwallowPHP\Framework\Exceptions\RateLimitExceededException;
 use SwallowPHP\Framework\Foundation\App;
 use SwallowPHP\Framework\Http\Cookie;
@@ -64,6 +65,17 @@ class Phase3TestController
     {
         self::$lastIntId = $id;
         return 'int';
+    }
+
+    /**
+     * Deliberately throws a TypeError from INSIDE the method body (not from
+     * argument binding — $id is untyped so any route value binds fine).
+     * Used to prove the framework's AC-43 catch doesn't over-scope and
+     * swallow a genuine application-level TypeError as a 404.
+     */
+    public function throwsTypeErrorInside($id): string
+    {
+        throw new \TypeError('deliberate in-body failure, not an argument-binding error');
     }
 
     public function showString(string $id): string
@@ -583,6 +595,34 @@ it('AC-43: non-numeric route param reaches the handler as the raw string (no new
     expect($response)->toBe('raw');
 });
 
+it('AC-43: dispatching a non-numeric route param against a TYPED int handler throws MethodNotFoundException (404), not a raw TypeError', function () {
+    // This is the actual bug the AC exists to fix: `probeRaw()` above is
+    // untyped (`mixed $id`), so it can never TypeError on a raw string —
+    // it was never broken. `showInt(int $id)` IS typed, and dispatching
+    // it with a non-coercible URL segment used to let a raw, unhandled
+    // TypeError escape all the way out of Route::executeAction(). The
+    // fix wraps the final invokeArgs() call in a try/catch that
+    // translates that TypeError into the same MethodNotFoundException
+    // (404) contract this function already uses for "this URL doesn't
+    // resolve to a valid call" — not a new error path invented from
+    // scratch, the existing one this function already had.
+    Router::get('/ac43/typed-crash/{id}', [Phase3TestController::class, 'showInt']);
+    $request = phase3BuildRequest('/ac43/typed-crash/abc', 'GET');
+
+    expect(fn() => Router::dispatch($request))->toThrow(MethodNotFoundException::class);
+});
+
+it('AC-43: a genuine TypeError thrown INSIDE a controller method is not swallowed as a 404', function () {
+    // Regression guard for the catch being scoped too broadly: a
+    // TypeError that originates from the controller's own body (a real
+    // application bug, not a route-parameter mismatch) must still
+    // propagate as-is, not get mis-reported as "route not found."
+    Router::get('/ac43/throws-inside/{id}', [Phase3TestController::class, 'throwsTypeErrorInside']);
+    $request = phase3BuildRequest('/ac43/throws-inside/42', 'GET');
+
+    expect(fn() => Router::dispatch($request))->toThrow(\TypeError::class);
+});
+
 it('AC-43: literal "false" coerces to bool false (not PHP loose-truthiness true)', function () {
     // The SPEC's bool-coercion rule says: "only cast to bool for the
     // literal strings a reasonable route param would use
@@ -641,6 +681,38 @@ it('AC-43 boundary: integer overflow in route param is preserved as raw string (
     expect($result)->toBe($overflow);             // raw string preserved
     expect(is_string($result))->toBeTrue();
     expect(is_int($result))->toBeFalse();         // NOT silently capped to PHP_INT_MAX
+});
+
+it('AC-43 regression: a harmless, zero-padded, in-range route param still coerces to int (leading zeros must not be mistaken for overflow)', function () {
+    // Review-round regression: the overflow guard above compares digit
+    // COUNT against PHP_INT_MAX's 19 digits. A safe, in-range value like
+    // "00000000000000000000000042" is 26 characters long purely because
+    // of zero-padding, which the length check alone would misjudge as
+    // "too many digits => out of range" and leave as a string instead of
+    // coercing to int 42. Strip leading zeros before the length/strcmp
+    // comparison (but not from the final `(int)` cast, which already
+    // parses leading zeros correctly on its own).
+    $rc = new ReflectionClass(Route::class);
+    $coerce = $rc->getMethod('coerceScalarRouteParameter');
+    $intSig = (new ReflectionClass(new class {
+        public function f(int $id) {}
+    }))->getMethod('f')->getParameters()[0];
+    $route = new Route('GET', '/test', fn () => 'ok');
+
+    $padded = '00000000000000000000000042';
+    expect(strlen($padded))->toBeGreaterThan(strlen((string) PHP_INT_MAX)); // sanity: proves the bug is reachable
+
+    $result = $coerce->invoke($route, $intSig, $padded);
+
+    expect($result)->toBe(42);
+    expect(is_int($result))->toBeTrue();
+
+    // A leading-zero value that IS genuinely out of range must still be
+    // rejected — the fix must not weaken the overflow guard itself.
+    $paddedOverflow = '00009223372036854775808'; // PHP_INT_MAX + 1, zero-padded
+    $overflowResult = $coerce->invoke($route, $intSig, $paddedOverflow);
+    expect($overflowResult)->toBe($paddedOverflow);
+    expect(is_string($overflowResult))->toBeTrue();
 });
 
 it('AC-43 boundary: negative integer overflow in route param is preserved as raw string', function () {

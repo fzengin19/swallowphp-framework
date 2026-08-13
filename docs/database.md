@@ -178,6 +178,35 @@ $orders = db()->table('orders')
     ->get();
 ```
 
+#### Null Predicates
+
+`where(col, null)` / `where(col, '=', null)` is translated to `IS NULL` —
+binding `null` as a value would produce a `WHERE col = NULL` clause that
+never matches. `where(col, '!=', null)` / `where(col, '<>', null)` is
+translated to `IS NOT NULL` for the same reason. As a more explicit
+alternative, dedicated helpers are available on the query builder and on
+`Model`:
+
+```php
+// Translation of a null value
+$rows = db()->table('users')->where('deleted_at', null)->get();
+// SQL: WHERE `deleted_at` IS NULL
+
+$rows = db()->table('users')->where('deleted_at', '!=', null)->get();
+// SQL: WHERE `deleted_at` IS NOT NULL
+
+// Explicit helpers (available since v1.3.0)
+$rows = db()->table('users')->whereNull('deleted_at')->get();
+// SQL: WHERE `deleted_at` IS NULL
+
+$rows = db()->table('users')->whereNotNull('email')->get();
+// SQL: WHERE `email` IS NOT NULL
+
+// Same helpers on Model:
+$rows = User::whereNull('deleted_at')->get();
+$rows = User::whereNotNull('email')->get();
+```
+
 #### Nested Where (Closure)
 
 ```php
@@ -236,14 +265,21 @@ if ($id !== false) {
 
 ```php
 // Update with where condition
-$affectedRows = db()->table('users')
+$result = db()->table('users')
     ->where('id', 1)
     ->update([
         'name' => 'Jane Doe',
         'updated_at' => date('Y-m-d H:i:s'),
     ]);
 
-echo "{$affectedRows} rows updated";
+// $result is int|false: the number of affected rows, or false if the write
+// genuinely failed (e.g. database error). 0 means "matched zero rows, no
+// error" — that is a legitimate result, not a failure.
+if ($result === false) {
+    // The UPDATE statement itself errored (PDOException caught internally).
+} else {
+    echo "{$result} rows updated";
+}
 ```
 
 ### Deletes
@@ -255,6 +291,20 @@ $affectedRows = db()->table('users')
     ->delete();
 
 echo "{$affectedRows} rows deleted";
+```
+
+> [!IMPORTANT]
+> **Breaking Change (v2.0.0):** As of v2.0.0, `delete()` throws
+> `\RuntimeException` when called without a `where(...)` condition (one that
+> actually renders a predicate). This guard prevents an accidental
+> `DELETE FROM <table>` with no `WHERE` from silently wiping a table — for
+> example, a forgotten `where('id', $id)` would otherwise delete every row.
+> For the explicit "wipe the table" case, use `deleteAll()`:
+
+```php
+// Explicit, intentional "delete every row" — opt-in only
+$deleted = db()->table('users')->deleteAll();
+echo "{$deleted} rows deleted";
 ```
 
 ### Counting
@@ -442,9 +492,6 @@ $user->refresh();
 
 // Convert to array (respects $hidden)
 $data = $user->toArray();
-
-// Get changed attributes
-$dirty = $user->getDirty();
 ```
 
 ---
@@ -536,13 +583,17 @@ echo $author->name;
 
 ## Model Events
 
-Register callbacks for model lifecycle events:
+Register callbacks for model lifecycle events. Every callback receives the
+Model instance (`$model`) as its single argument — mutate the model in place
+to influence the operation (e.g. assign attributes before insert/update).
+A listener that returns exactly `false` stops any remaining listeners registered
+for the same event from running.
 
 ```php
 // In your bootstrap or service provider
-User::on('creating', function ($data) {
+User::on('creating', function ($model) {
     // Called before insert
-    // $data is the array being inserted
+    // $model is the Model instance being inserted
 });
 
 User::on('created', function ($model) {
@@ -578,9 +629,9 @@ User::on('saved', function ($model) {
 **Example: Auto-generate slug**
 
 ```php
-Post::on('creating', function ($data) {
-    if (empty($data['slug'])) {
-        $data['slug'] = slug($data['title']);
+Post::on('creating', function ($model) {
+    if (empty($model->slug)) {
+        $model->slug = slug($model->title);
     }
 });
 ```
@@ -614,7 +665,7 @@ For large datasets, cursor pagination is more efficient:
 $users = User::cursorPaginate(20);
 
 // With explicit cursor
-$cursor = request()->query('cursor');
+$cursor = request()->getQuery('cursor');
 $users = User::cursorPaginate(20, $cursor);
 ```
 

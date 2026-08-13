@@ -213,6 +213,7 @@ Main application configuration.
 | `gzip_compression` | bool | `true` | Enable zlib output compression |
 | `error_reporting_level` | int | `E_ALL` | PHP error reporting level |
 | `minify_html` | bool | `false` | Enable HTML minification for views |
+| `trusted_proxies` | array | `[]` | List of proxy IPs whose forwarded headers (`X-Forwarded-For`, `Client-IP`, ...) are honored by `Request::getClientIp()`. Use `['*']` to trust all proxies. If unset / empty, only `REMOTE_ADDR` is consulted. **Action required for proxied/load-balanced deployments**: configure this or the client IP will resolve to the proxy's address and features keying off the IP (Auth brute-force lockout, rate limiter, audit logs) will misbehave. |
 
 **Example:**
 

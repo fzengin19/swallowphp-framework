@@ -151,31 +151,33 @@ if (session()->hasFlash('success')) {
 
 // With default value
 $message = session()->getFlash('error', 'Unknown error');
-
-// Also accessible via session() helper
-if (session('success')) {
-    echo session('success');
-}
 ```
+
+> [!NOTE]
+> Flash data is **not** read with the plain `session($key)` helper — that
+> reads from `$_SESSION[$key]`, which is the regular session bucket, not the
+> flash bucket. Always use `SessionManager::getFlash($key)` / `hasFlash($key)`
+> (i.e. `session()->getFlash(...)` / `session()->hasFlash(...)`) for flashed
+> data.
 
 ### In Views
 
 ```php
-<?php if (session('success')): ?>
+<?php if (session()->hasFlash('success')): ?>
     <div class="alert alert-success">
-        <?= htmlspecialchars(session('success')) ?>
+        <?= htmlspecialchars(session()->getFlash('success')) ?>
     </div>
 <?php endif ?>
 
-<?php if (session('error')): ?>
+<?php if (session()->hasFlash('error')): ?>
     <div class="alert alert-danger">
-        <?= htmlspecialchars(session('error')) ?>
+        <?= htmlspecialchars(session()->getFlash('error')) ?>
     </div>
 <?php endif ?>
 
-<?php if (session('errors')): ?>
+<?php if (session()->hasFlash('errors')): ?>
     <ul class="errors">
-        <?php foreach (session('errors') as $field => $message): ?>
+        <?php foreach ((array) session()->getFlash('errors') as $field => $message): ?>
             <li><?= htmlspecialchars($message) ?></li>
         <?php endforeach ?>
     </ul>
@@ -184,7 +186,12 @@ if (session('success')) {
 
 ### Keeping Flash Data
 
-By default, flash data is removed after being read. To persist for another request:
+By default, flash data set on request N is available throughout request
+N+1 (every `getFlash()` / `hasFlash()` call in that request returns the
+same value), then cleared at the start of request N+2 by
+`SessionManager::ageFlashData()`. To persist flash data into another
+request, you must explicitly re-flash or `keep()` it before the response
+is sent:
 
 ```php
 // Keep all flash data
@@ -197,9 +204,16 @@ session()->keep(['success', 'warning']);
 
 ### Flash Data Lifecycle
 
-1. **Request 1:** `flash('success', 'Saved!')` → Stored in `_flash.new`
-2. **Request 2:** `session('success')` → Read from `_flash.old`, returns `'Saved!'`
-3. **Request 3:** `session('success')` → Returns `null` (data expired)
+1. **Request N:** `flash('success', 'Saved!')` → Stored in `_flash.new`
+2. **Request N+1:** `SessionManager::start()` runs `ageFlashData()` once,
+   which moves `_flash.new` → `_flash.old` (and clears `_flash.new`).
+   `session()->getFlash('success')` reads from `_flash.old` and returns
+   `'Saved!'` — and any number of reads in this same request N+1 will see it.
+3. **Request N+2:** `ageFlashData()` runs again — the very first step is to
+   remove `_flash.old` (which is what finally discards the data aged in
+   step 2), then it would move whatever is in `_flash.new` (nothing in
+   the plain `flash()` flow) into `_flash.old`, and clear `_flash.new`.
+   `session()->getFlash('success')` now returns `null`.
 
 ---
 

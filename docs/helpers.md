@@ -157,7 +157,7 @@ $email = request()->get('email');
 $all = request()->all();
 
 // Query parameters
-$page = request()->query('page', 1);
+$page = request()->getQuery('page', 1);
 
 // Headers
 $contentType = request()->header('Content-Type');
@@ -211,9 +211,11 @@ $id = db()->table('posts')->insert([
 ]);
 
 // Update
-db()->table('posts')
+$result = db()->table('posts')
     ->where('id', 1)
     ->update(['title' => 'Updated Title']);
+// $result is int|false: rows affected, or false on a genuine write failure.
+// 0 means "matched zero rows, no error" — check $result === false for failure.
 
 // Delete
 db()->table('posts')
@@ -262,8 +264,8 @@ flash('error', 'Invalid credentials.');
 flash('warning', 'Please verify your email.');
 
 // In view
-<?php if (session('success')): ?>
-    <div class="alert alert-success"><?= session('success') ?></div>
+<?php if (session()->hasFlash('success')): ?>
+    <div class="alert alert-success"><?= session()->getFlash('success') ?></div>
 <?php endif ?>
 ```
 
@@ -295,7 +297,7 @@ cache()->clear();
 // Get or set pattern
 $users = cache()->get('users');
 if ($users === null) {
-    $users = User::all();
+    $users = User::get();
     cache()->set('users', $users, 600);
 }
 ```
@@ -453,18 +455,18 @@ e(['key' => 'value']);                       // JSON encoded for debugging
 
 ### `raw($value)`
 
-Mark content as safe (already escaped) to bypass automatic escaping.
+Returns the given value as a plain string, unmodified.
 
 ```php
 // For pre-escaped HTML content
 $safeHtml = '<strong>Bold text</strong>';
 <?= raw($safeHtml) ?>
-
-// Returns a RawValue object that renders as-is
 ```
 
 > [!WARNING]
-> Only use `raw()` with content you've already sanitized. Never use with user input.
+> Only use `raw()` with content you've already sanitized. Never use with
+> user input. SwallowPHP does **not** auto-escape view output — pair `raw()`
+> with `e()` whenever you need to escape untrusted content.
 
 ### `attr($value)`
 

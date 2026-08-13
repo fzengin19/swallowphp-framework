@@ -1366,66 +1366,71 @@ it('AC-37: docs/middleware.md lists the four pipeline stages in the real executi
 });
 
 /* ===========================================================================
- * AC-38 — docs/views.md: view-fallback claim needs narrowing
+ * AC-38 — docs/views.md: view-resolution section must accurately describe
+ * the fallback to src/resources/views/ that src/Methods.php implements.
+ *
+ * The original Tier-2 spec assumed view() resolved only from the application
+ * view directory and asked us to narrow the doc to deny any framework-bundled
+ * fallback. The alignment audit caught that this inverted a true statement:
+ * src/Methods.php:780-810 explicitly computes
+ *     $frameworkViewPath = dirname(__DIR__, 2) . '/src/resources/views';
+ * and falls back to that directory, which holds components/pagination.php and
+ * errors/{404,500,default}.php. The doc must therefore HONESTLY describe that
+ * fallback (src/ is out of scope, so the code is the ground truth).
  * =========================================================================== */
 
-it('AC-38: docs/views.md narrows the view-resolution claim to the application view path', function () {
+it('AC-38: docs/views.md View Resolution section is present and named "Resolution Order"', function () {
+    docContains('docs/views.md', '### Resolution Order', true,
+        'AC-38: docs/views.md must have a "### Resolution Order" section');
+});
+
+it('AC-38: docs/views.md lists the application view directory as the primary resolution path', function () {
     $content = doc('docs/views.md');
-    // The narrowed claim must explicitly say view() resolves only from
-    // the application's configured view directory. The doc wraps the line
-    // across a soft break, so we look for both halves and assert they
-    // appear close together, OR assert the full phrase if a future edit
-    // joins them.
-    $hasApp = stripos($content, "application's") !== false;
-    $hasConfiguredViewDir = stripos($content, 'configured view directory') !== false;
-    expect($hasApp && $hasConfiguredViewDir)->toBeTrue(
-        'AC-38: view-resolution must reference the application\'s configured view directory'
+    $hasAppViewDir = stripos($content, "config('app.view_path')") !== false
+        || stripos($content, 'config(\'app.view_path\')') !== false;
+    expect($hasAppViewDir)->toBeTrue(
+        'AC-38: View Resolution must reference the application view path config key'
     );
-    // The phrase "not ... fall back to any framework-bundled views" must
-    // also be present so the negative claim is anchored to a noun, not
-    // just an isolated list of places.
-    expect(stripos($content, 'fall back to any framework-bundled views') !== false
-        || stripos($content, 'fall back to') !== false && stripos($content, 'framework-bundled') !== false
-        || stripos($content, 'not') !== false && stripos($content, 'fall back to') !== false
-            && stripos($content, 'framework-bundled views') !== false)->toBeTrue(
-        'AC-38: view-resolution must explicitly negate the framework-bundled-views fallback'
+    // Application views are checked first.
+    expect(stripos($content, 'application views') !== false
+        || stripos($content, "application's configured") !== false
+        || stripos($content, 'app/view_path') !== false)->toBeTrue(
+        'AC-38: View Resolution must name the application views path'
     );
 });
 
-it('AC-38: docs/views.md does not claim view() falls back to framework views for application code', function () {
-    // The pre-fix line was "Framework views: Framework's built-in views (fallback)".
-    // A regression that re-introduces the bare "framework views ... fallback"
-    // framing fails this check.
-    docPregMatch('docs/views.md', '/Framework\'s built-in views \(fallback\)/', 0,
-        'AC-38: old "framework views (fallback)" claim must be gone');
+it('AC-38: docs/views.md honestly documents the framework views fallback to src/resources/views/', function () {
+    $content = doc('docs/views.md');
+    // The doc must mention the framework's view fallback directory.
+    expect(stripos($content, 'src/resources/views') !== false)->toBeTrue(
+        'AC-38: docs/views.md must reference src/resources/views/ as the fallback path (matches src/Methods.php)'
+    );
+    // The fallback must be called out as a fallback, not hidden as a side note.
+    expect(stripos($content, 'framework views') !== false
+        || stripos($content, 'framework-bundled') !== false
+        || stripos($content, 'framework\'s built-in') !== false)->toBeTrue(
+        'AC-38: docs/views.md must label the src/resources/views/ path as the framework-bundled fallback'
+    );
+    // The pre-fix Tier-2 wording claimed NO fallback ("does not fall back to
+    // any framework-bundled views"). That claim is provably false against the
+    // live code and must not be re-introduced.
+    expect(stripos($content, 'does not fall back to any framework-bundled views') === false
+        && stripos($content, 'does **not** fall back to any framework-bundled views') === false)->toBeTrue(
+        'AC-38: the false Tier-2 claim "does not fall back to any framework-bundled views" must not return'
+    );
 });
 
-/**
- * AC-38 (hardened) — auditor's killing mutant: flip "It does **not**
- * fall back to any framework-bundled views." to "It does fall back to
- * any framework-bundled views." The existing predicate accepts the
- * mutant because it requires `not` AND `fall back to` AND
- * `framework-bundled views` anywhere in the doc, regardless of
- * whether they're part of the same sentence. We scope the check to
- * the View Resolution section and assert the negation is actually
- * attached to the fallback claim in the same contiguous phrase.
- */
-it('AC-38: docs/views.md View Resolution section negates the framework-bundled fallback in one phrase', function () {
+it('AC-38: docs/views.md names at least one real framework-bundled view file in the fallback list', function () {
+    // Catches a regression where someone writes "framework fallback" generically
+    // without anchoring it to the actual files the code can resolve.
     $content = doc('docs/views.md');
-    $start = strpos($content, '### Resolution Order');
-    expect($start)->toBeGreaterThan(0, 'AC-38: View Resolution section must exist');
-    $rest = substr($content, $start);
-    $end = strpos($rest, "\n### ");
-    $section = $end === false ? $rest : substr($rest, 0, $end);
-
-    // The negation must be present and the negated verb "fall back" must
-    // be attached to "framework-bundled views" in the same contiguous
-    // text run (allowing Markdown emphasis stars like `**not**`).
-    $hasNegation = preg_match(
-        '/\*?\*?\*?not\*?\*?\*?\s+fall\s+back\s+to\s+any\s+framework-bundled\s+views/si',
-        $section
-    ) === 1;
-    expect($hasNegation)->toBeTrue(
-        'AC-38: View Resolution section must contain "not ... fall back to any framework-bundled views" as a single phrase'
-    );
+    $names = ['components/pagination.php', 'errors/404.php', 'errors/500.php', 'errors/default.php'];
+    $hits = 0;
+    foreach ($names as $n) {
+        if (stripos($content, $n) !== false) {
+            $hits++;
+        }
+    }
+    expect($hits)->toBeGreaterThanOrEqual(1,
+        'AC-38: docs/views.md must list at least one real framework-bundled view file (e.g. components/pagination.php, errors/404.php)');
 });

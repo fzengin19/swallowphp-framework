@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-13
+
+### Action required
+- `Database::delete()` now throws `\RuntimeException` if called with no
+  `WHERE` condition, instead of silently deleting every row. Any code that
+  relies on a bare `->delete()` to clear a table must switch to the new
+  `->deleteAll()`.
+- `Database::update()`'s return type widened from `int` to `int|false`; a
+  failed UPDATE now returns `false` instead of `0`. Code that type-hints the
+  return value as `int` (or otherwise assumes it's never `false`) must be
+  updated to handle the new failure signal.
+
+These are the reasons this release is a major version bump: both are
+deliberate, behavior-changing fixes to prevent silent data loss / silent
+failure reporting (see "Fixed" below for the bugs they close).
+
+### Changed
+- `Database::delete()` now throws `\RuntimeException` when called with no
+  `WHERE` condition (previously deleted every row in the table silently);
+  use the new `Database::deleteAll()` for the old unguarded behavior. The
+  guard also rejects a `where(...)` closure that renders no predicate (e.g.
+  an empty nested closure), which previously bypassed it the same way.
+
+### Fixed
+- `where($column, null)` and `where($column, '=', null)` now produce
+  `IS NULL` instead of binding a literal `NULL` to `=` (which never matches).
+  `where($column, '!=', null)` / `where($column, '<>', null)` produce
+  `IS NOT NULL` for symmetry.
+- `Model::fireEvent()` now honors the documented abort signal: a listener
+  that returns `false` stops propagation to later listeners on the same event.
+- `Database::update()` returns `false` on a PDOException (previously
+  returned `0`, which `Model::save()` could not distinguish from a
+  successful no-op update). A genuinely-failed UPDATE therefore no longer
+  fires the `updated`/`saved` events and `save()` reports failure.
+- `AuthenticatableTrait::setRememberToken()` now writes to the attributes
+  array directly, bypassing the model's mass-assignment guard so that
+  "remember me" logins persist on User models whose `$fillable` does not
+  list `remember_token`.
+- `Model::where()`'s static wrapper now forwards only the arguments the
+  caller actually supplied, instead of always passing 4 args through to
+  `Database::where()`. The always-4-args form broke ordinary calls like
+  `Model::where('status', 'active')` (compiled to `status IS NULL`) and
+  `Model::where('age', '>=', 18)` (compiled to `age = '>='`).
+- `Database::where()` now recognizes its own explicit 4-argument
+  `(column, operator, value, boolean)` shape; previously a 4-arg call fell
+  through to a fallback branch that bound the operator string as the value.
+
 ## [1.3.0] - 2026-07-20
 
 ### Security

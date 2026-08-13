@@ -5,3 +5,7 @@ result.md
 skeleton_instructions.md
 refactoring_checklist.md
 framework_src_checklist.md
+
+# Test scratch directory used by Phase 0 hardening tests. Inside the
+# working tree so the sandboxed runner can write to it; never committed.
+/.scratch/

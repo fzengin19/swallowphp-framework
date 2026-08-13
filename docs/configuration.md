@@ -30,6 +30,7 @@ APP_NAME=MyApplication
 APP_ENV=local
 APP_DEBUG=true
 APP_URL=http://localhost:8000
+# EXAMPLE ONLY — generate your own key before using this configuration
 APP_KEY=base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
 
 # Database
@@ -265,10 +266,10 @@ Database connection configuration.
     'password' => env('DB_PASSWORD', ''),
     'unix_socket' => env('DB_SOCKET', ''),
     'charset' => 'utf8mb4',
-    'collation' => 'utf8mb4_unicode_ci',    // accepted, not currently used
-    'prefix' => '',                         // accepted, not currently used
-    'strict' => true,                       // accepted, not currently used
-    'engine' => null,                       // accepted, not currently used
+    'collation' => 'utf8mb4_unicode_ci',
+    'prefix' => '',
+    'strict' => true,
+    'engine' => null,
 ],
 ```
 
@@ -278,7 +279,7 @@ Database connection configuration.
 'sqlite' => [
     'driver' => 'sqlite',
     'database' => 'database/database.sqlite', // Relative to storage_path
-    'prefix' => '',                          // accepted, not currently used
+    'prefix' => '',
 ],
 ```
 

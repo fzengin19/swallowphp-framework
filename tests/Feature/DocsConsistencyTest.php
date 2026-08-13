@@ -869,6 +869,12 @@ it('AC-33: neither doc uses the wrong-length placeholder', function () {
         'AC-33: README.md must not use the wrong-length placeholder');
     docContains('docs/configuration.md', 'your-32-character-secret-key-here', false,
         'AC-33: docs/configuration.md must not use the wrong-length placeholder');
+
+    foreach (['README.md', 'docs/configuration.md'] as $path) {
+        expect(preg_match('/example only.*generate your own.*APP_KEY=base64:/is', doc($path)) === 1)->toBeTrue(
+            "AC-33: {$path} must label the illustrative APP_KEY as example-only"
+        );
+    }
 });
 
 /* ===========================================================================
@@ -877,13 +883,24 @@ it('AC-33: neither doc uses the wrong-length placeholder', function () {
 
 it('AC-34: docs/authentication.md uses the literal sha1($email) in the cache-key description', function () {
     $content = doc('docs/authentication.md');
-    expect(stripos($content, 'sha1($email)') !== false)->toBeTrue(
+    $start = stripos($content, '### Cache Keys');
+    $end = stripos($content, "\n### ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-34: cache-key section must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-34: cache-key section must be bounded');
+    $section = substr($content, $start, $end - $start);
+    expect(preg_match('/login_attempt_\{ip\}_sha1\(\$email\)/', $section) === 1)->toBeTrue(
         'AC-34: sha1($email) must appear in the cache-key description'
     );
 });
 
 it('AC-34: docs/authentication.md no longer uses the generic {email_hash} placeholder', function () {
-    docPregMatch('docs/authentication.md', '/\{email_hash\}/', 0,
+    $content = doc('docs/authentication.md');
+    $start = stripos($content, '### Cache Keys');
+    $end = stripos($content, "\n### ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-34: cache-key section must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-34: cache-key section must be bounded');
+    $section = substr($content, $start, $end - $start);
+    expect(preg_match('/\{email_hash\}/', $section))->toBe(0,
         'AC-34: {email_hash} placeholder must be gone');
 });
 
@@ -893,13 +910,15 @@ it('AC-34: docs/authentication.md no longer uses the generic {email_hash} placeh
 
 it('AC-35: CHANGELOG.md intro documents the Action required convention', function () {
     $content = doc('CHANGELOG.md');
+    $introEnd = strpos($content, '## [2.0.1]');
+    $intro = substr($content, 0, $introEnd);
     // The convention mentions both "Action required" and the standard
     // subsections in the same intro paragraph. Either ordering is fine;
     // we just want to make sure both are referenced together.
-    expect(stripos($content, 'Action required') !== false)->toBeTrue(
+    expect(stripos($intro, 'Action required') !== false)->toBeTrue(
         'AC-35: CHANGELOG intro must mention "Action required"'
     );
-    expect(stripos($content, 'convention') !== false)->toBeTrue(
+    expect(stripos($intro, 'convention') !== false)->toBeTrue(
         'AC-35: CHANGELOG intro must mention the convention'
     );
 });
@@ -923,9 +942,6 @@ it('AC-37: docs/middleware.md has a global-middleware-pipeline-order subsection 
     expect(stripos($content, 'Global middleware pipeline order') !== false)->toBeTrue(
         'AC-37: "Global middleware pipeline order" subsection must be present'
     );
-    require_once __DIR__ . '/../../src/Http/Middleware/ValidatePostSize.php';
-    require_once __DIR__ . '/../../src/Http/Middleware/VerifyCsrfToken.php';
-    require_once __DIR__ . '/../../src/Http/Middleware/AddContentSecurityPolicyHeader.php';
     // All four ordered classes must appear in the doc body as class names.
     // The route action is a stage, not a class, so we only check the three
     // middleware classes plus the explicit "Route action" stage label.
@@ -940,30 +956,23 @@ it('AC-37: docs/middleware.md has a global-middleware-pipeline-order subsection 
 });
 
 it('AC-37: docs/middleware.md lists the four pipeline stages in the real execution order', function () {
-    // The real order is ValidatePostSize -> VerifyCsrfToken -> Route action
-    // -> AddContentSecurityPolicyHeader. The check below extracts the line
-    // numbers of each class-name and asserts that they appear in the
-    // correct order.
     $content = doc('docs/middleware.md');
-    $classNames = ['ValidatePostSize', 'VerifyCsrfToken', 'AddContentSecurityPolicyHeader'];
-    $lineNumbers = [];
-    foreach ($classNames as $class) {
-        // Find the first line in the doc that contains the class name.
-        $lines = explode("\n", $content);
-        $found = -1;
-        foreach ($lines as $i => $line) {
-            if (strpos($line, $class) !== false) {
-                $found = $i + 1;
-                break;
-            }
-        }
-        expect($found)->toBeGreaterThan(0, "AC-37: {$class} must appear in middleware.md");
-        $lineNumbers[$class] = $found;
+    $start = stripos($content, '## Global Middleware Pipeline Order');
+    $end = stripos($content, "\n## ", $start + 1);
+    expect($start)->toBeGreaterThan(0, 'AC-37: global pipeline subsection must exist');
+    expect($end)->toBeGreaterThan($start, 'AC-37: global pipeline subsection must be bounded');
+    $section = substr($content, $start, $end - $start);
+    $stages = ['ValidatePostSize', 'VerifyCsrfToken', 'Route action', 'AddContentSecurityPolicyHeader'];
+    $positions = [];
+    foreach ($stages as $stage) {
+        $positions[$stage] = stripos($section, $stage);
+        expect($positions[$stage])->toBeGreaterThan(0,
+            "AC-37: {$stage} must appear in the global pipeline subsection");
     }
-    expect($lineNumbers['ValidatePostSize'])->toBeLessThan($lineNumbers['VerifyCsrfToken'],
-        'AC-37: ValidatePostSize must be listed before VerifyCsrfToken');
-    expect($lineNumbers['VerifyCsrfToken'])->toBeLessThan($lineNumbers['AddContentSecurityPolicyHeader'],
-        'AC-37: VerifyCsrfToken must be listed before AddContentSecurityPolicyHeader');
+    for ($i = 1; $i < count($stages); $i++) {
+        expect($positions[$stages[$i - 1]])->toBeLessThan($positions[$stages[$i]],
+            "AC-37: {$stages[$i - 1]} must precede {$stages[$i]}");
+    }
 });
 
 /* ===========================================================================
@@ -999,16 +1008,4 @@ it('AC-38: docs/views.md does not claim view() falls back to framework views for
     // framing fails this check.
     docPregMatch('docs/views.md', '/Framework\'s built-in views \(fallback\)/', 0,
         'AC-38: old "framework views (fallback)" claim must be gone');
-});
-
-/* ===========================================================================
- * AC-39 — README.md: php-debugbar fix from Tier 1 is still intact
- * =========================================================================== */
-
-it('AC-39: AC-23 (php-debugbar (dev) label) is still passing in this run', function () {
-    // Tier 1 added the (dev) label fix in README.md. AC-23 has its own test
-    // block above; this AC just guards against a regression by re-running
-    // the same grep. If AC-23 ever stops passing, this test fails too.
-    docPregMatch('README.md', '/php-debugbar.*\(dev\)/', 0,
-        'AC-39: AC-23 regression guard — php-debugbar (dev) label must remain gone');
 });

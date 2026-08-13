@@ -272,15 +272,12 @@ SwallowPHP tracks failed login attempts per IP + email combination:
 ### Cache Keys
 
 ```
-login_attempt_{ip}_{sha1($email)}  # Attempt counter
-login_lockout_{ip}_{sha1($email)}  # Lockout flag
+login_attempt_{ip}_sha1($email)  # Attempt counter
+login_lockout_{ip}_sha1($email)  # Lockout flag
 ```
 
-The `{sha1($email)}` placeholder is the literal `sha1($email)` of the
-user-supplied email — i.e. `sha1()` of the email string the caller
-passed to `Auth::authenticate()`. It is not a generic hash; the
-framework uses `sha1($email)` specifically so that throttle keys can
-be pre-computed when debugging.
+The `sha1($email)` portion is the literal SHA-1 of the user-supplied
+email passed to `Auth::authenticate()`; it is not a generic hash.
 
 ### Handling Lockout
 

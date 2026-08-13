@@ -402,6 +402,95 @@ it('AC-43: numeric route param is coerced by the framework, not by PHP weak typi
     expect(Phase3TestController::$lastIntId)->toBeInt();
 });
 
+it('AC-43: resolveMethodDependencies() itself coerces numeric route params (production call site, not the helper in isolation)', function () {
+    // The test auditor's BLOCKING finding: the previous numeric AC-43
+    // test invoked `coerceScalarRouteParameter()` directly via
+    // reflection. That tests the helper in isolation but does NOT
+    // test the call site inside `resolveMethodDependencies()` (the
+    // production path that actually hands args to invokeArgs). The
+    // named mutation -- reverting `Route.php:191` to
+    // `$args[] = $routeParameters[$paramName]` -- leaves the helper
+    // itself untouched, so the direct assertion stays green and the
+    // end-to-end `showInt` assertion also stays green because PHP's
+    // implicit numeric-string coercion converts "42" -> 42 in
+    // invokeArgs regardless. This test exercises the call site
+    // directly: it constructs the same Request Router::dispatch()
+    // would build after a real match (route params merged into the
+    // body-only accessor via setAll()), invokes
+    // resolveMethodDependencies() via reflection, and inspects the
+    // returned `$args` array BEFORE invokeArgs() runs. PHP's boundary
+    // coercion never happens on this code path, so whatever
+    // resolveMethodDependencies() returns IS what the framework
+    // decided to pass. Under the mutation the arg is the raw string
+    // '42'; with the fix it is int(42). That is the discriminator.
+    $rc = new ReflectionClass(Route::class);
+    $resolve = $rc->getMethod('resolveMethodDependencies');
+
+    // Construct a Request the same way Router::dispatch() builds one
+    // after a successful match: route param merged into the body
+    // accessor via setAll(array_merge($request->request(), $params)).
+    // No query keys, no other body keys -- exactly one route param.
+    $request = phase3BuildRequest('/ac43/probe/42', 'GET');
+    $request->setAll(array_merge($request->request(), ['id' => '42']));
+
+    // The framework reads route params via $request->all(), which is
+    // what executeAction() passes as the second argument to
+    // resolveMethodDependencies. Reproduce the container that
+    // executeAction() would have on hand (the DI container is
+    // already booted in beforeEach).
+    $container = App::container();
+
+    // Build the same ReflectionParameter[] that
+    // (new ReflectionMethod($controllerName, $method))->getParameters()
+    // would produce for showInt(int $id). Using the real controller
+    // method keeps the parameter order, default-value availability,
+    // and type metadata identical to production.
+    $controllerRef = new ReflectionClass(Phase3TestController::class);
+    $reflectionParams = $controllerRef->getMethod('showInt')->getParameters();
+
+    // Route instance is just the binding object for the reflection call.
+    $route = new Route('GET', '/ac43/probe/{id}', [Phase3TestController::class, 'showInt']);
+
+    $args = $resolve->invoke($route, $reflectionParams, $request->all(), $container, $request);
+
+    // The named mutation makes args[0] === '42' (string). With the fix
+    // in place args[0] === 42 (int) because resolveMethodDependencies()
+    // routed the route param through coerceScalarRouteParameter().
+    expect($args)->toHaveCount(1);
+    expect(gettype($args[0]))->toBe('integer');   // discriminator; 'string' under the named mutation
+    expect($args[0])->toBe(42);                    // the integer value, not the string "42"
+});
+
+it('AC-43: resolveMethodDependencies() leaves non-numeric route params as raw strings (no silent crash, no silent 404)', function () {
+    // Same shape as the test above but with a non-numeric value. The
+    // helper's contract: `is_numeric($value)` is false for "abc", so
+    // resolveMethodDependencies() passes the raw string through. Under
+    // the named mutation (raw assignment at Route.php:191) the
+    // observed value is identical ('abc'), so this test cannot detect
+    // the numeric-coercion mutation by itself. It DOES detect any
+    // FUTURE regression that introduces a new error path (404,
+    // TypeError, exception) for the malformed case -- if
+    // resolveMethodDependencies() throws or returns something other
+    // than 'abc', the assertion below fails.
+    $rc = new ReflectionClass(Route::class);
+    $resolve = $rc->getMethod('resolveMethodDependencies');
+
+    $request = phase3BuildRequest('/ac43/probe/abc', 'GET');
+    $request->setAll(array_merge($request->request(), ['id' => 'abc']));
+
+    $container = App::container();
+    $controllerRef = new ReflectionClass(Phase3TestController::class);
+    $reflectionParams = $controllerRef->getMethod('showInt')->getParameters();
+
+    $route = new Route('GET', '/ac43/probe/{id}', [Phase3TestController::class, 'showInt']);
+
+    $args = $resolve->invoke($route, $reflectionParams, $request->all(), $container, $request);
+
+    expect($args)->toHaveCount(1);
+    expect($args[0])->toBe('abc');                 // raw string passed through, no crash
+    expect(gettype($args[0]))->toBe('string');      // type preserved
+});
+
 it('AC-43: non-numeric route param reaches the handler as the raw string (no new crash, no new 404)', function () {
     // With the framework's coercion in place, `is_numeric('abc')` is
     // false, so the framework leaves the raw string in place. With

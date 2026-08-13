@@ -186,7 +186,12 @@ $message = session()->getFlash('error', 'Unknown error');
 
 ### Keeping Flash Data
 
-By default, flash data is removed after being read. To persist for another request:
+By default, flash data set on request N is available throughout request
+N+1 (every `getFlash()` / `hasFlash()` call in that request returns the
+same value), then cleared at the start of request N+2 by
+`SessionManager::ageFlashData()`. To persist flash data into another
+request, you must explicitly re-flash or `keep()` it before the response
+is sent:
 
 ```php
 // Keep all flash data

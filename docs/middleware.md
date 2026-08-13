@@ -41,6 +41,7 @@ Extend the `Middleware` base class and implement the `handle` method:
 
 namespace App\Middleware;
 
+use SwallowPHP\Framework\Auth\Auth;
 use SwallowPHP\Framework\Http\Middleware\Middleware;
 use SwallowPHP\Framework\Http\Request;
 use Closure;

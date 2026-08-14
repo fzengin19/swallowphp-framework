@@ -11,10 +11,23 @@
 | path — not just source-presence grepping.
 |
 | Fixture layout:
-|   - tests/Feature/Phase4Section2Test.php (this file — the only NEW file)
+|   - tests/Feature/Phase4Section2Test.php (this file — the only NEW
+|     file under tests/Feature)
+|   - tests/Support/Phase4Section2TestHelpers.php — extracts
+|     overrideRequestSingleton() so this file can be selected standalone
+|     (without it, Pest only loads DocsConsistencyTest.php when its
+|     discovery walk hits that file; selecting only this file would
+|     fail with `Call to undefined function
+|     Tests\Feature\overrideRequestSingleton()`). The helper uses a
+|     `function_exists` guard so the FULL suite (which discovers
+|     DocsConsistencyTest.php first) keeps DocsConsistencyTest's copy
+|     as the live declaration.
 |   - DB fixtures per test under sys_get_temp_dir()/phase4-section2-* (see
 |     PHASE4_S2_TMP_PREFIX below; .scratch/ is read-only in some sandboxes
 |     so we follow Phase4Section1Test.php and put sqlite files in tmp).
+|     Nothing is written into .scratch/ by this build — the previous
+|     version created an unused .scratch/phase4-section2 directory that
+|     was never cleaned up.
 |   - Model fixtures declared at file scope (Phase4S2Post, Phase4S2Author)
 |     so Pest's autoloader picks them up.
 |   - phase4s2BuildRequest() helper declared in this file (NOT reusing
@@ -22,12 +35,32 @@
 |     populate HTTP_HOST, so Request::getHost() falls back to '' and
 |     fullUrl() yields a malformed `http:///...` URL that's unusable for
 |     an exact-string assertion in AC-57).
-|   - overrideRequestSingleton() is reused from tests/Feature/
-|     DocsConsistencyTest.php (declared there; both files load in the
-|     same Pest run and share the same `Tests\Feature` namespace).
 */
 
 namespace Tests\Feature;
+
+// Ensure the request-singleton override helper is available when this
+// test file is loaded standalone. We load ONLY the helper extracted to
+// tests/Support/Phase4Section2TestHelpers.php — NOT the full
+// DocsConsistencyTest.php.
+//
+// Loading the full DocsConsistencyTest.php would be hook pollution of the
+// same shape Section 1's `Phase3TestHelpers.php` was extracted to fix:
+// pulling in a sibling test file as a side effect of running only one
+// test directory (extra ~100 tests in the run, and unrelated failures
+// bleeding into the Section 2 verdict). Without this load, selecting only
+// `tests/Feature/Phase4Section2Test.php` produced 11 failures with
+// `Call to undefined function Tests\Feature\overrideRequestSingleton()`,
+// because DocsConsistencyTest.php is the file that declares it and Pest
+// only loads it when test discovery walks it.
+//
+// The helper file uses a `function_exists` guard so the declaration is
+// compatible with the identical body in DocsConsistencyTest.php: when the
+// FULL suite runs (Pest discovers DocsConsistencyTest.php first),
+// the helper file is a no-op load and the function is the one declared
+// by DocsConsistencyTest. When this file is loaded alone, the helper
+// file declares the function itself.
+require_once __DIR__ . '/../Support/Phase4Section2TestHelpers.php';
 
 use ReflectionClass;
 use ReflectionMethod;
@@ -64,20 +97,17 @@ class Phase4S2Author extends Model
 
 // ---------------------------------------------------------------------------
 // Scratch helpers — sqlite files live under sys_get_temp_dir() so the test
-// stays writable in sandboxes where .scratch/ is read-only.
+// stays writable in sandboxes where .scratch/ is read-only. No fixture
+// file is written into the repo's .scratch/ tree by this build — the
+// per-test beforeEach creates a fresh sqlite file via PDO and points
+// config('database.connections.sqlite.database') at it under tmp. The
+// afterEach below unlinks anything matching the per-process prefix.
 // ---------------------------------------------------------------------------
 
-if (!defined('PHASE4_S2_SCRATCH_DIR')) {
-    define('PHASE4_S2_SCRATCH_DIR', dirname(__DIR__, 2) . '/.scratch/phase4-section2');
-}
 if (!defined('PHASE4_S2_TMP_PREFIX')) {
     // Per-process prefix so all sqlite fixtures from this run share a
     // discoverable root under sys_get_temp_dir(), making cleanup easier.
     define('PHASE4_S2_TMP_PREFIX', 'phase4-section2-' . uniqid('', true) . '-');
-}
-
-if (!is_dir(PHASE4_S2_SCRATCH_DIR)) {
-    @mkdir(PHASE4_S2_SCRATCH_DIR, 0755, true);
 }
 
 /**

@@ -50,16 +50,40 @@ class Auth
 
     /**
      * Log the current user out.
+     *
+     * Captures $user via self::user() BEFORE any session/cookie mutation
+     * so that any lazy-resolution side effect in user() (which can
+     * itself trigger session-regeneration when resolving a remember-me
+     * cookie) runs first and cleanly, with the session
+     * removal/regeneration and remember-token clearing happening in
+     * stable order afterward. Invalidates the server-side remember-me
+     * token so a cookie captured before logout cannot re-authenticate
+     * the attacker after the legitimate user logs out.
      */
     public static function logout(): void
     {
         try {
+            $user = self::user();
+
             $session = App::container()->get(SessionManager::class);
             $session->remove(self::AUTH_SESSION_KEY);
             $session->regenerate(true);
-            
+
             Cookie::delete('remember_me');
 
+            // Invalidate the server-side remember-me token: a remember-me
+            // cookie captured before logout must NOT authenticate after
+            // logout, so rotate the stored hashed token to null. DB failure
+            // here is logged (not propagated) — a token-persistence bug
+            // must not block the rest of logout.
+            if ($user !== null) {
+                try {
+                    $user->setRememberToken(null);
+                    $user->save();
+                } catch (\Throwable $tokenErr) {
+                    self::logger()->error("Failed to clear remember token on logout.", ['exception' => $tokenErr]);
+                }
+            }
         } catch (\Throwable $e) {
             $message = "Logout error: Failed to access session, regenerate ID, or delete cookie.";
             self::logger()->error($message, ['exception' => $e]);

@@ -73,22 +73,26 @@ describe('AC-67 — SqliteCache::set() calls ttlToTimestamp() exactly once', fun
     });
 
     it('AC-67: set() with a \\DateInterval TTL calls ttlToTimestamp() exactly once', function () {
+        // Wrap fixture cleanup in try/finally so a failing assertion
+        // doesn't leak temporary SQLite/WAL files.
         $dbPath = sys_get_temp_dir() . '/phase4s4-cache-' . uniqid('', true) . '.sqlite';
         $spy = new Phase4S4SpySqliteCache($dbPath, 'cache');
 
-        // A \DateInterval TTL is the branch that double-calls
-        // ttlToTimestamp() pre-fix. A plain int TTL's early-guard
-        // check is `is_int($ttl) && $ttl <= 0`, which doesn't call
-        // ttlToTimestamp() in the guard itself, so an int TTL wouldn't
-        // exercise the bug. Use \DateInterval specifically.
-        $spy->set('key', 'value', new \DateInterval('PT1H'));
+        try {
+            // A \DateInterval TTL is the branch that double-calls
+            // ttlToTimestamp() pre-fix. A plain int TTL's early-guard
+            // check is `is_int($ttl) && $ttl <= 0`, which doesn't call
+            // ttlToTimestamp() in the guard itself, so an int TTL wouldn't
+            // exercise the bug. Use \DateInterval specifically.
+            $spy->set('key', 'value', new \DateInterval('PT1H'));
 
-        expect($spy->ttlToTimestampCallCount)->toBe(1);
-
-        // Cleanup.
-        @unlink($dbPath);
-        foreach (glob($dbPath . '*') ?: [] as $f) {
-            @unlink($f);
+            expect($spy->ttlToTimestampCallCount)->toBe(1);
+        } finally {
+            // Cleanup is exception-safe — runs even on assertion failure.
+            @unlink($dbPath);
+            foreach (glob($dbPath . '*') ?: [] as $f) {
+                @unlink($f);
+            }
         }
     });
 });
@@ -103,25 +107,29 @@ describe('AC-68 — FileLogger uppercase $minLevel lookup', function () {
         $path = sys_get_temp_dir() . '/phase4s4-log-' . uniqid('', true) . '.log';
         $logger = new FileLogger($path, 'WARNING');
 
-        $logger->debug('should not appear');
+        try {
+            $logger->debug('should not appear');
 
-        $content = file_exists($path) ? file_get_contents($path) : '';
-        expect($content)->not->toContain('should not appear');
-
-        @unlink($path);
+            $content = file_exists($path) ? file_get_contents($path) : '';
+            expect($content)->not->toContain('should not appear');
+        } finally {
+            @unlink($path);
+        }
     });
 
     it('AC-68.2: WARNING (uppercase) still allows warning-level messages through', function () {
         $path = sys_get_temp_dir() . '/phase4s4-log-' . uniqid('', true) . '.log';
         $logger = new FileLogger($path, 'WARNING');
 
-        $logger->warning('should appear');
+        try {
+            $logger->warning('should appear');
 
-        expect(file_exists($path))->toBeTrue();
-        $content = file_get_contents($path);
-        expect($content)->toContain('should appear');
-
-        @unlink($path);
+            expect(file_exists($path))->toBeTrue();
+            $content = file_get_contents($path);
+            expect($content)->toContain('should appear');
+        } finally {
+            @unlink($path);
+        }
     });
 
     it('AC-68.3 (regression): lowercase "debug" still allows debug-level messages (compatibility)', function () {
@@ -132,13 +140,15 @@ describe('AC-68 — FileLogger uppercase $minLevel lookup', function () {
         $path = sys_get_temp_dir() . '/phase4s4-log-' . uniqid('', true) . '.log';
         $logger = new FileLogger($path, 'debug');
 
-        $logger->debug('x');
+        try {
+            $logger->debug('x');
 
-        expect(file_exists($path))->toBeTrue();
-        $content = file_get_contents($path);
-        expect($content)->toContain('x');
-
-        @unlink($path);
+            expect(file_exists($path))->toBeTrue();
+            $content = file_get_contents($path);
+            expect($content)->toContain('x');
+        } finally {
+            @unlink($path);
+        }
     });
 });
 
@@ -156,17 +166,72 @@ describe('AC-69 — FileLogger chmods pre-existing log files', function () {
         touch($path);
         chmod($path, 0666);
 
-        // Sanity: the file really does start at 0666.
-        expect((fileperms($path) & 0777))->toBe(0666);
+        try {
+            // Sanity: the file really does start at 0666.
+            expect((fileperms($path) & 0777))->toBe(0666);
 
-        new FileLogger($path);
+            new FileLogger($path);
 
-        // Post-construction, the file MUST be 0644 — the constructor's
-        // chmod() now applies regardless of whether the file was
-        // just created or pre-existed.
-        expect((fileperms($path) & 0777))->toBe(0644);
+            // Post-construction, the file MUST be 0644 — the constructor's
+            // chmod() now applies regardless of whether the file was
+            // just created or pre-existed.
+            expect((fileperms($path) & 0777))->toBe(0644);
+        } finally {
+            @unlink($path);
+        }
+    });
 
-        @unlink($path);
+    it('AC-69.HIGH: a symlink log file path is REJECTED (no chmod follows the link)', function () {
+        // Reviewer finding #1 (HIGH): the constructor used to chmod() the
+        // log file path unconditionally, and chmod() follows symlinks.
+        // An attacker who can place a symlink at the log path could
+        // cause this constructor to silently tighten OR loosen a
+        // sensitive target's permissions (e.g. a 0600 secrets file to
+        // 0644). The fix rejects the symlink entirely.
+        $target = sys_get_temp_dir() . '/phase4s4-log-target-' . uniqid('', true) . '.log';
+        $link   = sys_get_temp_dir() . '/phase4s4-log-link-'   . uniqid('', true) . '.log';
+        touch($target);
+        chmod($target, 0600);
+        @symlink($target, $link);
+
+        try {
+            // Constructing on the symlink MUST throw — we refuse to follow.
+            expect(fn () => new FileLogger($link))->toThrow(\RuntimeException::class);
+
+            // And the target's mode must be untouched: 0600 → 0600.
+            // Pre-fix, the chmod would have followed the symlink and
+            // loosened the target to 0644.
+            clearstatcache(true, $target);
+            expect((fileperms($target) & 0777))->toBe(0600);
+        } finally {
+            @unlink($link);
+            @unlink($target);
+        }
+    });
+
+    it('AC-69.MEDIUM#2: a pre-existing log file with STRICTER permissions (0600) is preserved, not loosened', function () {
+        // Reviewer finding #2 (MEDIUM): the pre-fix `@chmod(..., 0644)`
+        // unconditionally loosened stricter existing modes (e.g. 0600)
+        // to 0644 — exposing owner-only logs to group/other read. The
+        // fix only removes unsafe write bits (group/other write, 0022)
+        // while preserving the rest of the mode.
+        $path = sys_get_temp_dir() . '/phase4s4-log-' . uniqid('', true) . '.log';
+        touch($path);
+        chmod($path, 0600);
+
+        try {
+            // Sanity: starts at 0600.
+            expect((fileperms($path) & 0777))->toBe(0600);
+
+            new FileLogger($path);
+
+            // Post-construction: mode MUST remain 0600 — the constructor
+            // must not loosen it to 0644.
+            clearstatcache(true, $path);
+            expect((fileperms($path) & 0777))->toBe(0600);
+        } finally {
+            @unlink($path);
+        }
     });
 });
 
@@ -182,7 +247,13 @@ describe('AC-70 — formatDateForHumans() future-date wording', function () {
         // few milliseconds of test execution time could tip it into
         // the < 3600 "dakika" branch instead of "saat", an avoidable
         // flaky-test risk.
-        $future = date('Y-m-d H:i:s', time() + 7200);
+        // Use a SAFETY MARGIN (7260s = 2h + 60s) on top of the 2-hour
+        // minimum, not exactly 7200 — a test latency of even 1 second
+        // drops absDiff from 7200 to 7199 and floor(7199/3600) becomes
+        // 1 instead of 2 ("1 saat sonra" rather than "2 saat sonra"),
+        // reproducing the reviewer's flake. 7260 keeps floor(7260/3600)
+        // = 2 robustly under much larger test-execution latencies.
+        $future = date('Y-m-d H:i:s', time() + 7260);
         $result = formatDateForHumans($future);
 
         // Must not start with '-' — the pre-fix code returned
@@ -199,8 +270,8 @@ describe('AC-70 — formatDateForHumans() future-date wording', function () {
 
     it('AC-70.2 (regression): a date 2 hours in the PAST still returns "2 saat önce"', function () {
         // The pre-existing, already-working case. The fix must not
-        // regress this.
-        $past = date('Y-m-d H:i:s', time() - 7200);
+        // regress this. Same 7260s margin applied for consistency.
+        $past = date('Y-m-d H:i:s', time() - 7260);
         $result = formatDateForHumans($past);
 
         expect($result)->toContain('2 saat önce');

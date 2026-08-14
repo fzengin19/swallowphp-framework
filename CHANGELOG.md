@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.0.1] - 2026-08-14 (in progress)
 
 Continuation of the correctness/security hardening series: a fresh comprehensive
-bugfix/stabilization scan (explicitly not new features). This entry covers Section 1
-(security-critical) of a 4-section sweep; Sections 2-4 (Database/Model correctness,
-Session/Foundation, Cache/Log stabilization) will be appended as they land.
+bugfix/stabilization scan (explicitly not new features). This entry covers Sections 1-2
+(security-critical; Database/Model correctness) of a 4-section sweep; Sections 3-4
+(Session/Foundation, Cache/Log stabilization) will be appended as they land.
 
 ### Fixed
 - `Database::select()`/`table()` now quote identifiers before interpolating them into
@@ -38,9 +38,19 @@ Session/Foundation, Cache/Log stabilization) will be appended as they land.
 - `Request::getBoundaryFromContentType()` no longer returns a degenerate `'--'`
   boundary for a malformed/empty `boundary=` value (which could corrupt multipart
   parsing), and no longer truncates a quoted boundary value at its first internal space.
+- `Database::delete()` now returns `false` (not `0`) on a genuine `PDOException`,
+  matching `update()`'s existing `int|false` pattern — `0` stays a legitimate "no rows
+  matched" result, now distinguishable from an actual write failure.
+- `Model::belongsTo()` short-circuits a `null` foreign key with an always-false
+  predicate (mirroring `hasMany()`'s existing pattern) instead of round-tripping an
+  `IS NULL` query against the related table.
+- `Database::cursorPaginate()`'s `prev_page_url` no longer returns a dangling
+  `?cursor=` link with an empty value; it points back at the base URL instead (no real
+  previous-cursor value is tracked by this implementation).
 
 ### Added
-- `tests/Feature/Phase4Section1Test.php` — regression suite for the fixes above.
+- `tests/Feature/Phase4Section1Test.php` — regression suite for the Section 1 fixes.
+- `tests/Feature/Phase4Section2Test.php` — regression suite for the Section 2 fixes.
 
 In addition to the standard Keep-a-Changelog subsections (Added / Changed /
 Deprecated / Removed / Fixed / Security), this project uses an additional

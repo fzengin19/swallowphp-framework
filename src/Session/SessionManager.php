@@ -17,8 +17,20 @@ class SessionManager
     protected const FLASH_NEW_KEY = '_flash.new';
     protected const FLASH_OLD_KEY = '_flash.old';
 
-    /** @var bool Tracks if the session handler has been registered for this request. */
-    protected bool $handlerRegistered = false;
+    /**
+     * @var bool Tracks if the session handler has been registered for this request.
+     *
+     * STATIC: PHP's session_set_save_handler() / session_start() state is
+     * request-global (one PHP session engine per request, not per
+     * SessionManager instance). The "handler is registered" fact is
+     * therefore also request-global — keeping this as an instance
+     * property would let a SECOND SessionManager instance, in the same
+     * request, believe no handler was ever registered and log the
+     * "default handler in effect" warning against an actually-registered
+     * custom handler. Static state aligns the flag's lifetime with the
+     * underlying PHP state it tracks.
+     */
+    protected static bool $handlerRegistered = false;
 
     /** @var bool Tracks if the session has been started for this request. */
     protected bool $sessionStarted = false;
@@ -61,7 +73,7 @@ class SessionManager
             // debugging "why isn't my custom session handler being used"
             // gets a real diagnostic instead of silent fallback to PHP's
             // default handler.
-            if (!$this->handlerRegistered) {
+            if (!self::$handlerRegistered) {
                 $logMsg = "SessionManager::start() found an already-active PHP session that "
                     . "was not started via this SessionManager — the custom save handler "
                     . "(FileSessionHandler) could not be registered (PHP requires "
@@ -87,9 +99,9 @@ class SessionManager
 
         try {
             // Only once, register the custom handler before session starts.
-            if (!$this->handlerRegistered) {
+            if (!self::$handlerRegistered) {
                 $this->registerSaveHandler();
-                $this->handlerRegistered = true;
+                self::$handlerRegistered = true;
             }
 
             // Set session cookie parameters from config.
@@ -187,6 +199,18 @@ class SessionManager
 
         $cookieLifetime = ($lifetime === 0 || $config->get('session.expire_on_close', false)) ? 0 : $lifetime;
 
+        // session_set_cookie_params() raises a benign warning in CLI SAPI
+        // when session.use_cookies=0 ("Session cookies cannot be used when
+        // session.use_cookies is disabled") — not actionable in CLI test
+        // contexts and pollutes test output. PHP's `@` operator cannot
+        // suppress this one because PHPUnit's ErrorHandler still captures
+        // it as a test warning regardless of suppression. Skip the call
+        // entirely when cookies are disabled; PHP will not use cookie
+        // params anyway in that mode (it's a no-op in that configuration).
+        if (!ini_get('session.use_cookies')) {
+            return;
+        }
+
         session_set_cookie_params([
             'lifetime' => $cookieLifetime,
             'path' => $path,
@@ -252,10 +276,15 @@ class SessionManager
     {
         $this->ensureSessionStarted();
         $oldFlash = $_SESSION[self::FLASH_OLD_KEY] ?? [];
-        // array_merge()'s LATER argument wins for matching keys — put the
-        // fresh, this-request value LAST so it overwrites any stale
-        // same-key value promoted from the old bucket.
-        $_SESSION[self::FLASH_NEW_KEY] = array_merge($oldFlash, $_SESSION[self::FLASH_NEW_KEY] ?? []);
+        $newFlash = $_SESSION[self::FLASH_NEW_KEY] ?? [];
+        // Use the `+` operator (NOT array_merge): `+` preserves the LEFT
+        // operand's keys verbatim, so numeric-string keys like '0' stay
+        // '0' (array_merge() would reindex them to 0, 1, 2... and let
+        // a stale same-numeric-key value silently win by coming later).
+        // The LEFT operand also wins on key collisions, so a fresh
+        // same-key value in $newFlash overwrites any stale same-key
+        // value promoted from $oldFlash — the behavior we want.
+        $_SESSION[self::FLASH_NEW_KEY] = $newFlash + $oldFlash;
         $this->remove(self::FLASH_OLD_KEY);
     }
 
@@ -346,9 +375,18 @@ class SessionManager
     /** Ensures session is started before performing operations. */
     protected function ensureSessionStarted(): void
     {
-        // If session object (i.e., $_SESSION) doesn't exist, try to start the session.
-        // This checks if session_id() exists even if session_status() is PHP_SESSION_ACTIVE.
-        if (!isset($_SESSION) || !is_array($_SESSION)) {
+        // BOTH conditions matter — checking only `!isset($_SESSION) ||
+        // !is_array($_SESSION)` is insufficient: after session_write_close()
+        // the PHP session engine is inactive (session_status() returns
+        // PHP_SESSION_NONE), but $_SESSION survives as a plain PHP
+        // variable still shaped as an array. A subsequent accessor
+        // (regenerate(), get(), put(), ...) on the closed session would
+        // see $_SESSION as a populated array and skip the start() call,
+        // then silently fail at the operation (regenerate() returns
+        // false; $_SESSION writes would be silently lost because PHP
+        // has no session to persist them on). The session_status()
+        // check catches that case and forces a real session_start().
+        if (session_status() !== PHP_SESSION_ACTIVE || !isset($_SESSION) || !is_array($_SESSION)) {
             if (!$this->start()) {
                 $logMsg = "Session could not be started. Headers may already be sent or handler registration failed.";
                 if ($this->logger) $this->logger->error($logMsg);

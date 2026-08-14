@@ -51,6 +51,25 @@ class SessionManager
         // If session is already active, no need to do anything.
         // It's important to check if session_start() has been called before.
         if (session_status() === PHP_SESSION_ACTIVE) {
+            // If the session is active but we never registered our custom
+            // save handler, it means something (session.auto_start=1, an
+            // unrelated session_start() call, ...) started PHP's session
+            // engine BEFORE any SessionManager method ran. We cannot
+            // retroactively register our handler (PHP requires
+            // session_set_save_handler() to run BEFORE session_start()),
+            // but the honest fix is to log a clear warning so an operator
+            // debugging "why isn't my custom session handler being used"
+            // gets a real diagnostic instead of silent fallback to PHP's
+            // default handler.
+            if (!$this->handlerRegistered) {
+                $logMsg = "SessionManager::start() found an already-active PHP session that "
+                    . "was not started via this SessionManager — the custom save handler "
+                    . "(FileSessionHandler) could not be registered (PHP requires "
+                    . "session_set_save_handler() before session_start()). PHP's default "
+                    . "session handler is in effect for this request instead.";
+                if ($this->logger) $this->logger->warning($logMsg);
+                else error_log("Warning: " . $logMsg);
+            }
             if (!$this->sessionStarted) {
                 $this->sessionStarted = true;
                 $this->ageFlashData();
@@ -233,7 +252,10 @@ class SessionManager
     {
         $this->ensureSessionStarted();
         $oldFlash = $_SESSION[self::FLASH_OLD_KEY] ?? [];
-        $_SESSION[self::FLASH_NEW_KEY] = array_merge($_SESSION[self::FLASH_NEW_KEY] ?? [], $oldFlash);
+        // array_merge()'s LATER argument wins for matching keys — put the
+        // fresh, this-request value LAST so it overwrites any stale
+        // same-key value promoted from the old bucket.
+        $_SESSION[self::FLASH_NEW_KEY] = array_merge($oldFlash, $_SESSION[self::FLASH_NEW_KEY] ?? []);
         $this->remove(self::FLASH_OLD_KEY);
     }
 
@@ -246,7 +268,12 @@ class SessionManager
         $newFlash = $_SESSION[self::FLASH_NEW_KEY] ?? [];
         foreach ($keys as $key) {
             if (isset($oldFlash[$key])) {
-                $newFlash[$key] = $oldFlash[$key];
+                // Only promote the stale value if this key wasn't already
+                // freshly flashed this request — unconditionally clobbering
+                // it would let a stale same-key value overwrite a fresh one.
+                if (!array_key_exists($key, $newFlash)) {
+                    $newFlash[$key] = $oldFlash[$key];
+                }
                 unset($oldFlash[$key]);
             }
         }
@@ -278,6 +305,14 @@ class SessionManager
     /** Regenerate the session ID. */
     public function regenerate(bool $deleteOldSession = true): bool
     {
+        // Match the established pattern of every other accessor in this
+        // class (hasFlash()/reflash()/keep()/all()/...) — lazily start
+        // the session if it isn't already active, throwing a clear
+        // \RuntimeException if start() fails (e.g. headers already
+        // sent). Without this, regenerate() silently returns false
+        // when called before the session is active, which is a
+        // inconsistent failure mode vs the rest of the class.
+        $this->ensureSessionStarted();
         if (session_status() === PHP_SESSION_ACTIVE) {
             return session_regenerate_id($deleteOldSession);
         }

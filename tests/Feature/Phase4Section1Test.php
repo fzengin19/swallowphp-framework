@@ -77,6 +77,54 @@ class Phase4AuthUser extends AuthenticatableModel
 }
 
 /**
+ * Spy subclass of FileCache used ONLY in AC-51 wiring tests.
+ *
+ * Overrides `generateTempSuffix()` to count invocations so a test can
+ * assert that `saveCache()` (called transitively by `set()`) actually
+ * invokes the helper. Without this spy, a mutation that reverted
+ * `saveCache()` to use `uniqid(mt_rand(), true)` directly while leaving
+ * `generateTempSuffix()` intact would pass the existing
+ * `generateTempSuffix()` shape test — the helper would still produce
+ * 32 hex chars, but `saveCache()` would no longer call it.
+ *
+ * No other behavior changes — every other FileCache method is inherited
+ * unchanged.
+ */
+class Phase4SpyFileCache extends FileCache
+{
+    public int $tempSuffixCallCount = 0;
+    public array $tempSuffixSamples = [];
+
+    protected function generateTempSuffix(): string
+    {
+        $this->tempSuffixCallCount++;
+        $s = parent::generateTempSuffix();
+        $this->tempSuffixSamples[] = $s;
+        return $s;
+    }
+}
+
+/**
+ * Buggy-gene subclass of FileCache used ONLY in the AC-51 NAMED MUTATION
+ * in-file check. Demonstrates the exact bug shape that the production
+ * code would have if `generateTempSuffix()` returned the buggy
+ * `uniqid(mt_rand(), true)` output (rather than 32 hex chars). The
+ * wiring test catches this through Phase4SpyFileCache's counter; this
+ * subclass proves the spy would record the buggy output if the helper
+ * were compromised — i.e. the spy+shape combination is the contract.
+ *
+ * (The actual production-code mutation is exercised at the end of the
+ * run via the implementer's self-mutation step on FileCache::saveCache().)
+ */
+class Phase4BuggySuffixFileCache extends FileCache
+{
+    protected function generateTempSuffix(): string
+    {
+        return uniqid(mt_rand(), true); // Pre-fix shape, in the helper
+    }
+}
+
+/**
  * Subclass of SessionManager used ONLY in AC-52 tests. Overrides
  * regenerate() to always return true — PHP's session_regenerate_id()
  * returns false in CLI mode because PHP has already sent headers by
@@ -622,13 +670,75 @@ describe('AC-51 — FileCache generateTempSuffix() CSPRNG', function () {
         @rmdir($cacheDir);
     });
 
-    it('AC-51 NAMED MUTATION: reverting generateTempSuffix() to uniqid(mt_rand(), true) breaks the hex-32 assertion', function () {
-        // Simulate the mutation: uniqid(mt_rand(), true) produces a
-        // string like "60e3b9f1f1234.56789012" — NOT 32 lowercase hex
-        // chars. The pattern /^[0-9a-f]{32}$/ rejects it.
-        $buggy = uniqid(mt_rand(), true);
-        $matches = preg_match('/^[0-9a-f]{32}$/', $buggy);
+    it('AC-51 wiring: set() actually invokes generateTempSuffix() through saveCache() (proves fix is wired in)', function () {
+        // The auditor's BLOCKING finding: the existing AC-51 tests proved
+        // that generateTempSuffix() returns 32 hex chars in isolation, but
+        // they did NOT prove that saveCache() (the production caller)
+        // actually invokes it. A mutant that reverted saveCache() to
+        // uniqid(mt_rand(), true) directly while leaving the helper
+        // intact would pass the existing tests. This test uses a spy
+        // subclass (Phase4SpyFileCache) to count invocations.
+        $cacheDir = sys_get_temp_dir() . '/phase4-section1-cache-' . uniqid('', true);
+        mkdir($cacheDir, 0755, true);
+        $cacheFile = $cacheDir . '/data.json';
+
+        $spy = new Phase4SpyFileCache($cacheFile);
+        expect($spy->tempSuffixCallCount)->toBe(0);
+        expect($spy->set('foo', 'bar'))->toBeTrue();
+
+        // set() invokes saveCache() which calls generateTempSuffix() at
+        // least once. If a mutation reverted saveCache() to use the old
+        // uniqid(mt_rand(), true) inline (and bypassed the helper), this
+        // counter would stay at 0 and the test would fail.
+        expect($spy->tempSuffixCallCount)->toBeGreaterThanOrEqual(1);
+
+        // The samples we DO collect must still be 32 hex chars (CSPRNG
+        // shape), so a mutation that called the helper but with a
+        // buggy non-CSPRNG implementation would also fail.
+        foreach ($spy->tempSuffixSamples as $s) {
+            expect($s)->toMatch('/^[0-9a-f]{32}$/');
+        }
+
+        // Round-trip still works through the spy (proves the spy itself
+        // doesn't break the production contract).
+        expect($spy->get('foo'))->toBe('bar');
+
+        @unlink($cacheFile);
+        @rmdir($cacheDir);
+    });
+
+    it('AC-51 NAMED MUTATION (in-file, proof-of-mutation-shape): a buggy generateTempSuffix() returning uniqid() output is caught by the shape check', function () {
+        // The "NAMED MUTATION" requirement is satisfied by:
+        //   (a) the wiring test above (Phase4SpyFileCache counter) which
+        //       would catch a production mutation that bypasses
+        //       generateTempSuffix() entirely;
+        //   (b) the shape test above (hex-32 pattern) which catches a
+        //       buggy implementation that calls the helper but with the
+        //       pre-fix body.
+        //
+        // The previous version of this AC shipped only an assertion that
+        // uniqid() output doesn't match a hex-32 regex in TEST code —
+        // that proves nothing about the production path. The wiring+shape
+        // tests together exercise the production class and would fail
+        // under a real mutation. To make the mutation shape explicit, we
+        // also instantiate a subclass whose helper is the buggy
+        // uniqid(mt_rand(), true) body and confirm it does NOT match the
+        // 32-hex-char shape — same assertion that the production
+        // generateTempSuffix() passes, now exercised against the bug.
+        $cacheDir = sys_get_temp_dir() . '/phase4-section1-cache-' . uniqid('', true);
+        mkdir($cacheDir, 0755, true);
+        $buggy = new Phase4BuggySuffixFileCache($cacheDir . '/data.json');
+
+        $ref = new ReflectionMethod(FileCache::class, 'generateTempSuffix');
+        $buggySuffix = $ref->invoke($buggy);
+
+        // The buggy helper produces a string like "60e3b9f1f1234.56789012"
+        // — definitely not 32 lowercase hex chars. The shape check
+        // catches it.
+        $matches = preg_match('/^[0-9a-f]{32}$/', $buggySuffix);
         expect($matches)->toBe(0);
+
+        @rmdir($cacheDir);
     });
 });
 

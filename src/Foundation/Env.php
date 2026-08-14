@@ -90,16 +90,23 @@ class Env
                 $name = trim(substr($name, 7));
             }
 
+            // Skip malformed lines (e.g. "=value" with an empty name).
+            // putenv() with an empty name throws \ValueError on PHP 8+
+            // and would abort the whole load() loop — every line AFTER
+            // the malformed one would silently never load.
+            if ($name === '') {
+                error_log("Warning: Skipping malformed .env line (no variable name): " . $line);
+                continue;
+            }
+
             putenv("$name=$value");
             $_ENV[$name] = $value;
-            $_SERVER[$name] = $value;
         }
 
         // Bonus: set BASE_PATH as env var
         $base = self::getBasePath();
         putenv("BASE_PATH=$base");
         $_ENV['BASE_PATH'] = $base;
-        $_SERVER['BASE_PATH'] = $base;
     }
 
     /**

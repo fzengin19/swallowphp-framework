@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.0.1] - 2026-08-14 (in progress)
 
 Continuation of the correctness/security hardening series: a fresh comprehensive
-bugfix/stabilization scan (explicitly not new features). This entry covers Sections 1-3b
+bugfix/stabilization scan (explicitly not new features). This entry covers Sections 1-3
 (security-critical; Database/Model correctness; Session; Foundation) of a 4-section
 sweep; Section 4 (Cache/Log stabilization) will be appended as it lands.
 
@@ -54,11 +54,27 @@ sweep; Section 4 (Cache/Log stabilization) will be appended as it lands.
   request-supplied `$_SERVER` values like `HTTP_HOST`.
 - `Config::set()` now throws instead of silently destroying an existing scalar value
   when a dotted sub-key traversal collides with it.
+- `SessionManager::start()` now logs a clear warning when it finds an already-active
+  session it never registered its custom save handler for (e.g. `session.auto_start=1`,
+  or unrelated code calling `session_start()` first) — registration can't happen
+  retroactively (PHP requires `session_set_save_handler()` before `session_start()`),
+  but this closes the previous silent fallback to PHP's default session handler.
+- `FileSessionHandler::read()`/`write()`/`destroy()` no longer let an
+  `\InvalidArgumentException` escape past `SessionHandlerInterface`'s contract for a
+  malformed session ID.
+- `FileSessionHandler::gc()` no longer deletes a session file whose `filemtime()` call
+  failed (previously coerced an unreadable mtime to "definitely expired").
+- `SessionManager::regenerate()` now lazily starts the session (matching the rest of the
+  class's accessors) instead of silently returning `false` when called before the
+  session is active.
+- `SessionManager::reflash()`/`keep()` no longer let a stale re-flashed value overwrite
+  a freshly-flashed value under the same key.
 
 ### Added
 - `tests/Feature/Phase4Section1Test.php` — regression suite for the Section 1 fixes.
 - `tests/Feature/Phase4Section2Test.php` — regression suite for the Section 2 fixes.
 - `tests/Feature/Phase4Section3bTest.php` — regression suite for the Section 3b fixes.
+- `tests/Feature/Phase4Section3aTest.php` — regression suite for the Section 3a fixes.
 
 In addition to the standard Keep-a-Changelog subsections (Added / Changed /
 Deprecated / Removed / Fixed / Security), this project uses an additional

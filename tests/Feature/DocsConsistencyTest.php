@@ -92,33 +92,45 @@ function buildTestRequest(string $uri, string $method, array $headers = []): Req
     return $instance;
 }
 
-/**
- * Replace the App container's resolved Request singleton with the given
- * instance. The container's `addShared` does NOT allow overriding an
- * existing definition, so we have to mutate the Definition's `resolved`
- * property directly. This is the only reliable way to inject a Request
- * with a non-global Accept header into ExceptionHandler.
- */
-function overrideRequestSingleton(Request $request): void
-{
-    $appRef = new ReflectionClass(App::class);
-    $containerProp = $appRef->getProperty('container');
-    $container = $containerProp->getValue();
+if (!function_exists('Tests\Feature\overrideRequestSingleton')) {
+    /**
+     * Replace the App container's resolved Request singleton with the given
+     * instance. The container's `addShared` does NOT allow overriding an
+     * existing definition, so we have to mutate the Definition's `resolved`
+     * property directly. This is the only reliable way to inject a Request
+     * with a non-global Accept header into ExceptionHandler.
+     *
+     * The `function_exists` guard makes this declaration symmetric with the
+     * identical-body copy in `tests/Support/Phase4Section2TestHelpers.php`:
+     * whichever file Pest loads first wins, the other no-ops. This keeps
+     * the function callable in all of:
+     *   - this file alone (`pest tests/Feature/DocsConsistencyTest.php`)
+     *   - Phase4Section2Test alone (`pest tests/Feature/Phase4Section2Test.php`)
+     *   - both files in any order (`pest tests/Feature/Phase4Section2Test.php
+     *     tests/Feature/DocsConsistencyTest.php`)
+     *   - the full suite (`pest`)
+     */
+    function overrideRequestSingleton(Request $request): void
+    {
+        $appRef = new ReflectionClass(App::class);
+        $containerProp = $appRef->getProperty('container');
+        $container = $containerProp->getValue();
 
-    $containerRef = new ReflectionClass($container);
-    $defsProp = $containerRef->getProperty('definitions');
-    $defs = $defsProp->getValue($container);
+        $containerRef = new ReflectionClass($container);
+        $defsProp = $containerRef->getProperty('definitions');
+        $defs = $defsProp->getValue($container);
 
-    $defsRef = new ReflectionClass($defs);
-    $defsMapProp = $defsRef->getProperty('definitions');
-    $defsMap = $defsMapProp->getValue($defs);
+        $defsRef = new ReflectionClass($defs);
+        $defsMapProp = $defsRef->getProperty('definitions');
+        $defsMap = $defsMapProp->getValue($defs);
 
-    foreach ($defsMap as $def) {
-        if (method_exists($def, 'getAlias') && $def->getAlias() === Request::class) {
-            $defRef = new ReflectionClass($def);
-            $resolvedProp = $defRef->getProperty('resolved');
-            $resolvedProp->setValue($def, $request);
-            return;
+        foreach ($defsMap as $def) {
+            if (method_exists($def, 'getAlias') && $def->getAlias() === Request::class) {
+                $defRef = new ReflectionClass($def);
+                $resolvedProp = $defRef->getProperty('resolved');
+                $resolvedProp->setValue($def, $request);
+                return;
+            }
         }
     }
 }

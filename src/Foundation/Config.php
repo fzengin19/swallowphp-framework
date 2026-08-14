@@ -113,7 +113,12 @@ class Config
         $keys = explode('.', $key);
         while (count($keys) > 1) {
             $segment = array_shift($keys);
-            if (!isset($array[$segment]) || !is_array($array[$segment])) {
+            if (isset($array[$segment]) && !is_array($array[$segment])) {
+                throw new \RuntimeException(
+                    "Cannot set config key \"{$key}\": \"{$segment}\" already holds a non-array value."
+                );
+            }
+            if (!isset($array[$segment])) {
                 $array[$segment] = [];
             }
             $array = &$array[$segment];

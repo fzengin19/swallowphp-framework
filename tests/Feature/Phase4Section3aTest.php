@@ -80,6 +80,36 @@ class Phase4SpyFileSessionHandler extends FileSessionHandler
 }
 
 // ---------------------------------------------------------------------------
+// Spy fixture: AC-60.5 behavioral "honor the return" proof.
+//
+// Distinct from Phase4SpyFileSessionHandler above: this spy's
+// isExpired() ALWAYS returns false (claims "not expired") regardless
+// of the file's real mtime. The point is to prove gc() actually USES
+// the return value of isExpired() — the original data-loss bug
+// happens when gc() calls isExpired() but then discards the result
+// and falls back to an inline `@filemtime($file) + $max_lifetime <
+// time()` check; that mutation keeps the call-count spy green while
+// silently restoring the bug. With this spy, a real old `sess_*` file
+// paired with a forced `false` isExpired() result lets us assert the
+// file is NOT deleted — the proof the call-count test alone cannot
+// give.
+// ---------------------------------------------------------------------------
+
+class Phase4AlwaysFreshSpyFileSessionHandler extends FileSessionHandler
+{
+    public int $isExpiredCallCount = 0;
+
+    protected function isExpired(string $file, int $max_lifetime): bool
+    {
+        $this->isExpiredCallCount++;
+        // Force "not expired" regardless of actual mtime — used to
+        // prove gc() honors the helper's return value (the fix) instead
+        // of using a side-channel / inline check (the bug).
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Shared recipe — declared at file scope, used by AC-59 AND AC-60 per the
 // SPEC (one helper for both, no per-AC variations).
 // ---------------------------------------------------------------------------
@@ -346,6 +376,50 @@ describe('AC-60 — FileSessionHandler gc() does not delete unknown-age files', 
         // gc() to use `@filemtime($file) + $max_lifetime < time()`
         // inline would leave the counter at 0 and fail this assertion.
         expect($spy->isExpiredCallCount)->toBeGreaterThanOrEqual(2);
+    });
+
+    it('AC-60.5 behavioral: gc() honors isExpired() returning false — a real old sess_* file is preserved', function () {
+        // This is the gap the test auditor BLOCKED on AC-60: the
+        // existing call-count spy (AC-60.4) only proves gc() CALLS
+        // isExpired() — it does not prove gc() USES the return value.
+        // The original data-loss bug re-introduces as:
+        //
+        //   $this->isExpired($file, $max_lifetime); // result discarded
+        //   if (@filemtime($file) + $max_lifetime < time()) { @unlink($file); }
+        //
+        // which keeps the call-count spy green while deleting real old
+        // files. To kill that mutation, we need a spy whose
+        // isExpired() returns `false` (claims "not expired") for a
+        // GENUINELY old sess_* file — then assert the file survives
+        // gc(). With the fix, gc() consults isExpired()'s result and
+        // preserves the file; with the mutation, gc() ignores the
+        // result and deletes it via the inline mtime check.
+        $dir = sys_get_temp_dir() . '/phase4s3a-spy-false-' . uniqid('', true);
+        mkdir($dir, 0755, true);
+        $spy = new Phase4AlwaysFreshSpyFileSessionHandler($dir, null, 0600);
+
+        $old = $dir . '/sess_old';
+        file_put_contents($old, 'payload');
+        // Backdate well past $max_lifetime — under the inline-check
+        // mutation this file is unconditionally "expired".
+        touch($old, time() - 5000);
+        $maxLifetime = 60;
+
+        expect(file_exists($old))->toBeTrue();
+
+        $spy->gc($maxLifetime);
+
+        // Sanity check on the spy itself: its isExpired() is what we
+        // think it is. Independent of gc()'s wiring, this guards
+        // against a future test where the spy's override was
+        // accidentally bypassed and the test passed for the wrong
+        // reason.
+        expect($spy->isExpiredCallCount)->toBeGreaterThanOrEqual(1);
+
+        // The behavioral assertion: gc() honored the false return.
+        // Under the auditor's mutation (inline mtime check), this
+        // file would be gone.
+        expect(file_exists($old))->toBeTrue();
     });
 });
 

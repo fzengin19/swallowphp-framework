@@ -104,9 +104,10 @@ class SqliteCache implements CacheInterface
     public function set(string $key, mixed $value, null|int|\DateInterval $ttl = null): bool
     {
         $this->validateKey($key);
+        $expirationTimestamp = $this->ttlToTimestamp($ttl);
 
         // Handle immediate deletion for invalid/expired TTL
-        if (($ttl instanceof \DateInterval && $this->ttlToTimestamp($ttl) < time()) || (is_int($ttl) && $ttl <= 0)) {
+        if (($ttl instanceof \DateInterval && $expirationTimestamp < time()) || (is_int($ttl) && $ttl <= 0)) {
             return $this->delete($key);
         }
 
@@ -116,8 +117,6 @@ class SqliteCache implements CacheInterface
             error_log("SQLite Cache: Failed to json_encode value for key '{$key}'. Error: " . json_last_error_msg());
             return false;
         }
-
-        $expirationTimestamp = $this->ttlToTimestamp($ttl);
 
         try {
             // Use transaction for INSERT OR REPLACE
@@ -421,7 +420,7 @@ class SqliteCache implements CacheInterface
      * @return null|int Absolute expiration timestamp or null for indefinite cache.
      * @throws Psr16InvalidArgumentException for invalid TTL types.
      */
-    private function ttlToTimestamp(null|int|\DateInterval $ttl): ?int
+    protected function ttlToTimestamp(null|int|\DateInterval $ttl): ?int
     {
         if ($ttl === null) {
             return null; // Cache forever

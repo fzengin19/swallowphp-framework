@@ -48,7 +48,7 @@ class FileLogger implements LoggerInterface
         if (!defined(LogLevel::class . '::' . $minLevelUpper)) {
              throw new \InvalidArgumentException("Invalid minimum log level specified: {$minLevel}");
         }
-        $this->minLevelValue = $this->logLevels[$minLevel] ?? $this->logLevels[LogLevel::DEBUG];
+        $this->minLevelValue = $this->logLevels[strtolower($minLevel)] ?? $this->logLevels[LogLevel::DEBUG];
 
         // Ensure log directory exists and is writable
         $logDir = dirname($this->logFilePath);
@@ -60,12 +60,41 @@ class FileLogger implements LoggerInterface
          if (!is_writable($logDir)) {
              throw new \RuntimeException("Log directory is not writable: {$logDir}");
          }
+         // Reject symlinks before any chmod: chmod() follows symlinks and
+         // would silently change a sensitive target's mode (e.g. a 0600
+         // secrets file to 0644). Refuse to follow.
+         if (is_link($this->logFilePath)) {
+              throw new \RuntimeException("Log file path is a symlink (refusing to follow): {$this->logFilePath}");
+         }
          // Ensure log file exists and is writable (or can be created)
          if (!file_exists($this->logFilePath)) {
               if (!@touch($this->logFilePath)) {
                    throw new \RuntimeException("Log file does not exist and could not be created: {$this->logFilePath}");
               }
-              @chmod($this->logFilePath, 0644); // Set appropriate permissions
+         }
+         // Apply a safe default permission set, but PRESERVE any stricter
+         // existing mode: only remove unsafe write bits (group/other write,
+         // 0022) from the current mode. This avoids unconditionally loosening
+         // say 0600 → 0644 just because we touched the file.
+         clearstatcache(true, $this->logFilePath);
+         $currentPerm = fileperms($this->logFilePath) & 0777;
+         $targetPerm = $currentPerm & ~0022;
+         if ($targetPerm !== $currentPerm) {
+              if (!chmod($this->logFilePath, $targetPerm)) {
+                   throw new \RuntimeException("Failed to chmod log file: {$this->logFilePath}");
+              }
+              // Verify chmod actually applied. chown/chmod/etc. on a
+              // read-only mount or inside a locked-down sandbox can
+              // silently no-op; is_writable() can still pass even with
+              // loose perms, so re-check the actual mode and refuse to
+              // continue if the unsafe write bits are still present.
+              clearstatcache(true, $this->logFilePath);
+              $actualPerm = fileperms($this->logFilePath) & 0777;
+              if (($actualPerm & 0022) !== 0) {
+                   throw new \RuntimeException(
+                        "Log file chmod did not take effect: expected no group/other write on {$this->logFilePath}, got 0" . sprintf('%o', $actualPerm)
+                   );
+              }
          }
          if (!is_writable($this->logFilePath)) {
               throw new \RuntimeException("Log file is not writable: {$this->logFilePath}");

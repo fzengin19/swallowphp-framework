@@ -350,14 +350,17 @@ if (!function_exists('formatDateForHumans')) {
         }
         $thenTimestamp = $then->getTimestamp();
         $diff = $now - $thenTimestamp;
-        if ($diff < 60) {
-            return "$diff saniye önce";
-        } elseif ($diff < 3600) {
-            return floor($diff / 60) . ' dakika önce';
-        } elseif ($diff < 86400) {
-            return floor($diff / 3600) . ' saat önce';
-        } elseif ($diff < 604800) {
-            return floor($diff / 86400) . ' gün önce';
+        $isFuture = $diff < 0;
+        $absDiff = abs($diff);
+        $suffix = $isFuture ? 'sonra' : 'önce';
+        if ($absDiff < 60) {
+            return "$absDiff saniye $suffix";
+        } elseif ($absDiff < 3600) {
+            return floor($absDiff / 60) . " dakika $suffix";
+        } elseif ($absDiff < 86400) {
+            return floor($absDiff / 3600) . " saat $suffix";
+        } elseif ($absDiff < 604800) {
+            return floor($absDiff / 86400) . " gün $suffix";
         } else {
             return $then->format('d F Y');
         } // Consider localizing format

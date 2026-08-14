@@ -408,7 +408,7 @@ class FileCache implements CacheInterface
                 return false;
             }
         }
-        $tempFile = $this->cacheFile . '.' . uniqid(mt_rand(), true) . '.tmp';
+        $tempFile = $this->cacheFile . '.' . $this->generateTempSuffix() . '.tmp';
         if (@file_put_contents($tempFile, $json, LOCK_EX) === false) {
             error_log("Failed to write to temporary cache file: {$tempFile}");
             @unlink($tempFile);
@@ -468,6 +468,23 @@ class FileCache implements CacheInterface
         if (preg_match('/[{}()\/\\\\@]/', $key)) {
             throw new \InvalidArgumentException("Cache key '{$key}' contains reserved characters: {}()/\@:");
         }
+    }
+
+    /**
+     * Generate a cryptographically-unpredictable suffix for the
+     * atomic-rename temp filename used by saveCache().
+     *
+     * Replaces the previous `uniqid(mt_rand(), true)` (which is NOT
+     * cryptographically unpredictable — both uniqid() and mt_rand() can
+     * be guessed/brute-forced by a local attacker pre-placing a
+     * symlink at the predicted path before the rename() fires).
+     * Extracted into its own method purely so the CSPRNG swap is
+     * directly testable via reflection — there is no other behavior
+     * change.
+     */
+    protected function generateTempSuffix(): string
+    {
+        return bin2hex(random_bytes(16));
     }
 
     /** Converts TTL to timestamp. */

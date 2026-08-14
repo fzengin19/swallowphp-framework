@@ -105,20 +105,13 @@ class ExceptionHandler
               else @error_log("Error accessing request() helper in ExceptionHandler: " . $requestError->getMessage());
          }
 
-        // Prepare data for view or JSON response
-        $data = [
-            'exception' => $exception,
-            'statusCode' => $statusCode,
-            'statusText' => self::STATUS_TEXTS[$statusCode] ?? 'Error',
-            'message' => $responseBody['message'] ?? 'An unexpected error occurred.',
-            'debug' => $debug,
-        ];
-        if ($debug) {
-             $data['exceptionClass'] = $responseBody['exception'] ?? null;
-             $data['file'] = $responseBody['file'] ?? null;
-             $data['line'] = $responseBody['line'] ?? null;
-             $data['trace'] = $responseBody['trace'] ?? [];
-        }
+        // Prepare data for view or JSON response. The array-literal
+        // construction is extracted into buildResponseData() so the
+        // exact shape (and, critically, the absence of the 'exception'
+        // key when debug=false) is directly testable via reflection.
+        // $responseBody stays computed exactly where it is today and is
+        // passed in as a plain input parameter.
+        $data = self::buildResponseData($exception, $debug, $responseBody, $statusCode);
 
 
         // Return Response object
@@ -169,6 +162,43 @@ class ExceptionHandler
              echo "Internal Server Error. Could not generate error response.";
              exit; // Exit here as we can't even create a response object
         }
+    }
+
+    /**
+     * Build the `$data` array literal that ExceptionHandler::handle()
+     * hands to view()/Response::json(). Extracted from handle() so the
+     * shape — and specifically the contract that the 'exception' key is
+     * ENTIRELY ABSENT (not "present but null") when $debug is false —
+     * is directly testable via reflection.
+     *
+     * Pure extraction: same logic, same keys (modulo the 'exception'
+     * gating described below), same values. Called from handle() and
+     * never from anywhere else in production.
+     *
+     * Note: this method moves the 'exception' => $exception assignment
+     * INTO the `if ($debug)` block (matching the gate the other detail
+     * fields already use), so the raw exception object leaks into a
+     * custom production error view that does not replicate its own
+     * `isset($debug) && $debug && isset($exception)` guard. The
+     * bundled default error views are already safe — they gate their
+     * own use of $exception behind the same `$debug` check.
+     */
+    protected static function buildResponseData(Throwable $exception, bool $debug, array $responseBody, int $statusCode): array
+    {
+        $data = [
+            'statusCode' => $statusCode,
+            'statusText' => self::STATUS_TEXTS[$statusCode] ?? 'Error',
+            'message' => $responseBody['message'] ?? 'An unexpected error occurred.',
+            'debug' => $debug,
+        ];
+        if ($debug) {
+            $data['exception'] = $exception;
+            $data['exceptionClass'] = $responseBody['exception'] ?? null;
+            $data['file'] = $responseBody['file'] ?? null;
+            $data['line'] = $responseBody['line'] ?? null;
+            $data['trace'] = $responseBody['trace'] ?? [];
+        }
+        return $data;
     }
 
     /** Renders a basic HTML fallback error page */

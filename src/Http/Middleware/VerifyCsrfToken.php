@@ -62,10 +62,19 @@ class VerifyCsrfToken extends Middleware
         throw new CsrfTokenMismatchException('CSRF token mismatch.');
     }
 
-    /** Determine if the request is a reading type request. */
+    /**
+     * Determine if the request is a reading type request.
+     *
+     * Uses the raw $_SERVER REQUEST_METHOD (via Request::server()) rather
+     * than $request->getMethod() so that a POST with `_method=GET` in
+     * its body still classifies as a write and gets CSRF-checked. The
+     * _method override remains fully functional for routing/dispatch —
+     * only this read/write classification stops trusting it.
+     */
     protected function isReading(Request $request): bool
     {
-        return in_array($request->getMethod(), ['HEAD', 'GET', 'OPTIONS']);
+        $method = strtoupper((string) $request->server('REQUEST_METHOD', 'GET'));
+        return in_array($method, ['HEAD', 'GET', 'OPTIONS'], true);
     }
 
     /** Determine if the request URI is in the except array. */

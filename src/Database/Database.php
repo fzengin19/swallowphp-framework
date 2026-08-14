@@ -107,6 +107,29 @@ class Database
         $charset = $config['charset'] ?? env('DB_CHARSET', 'utf8mb4');
         $options = $config['options'] ?? [];
 
+        // --- DSN-component identifier validation (mysql/pgsql only) ---
+        // Validate $host/$port/$database/$charset BEFORE the try block so
+        // a malicious config value (e.g. 'test;DROP TABLE x;--' in
+        // 'database') throws \InvalidArgumentException uncaught/unwrapped
+        // to the caller, instead of being re-wrapped into a generic
+        // Exception by the \Throwable catch branch below. Also ensures
+        // validation runs before any PDO connect attempt (no live
+        // mysql/pgsql server needed to test it).
+        if ($driver === 'mysql' || $driver === 'pgsql') {
+            if (!is_string($host) || !preg_match('/^[A-Za-z0-9.\-:\[\]]+$/', $host)) {
+                throw new \InvalidArgumentException("Invalid database host: {$host}");
+            }
+            if (!is_numeric($port) || (int) $port < 1 || (int) $port > 65535) {
+                throw new \InvalidArgumentException("Invalid database port: {$port}");
+            }
+            if (!is_string($database) || !preg_match('/^[A-Za-z0-9_\-]+$/', $database)) {
+                throw new \InvalidArgumentException("Invalid database name: {$database}");
+            }
+            if (!is_string($charset) || !preg_match('/^[A-Za-z0-9_\-]+$/', $charset)) {
+                throw new \InvalidArgumentException("Invalid database charset: {$charset}");
+            }
+        }
+
         try {
             if ($driver === 'sqlite') {
                 $storagePath = config('app.storage_path');
@@ -187,9 +210,23 @@ class Database
         }
     }
 
-    /** Set the table for the query. */
+    /**
+     * Set the table for the query.
+     *
+     * Validates $table against a strict identifier pattern so a backtick /
+     * semicolon / whitespace in caller-controlled input cannot break out
+     * of the backtick-quoted identifier in the generated SQL. The
+     * allow-list is intentionally narrower than the column one (see
+     * select()) — a `db.table` dot segment is permitted, but nothing
+     * else, because table names in real-world usage never need more.
+     *
+     * @throws \InvalidArgumentException If $table is not a valid identifier.
+     */
     public function table(string $table): self
     {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/', $table)) {
+            throw new \InvalidArgumentException("Invalid table name: {$table}");
+        }
         $this->table = $table;
         return $this;
     }
@@ -210,10 +247,56 @@ class Database
         $this->modelClass = null;
     }
 
-    /** Set the columns to select. */
+    /**
+     * Set the columns to select.
+     *
+     * Each entry is classified into one of three buckets before joining:
+     *   - exactly '*'               → pass through unwrapped (a SQL wildcard;
+     *                                 backtick-wrapping ``*`` is invalid SQL
+     *                                 and would break the no-arg default).
+     *   - matches the strict identifier pattern (optionally qualified
+     *     with a single '.' separator and optionally suffixed with '.*')
+     *                                 → wrap the identifier segment(s) via
+     *                                 wrapColumn(); leave a trailing '*'
+     *                                 segment unwrapped.
+     *   - anything else (parens, spaces, keywords like AS / COUNT /
+     *     DISTINCT, expressions)    → pass through unchanged, exactly
+     *                                 like today. This AC closes the
+     *                                 raw-identifier injection vector only;
+     *                                 expression pass-through is deliberate
+     *                                 (and stays exactly as
+     *                                 unquoted/unescaped as it is today).
+     */
     public function select(array $columns = ['*']): self
     {
-        $this->select = implode(', ', $columns);
+        $strictPattern = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?(\.\*)?$/';
+        $processed = [];
+        foreach ($columns as $col) {
+            if ($col === '*') {
+                // SQL wildcard; backtick-wrapping '*' is invalid SQL.
+                $processed[] = '*';
+            } elseif (is_string($col) && preg_match($strictPattern, $col)) {
+                // Strict identifier (optionally qualified, optionally with
+                // trailing .*). Split on '.' to identify a trailing '*'
+                // segment that must stay unwrapped.
+                $parts = explode('.', $col);
+                if (end($parts) === '*') {
+                    $qualifierParts = array_slice($parts, 0, -1);
+                    $wrappedQualifier = implode('.', array_map(
+                        fn($part) => '`' . str_replace('`', '``', $part) . '`',
+                        $qualifierParts
+                    ));
+                    $processed[] = $wrappedQualifier . '.*';
+                } else {
+                    $processed[] = $this->wrapColumn($col);
+                }
+            } else {
+                // Expression pass-through — deliberate, unchanged from
+                // pre-fix behavior. See class docblock / AC-47 scope note.
+                $processed[] = $col;
+            }
+        }
+        $this->select = implode(', ', $processed);
         return $this;
     }
     /**
@@ -436,7 +519,7 @@ class Database
     public function get(): array
     {
         $this->initialize();
-        $sql = "SELECT {$this->select} FROM `{$this->table}` ";
+        $sql = "SELECT {$this->select} FROM {$this->wrapColumn($this->table)} ";
         $sql .= $this->buildWhereClause();
         if (!empty($this->orderBy)) {
             $orderByColumns = array_map(fn($order) => $this->wrapColumn($order[0]) . " {$order[1]}", $this->orderBy);
@@ -503,7 +586,7 @@ class Database
             return false;
         $columns = implode(', ', array_map(fn($col) => $this->wrapColumn($col), array_keys($data)));
         $placeholders = implode(', ', array_fill(0, count($data), '?'));
-        $sql = "INSERT INTO `{$this->table}` ($columns) VALUES ($placeholders)";
+        $sql = "INSERT INTO {$this->wrapColumn($this->table)} ($columns) VALUES ($placeholders)";
         try {
             $statement = $this->connection->prepare($sql);
             $values = array_values($data);
@@ -536,7 +619,7 @@ class Database
         if (empty($data))
             return 0;
         $sets = array_map(fn($column) => $this->wrapColumn($column) . " = ?", array_keys($data));
-        $sql = "UPDATE `{$this->table}` SET " . implode(', ', $sets);
+        $sql = "UPDATE {$this->wrapColumn($this->table)} SET " . implode(', ', $sets);
         $sql .= ' ' . $this->buildWhereClause();
         try {
             $statement = $this->connection->prepare($sql);
@@ -581,14 +664,14 @@ class Database
                 "delete() called with no WHERE condition; use deleteAll() to intentionally delete every row"
             );
         }
-        $sql = "DELETE FROM `{$this->table}` " . $this->buildWhereClause();
+        $sql = "DELETE FROM {$this->wrapColumn($this->table)} " . $this->buildWhereClause();
 
         // Reject a where() that produces no rendered predicate (e.g. an empty
         // nested closure: where(fn ($q) => []) ). The $this->where array is
         // non-empty in that case, so the empty() guard above passes — but the
         // actual SQL would still be a bare DELETE, which is exactly the hazard
         // the guard exists to prevent.
-        if (trim($sql) === "DELETE FROM `{$this->table}`") {
+        if (trim($sql) === "DELETE FROM {$this->wrapColumn($this->table)}") {
             throw new \RuntimeException(
                 "delete() called with a where(...) that produced no predicate; use deleteAll() to intentionally delete every row"
             );
@@ -625,7 +708,7 @@ class Database
     public function deleteAll(): int
     {
         $this->initialize();
-        $sql = "DELETE FROM `{$this->table}`";
+        $sql = "DELETE FROM {$this->wrapColumn($this->table)}";
         try {
             $statement = $this->connection->prepare($sql);
             $statement->execute();
@@ -652,7 +735,7 @@ class Database
         $this->orderBy = [];
         $this->limit = null;
         $this->offset = null;
-        $sql = "SELECT {$this->select} FROM `{$this->table}` " . $this->buildWhereClause();
+        $sql = "SELECT {$this->select} FROM {$this->wrapColumn($this->table)} " . $this->buildWhereClause();
         try {
             $statement = $this->connection->prepare($sql);
             $bindValues = $this->getBindValuesForWhere();

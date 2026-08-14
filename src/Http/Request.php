@@ -103,13 +103,24 @@ class Request
     
     /**
      * Parses the boundary from the Content-Type header.
+     *
+     * Two-branch pattern where BOTH branches require at least one
+     * character (`+`, not `*`); the unquoted branch also excludes `"`
+     * so `boundary=""` matches neither branch (returns null instead of
+     * `'--""'`). The pre-fix regex `[^" ]*` could capture an empty
+     * string on truncated/malformed input, causing parseMultipartBody()
+     * to `explode()` the raw body on every literal `--` occurrence
+     * (corrupting parsed form/file data) and could also truncate a
+     * legitimately-quoted boundary value at its first internal space.
+     *
      * @param string $contentType
      * @return string|null
      */
     private static function getBoundaryFromContentType(string $contentType): ?string
     {
-        if (preg_match('/boundary=(?:"?)([^" ]*)(?:"?)/i', $contentType, $matches)) {
-            return '--' . $matches[1];
+        if (preg_match('/boundary=(?:"([^"]+)"|([^\s;"]+))/i', $contentType, $matches)) {
+            $boundary = $matches[1] !== '' ? $matches[1] : $matches[2];
+            return '--' . $boundary;
         }
         return null;
     }

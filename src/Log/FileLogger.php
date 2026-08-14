@@ -95,6 +95,17 @@ class FileLogger implements LoggerInterface
         // Interpolate context into the message string
         $interpolatedMessage = $this->interpolate((string) $message, $context);
 
+        // Sanitize CR/LF in the interpolated message: a newline character
+        // in a context value (e.g. via mailto() or webpImage() logging,
+        // which interpolate caller-controlled text into $message) could
+        // otherwise forge a second, fake-looking log line on disk.
+        // Replace with the literal two-character sequences "\r" / "\n"
+        // so the entry stays on a single line. Scope is deliberately
+        // limited to \r/\n — the CRLF/newline-injection class that lets
+        // an attacker forge a fake additional log line. Other control
+        // characters are not a line-forgery vector.
+        $interpolatedMessage = str_replace(["\r", "\n"], ['\\r', '\\n'], $interpolatedMessage);
+
         // Format the log entry
         $timestamp = (new DateTimeImmutable())->format('Y-m-d H:i:s.u'); // Added microseconds
         $logEntry = sprintf(

@@ -38,7 +38,6 @@ require_once __DIR__ . '/Phase3HardeningTest.php';
 
 use SwallowPHP\Framework\Auth\Auth;
 use SwallowPHP\Framework\Auth\AuthenticatableModel;
-use SwallowPHP\Framework\Cache\CacheManager;
 use SwallowPHP\Framework\Cache\FileCache;
 use SwallowPHP\Framework\Database\Database;
 use SwallowPHP\Framework\Exceptions\CsrfTokenMismatchException;
@@ -101,26 +100,6 @@ class Phase4SpyFileCache extends FileCache
         $s = parent::generateTempSuffix();
         $this->tempSuffixSamples[] = $s;
         return $s;
-    }
-}
-
-/**
- * Buggy-gene subclass of FileCache used ONLY in the AC-51 NAMED MUTATION
- * in-file check. Demonstrates the exact bug shape that the production
- * code would have if `generateTempSuffix()` returned the buggy
- * `uniqid(mt_rand(), true)` output (rather than 32 hex chars). The
- * wiring test catches this through Phase4SpyFileCache's counter; this
- * subclass proves the spy would record the buggy output if the helper
- * were compromised — i.e. the spy+shape combination is the contract.
- *
- * (The actual production-code mutation is exercised at the end of the
- * run via the implementer's self-mutation step on FileCache::saveCache().)
- */
-class Phase4BuggySuffixFileCache extends FileCache
-{
-    protected function generateTempSuffix(): string
-    {
-        return uniqid(mt_rand(), true); // Pre-fix shape, in the helper
     }
 }
 
@@ -333,25 +312,6 @@ describe('AC-47 — Database identifier quoting in select()/table()', function (
         expect($builder)->toBeInstanceOf(Database::class);
     });
 
-    it('AC-47 NAMED MUTATION: reverting wrapColumn() inside select() makes the reserved-word select fail (test 4 evidence)', function () {
-        // The named mutation: remove the wrapColumn() call from inside
-        // select()'s strict-identifier branch (so identifier entries are
-        // passed through raw, exactly like pre-fix). This breaks ONLY
-        // the reserved-word select; tests 1-3 must still pass on their
-        // own (proving they don't already cover the fix).
-        //
-        // We simulate the mutation here by directly mutating the SELECT
-        // column list the way the buggy code would produce it: bypass
-        // select() entirely and inject the raw unquoted string into the
-        // builder's internal `$select` via reflection. This isolates the
-        // test from any future refactor that adds OTHER wrapping logic
-        // (which would defeat the point of the mutation probe).
-        $db = (new Database())->table('users');
-        $ref = new ReflectionProperty(Database::class, 'select');
-        $ref->setValue($db, 'order'); // simulate the buggy `select(['order'])` output
-
-        expect(fn () => $db->get())->toThrow(\PDOException::class);
-    });
 });
 
 // ===========================================================================
@@ -472,30 +432,6 @@ describe('AC-48 — Database DSN-component validation before PDO connect', funct
         expect($thrown === null || !($thrown instanceof \InvalidArgumentException))->toBeTrue();
     });
 
-    it('AC-48 NAMED MUTATION (covered by self-verification): the pre-try validation block must catch malicious DSN components', function () {
-        // The NAMED MUTATION for this AC is verified by the
-        // implementer's self-mutation step (production-code revert):
-        // removing the pre-try $host/$port/$database/$charset
-        // validation block in Database::initialize() makes the
-        // malicious-database test in AC-48 (test 1 above) stop
-        // throwing InvalidArgumentException — the production code
-        // would either throw the generic wrapped Exception from the
-        // catch (\Throwable) clause (no real mysql server in this
-        // sandbox), or throw nothing if a connection somehow
-        // succeeded. Either way, the assertion
-        // `expect(...)->toThrow(\InvalidArgumentException::class)`
-        // fails, confirming the test catches the mutation.
-        //
-        // A previous version of this AC shipped only an assertion
-        // that a malicious string doesn't match a hex-32 regex — that
-        // proves nothing about the production path. The real probe is
-        // the self-verification mutation, run against the actual
-        // production code in src/Database/Database.php. This
-        // placeholder test exists only to mark the AC's NAMED MUTATION
-        // contract so the per-AC test count stays aligned with the
-        // SPEC's "one it(...) group per AC" requirement.
-        expect(true)->toBeTrue();
-    });
 });
 
 // ===========================================================================
@@ -535,37 +471,6 @@ describe('AC-49 — CSRF _method=GET override no longer bypasses the token check
         expect($result)->toBe('OK');
     });
 
-    it('AC-49 NAMED MUTATION: reverting isReading() to $request->getMethod() makes the override bypass the check (test 1 evidence)', function () {
-        // Simulate the named mutation by building a Request whose
-        // getMethod() returns 'GET' (because of the _method override in
-        // its body), but whose raw $_SERVER REQUEST_METHOD is 'POST'.
-        // Under the fix, isReading() reads REQUEST_METHOD via server()
-        // and correctly classifies the request as POST → throws. Under
-        // the mutation, isReading() reads getMethod() which returns
-        // 'GET' (override-aware) → the request is classified as a read
-        // → tokensMatch() is never called → no exception → returns 'OK'.
-        $request = phase3BuildRequest('/x', 'POST', [], ['_method' => 'GET', '_token' => 'test-token-123']);
-        // Sanity: Request::getMethod() (which the mutation uses) DOES
-        // honor the _method override — confirm the test shape is correct.
-        expect($request->getMethod())->toBe('GET');
-        // Sanity: $request->server('REQUEST_METHOD') returns the raw value.
-        expect($request->server('REQUEST_METHOD'))->toBe('POST');
-
-        // Simulate the buggy logic inline: in_array($request->getMethod(),
-        // ['HEAD','GET','OPTIONS']). Under the mutation, getMethod()
-        // returns 'GET' (override-aware) → classified as a read → returns
-        // true. Under the fix, server('REQUEST_METHOD') returns 'POST'
-        // → classified as a write → returns false.
-        $mutatedResult = in_array($request->getMethod(), ['HEAD', 'GET', 'OPTIONS'], true);
-        expect($mutatedResult)->toBeTrue();
-
-        // Belt-and-braces: confirm the FIXED logic on the same Request
-        // returns the OPPOSITE (false). This is the contrast that makes
-        // the mutation observable — same input, different observable
-        // output depending on which read-vs-write classification is used.
-        $fixedResult = in_array(strtoupper((string) $request->server('REQUEST_METHOD', 'GET')), ['HEAD', 'GET', 'OPTIONS'], true);
-        expect($fixedResult)->toBeFalse();
-    });
 });
 
 // ===========================================================================
@@ -601,35 +506,6 @@ describe('AC-50 — FileLogger CRLF log injection', function () {
         @unlink($logFile);
     });
 
-    it('AC-50 NAMED MUTATION: without sanitization, the injected `\\n` produces >= 2 log lines', function () {
-        // Simulate the named mutation by performing the interpolation +
-        // sprintf ourselves exactly as the buggy code would: no
-        // str_replace(["\r","\n"], ...) sanitization step. With a
-        // fresh logger pointed at a temp file, we cannot reach into
-        // FileLogger::log() to skip the sanitization cleanly — instead
-        // we replicate the buggy post-interpolation logic here and
-        // assert it produces multiple lines, proving the original
-        // injection shape really does create a second log entry.
-        $logFile = sys_get_temp_dir() . '/phase4-section1-mut-' . uniqid('', true) . '.log';
-        $interpolatedMessage = "Login failed for attacker@example.com\n[2026-01-01 00:00:00] production.CRITICAL: fake admin action";
-        $logEntry = sprintf(
-            "[%s] %s.%s: %s\n",
-            '2026-01-01 00:00:00.000000',
-            'production',
-            'WARNING',
-            $interpolatedMessage,
-        );
-        file_put_contents($logFile, $logEntry);
-
-        $content = file_get_contents($logFile);
-        $lineCount = substr_count(rtrim($content, "\n"), "\n") + 1;
-
-        // The un-sanitized shape MUST produce 2 lines — the "real"
-        // entry and the injected fake entry.
-        expect($lineCount)->toBeGreaterThanOrEqual(2);
-
-        @unlink($logFile);
-    });
 });
 
 // ===========================================================================
@@ -709,48 +585,6 @@ describe('AC-51 — FileCache generateTempSuffix() CSPRNG', function () {
         @rmdir($cacheDir);
     });
 
-    it('AC-51 NAMED MUTATION (in-file, proof-of-mutation-shape): a buggy generateTempSuffix() returning uniqid() output is caught by the shape check', function () {
-        // The "NAMED MUTATION" requirement is satisfied by:
-        //   (a) the wiring test above (Phase4SpyFileCache counter) which
-        //       would catch a production mutation that bypasses
-        //       generateTempSuffix() entirely;
-        //   (b) the shape test above (hex-32 pattern) which catches a
-        //       buggy implementation that calls the helper but with the
-        //       pre-fix body.
-        //
-        // The previous version of this AC shipped an assertion that
-        // uniqid() output doesn't match a hex-32 regex in TEST code —
-        // BUT it bound ReflectionMethod to FileCache::class, which
-        // causes the production (fixed) helper to be invoked even on a
-        // buggy subclass instance, making the "mutation" proof
-        // meaningless. This version binds the ReflectionMethod to the
-        // buggy subclass's class name so PHP uses dynamic dispatch to
-        // call the buggy override. Now the test actually exercises the
-        // pre-fix shape.
-        $cacheDir = sys_get_temp_dir() . '/phase4-section1-cache-' . uniqid('', true);
-        mkdir($cacheDir, 0755, true);
-        $buggy = new Phase4BuggySuffixFileCache($cacheDir . '/data.json');
-
-        // Bind to the BUGGY subclass so dynamic dispatch invokes the
-        // override (uniqid(mt_rand(), true) — pre-fix body). Binding to
-        // FileCache::class here would silently call the production
-        // helper instead and prove nothing about the buggy shape.
-        $ref = new ReflectionMethod(Phase4BuggySuffixFileCache::class, 'generateTempSuffix');
-        $buggySuffix = $ref->invoke($buggy);
-
-        // The buggy helper produces a string like
-        // "60e3b9f1f1234.56789012" — digits + hex chars + "." + digits,
-        // never exactly 32 lowercase hex chars. The shape check catches
-        // it. Belt-and-braces: also assert the length and presence of a
-        // dot (the uniqid-with-more_entropy marker) so a future
-        // refactor of the regex can't quietly accept the buggy output.
-        expect(strlen($buggySuffix))->not->toBe(32);
-        expect($buggySuffix)->toContain('.');
-        $matches = preg_match('/^[0-9a-f]{32}$/', $buggySuffix);
-        expect($matches)->toBe(0);
-
-        @rmdir($cacheDir);
-    });
 });
 
 // ===========================================================================
@@ -889,6 +723,13 @@ describe('AC-52 — Auth logout() invalidates remember-me DB token', function ()
         expect($preLogoutToken)->not->toBeNull();
         expect($preLogoutToken)->not->toBe('');
 
+        // Force logout()'s first self::user() call to resolve the still-valid
+        // old cookie lazily. Without clearing both caches here, a regression
+        // that resolves the user after Cookie::delete() would reuse the
+        // already-cached object and leave the remember token valid.
+        $authRef->setValue(null, null);
+        $session->remove($authSessionKeyConst);
+
         // -----------------------------------------------------------------
         // PART B — logout() must clear the DB token. This is the
         //          BLOCKING failure shape: if a regression moves
@@ -943,43 +784,6 @@ describe('AC-52 — Auth logout() invalidates remember-me DB token', function ()
         expect($userAfterLogout)->toBeNull();
     });
 
-    it('AC-52 NAMED MUTATION: removing the token-clearing call leaves the DB token unchanged after logout() (in-file production-shape probe)', function () {
-        // Auth::logout() is static and uses static state, so a normal
-        // subclass override isn't viable here. Instead, we exercise the
-        // BUGGY SHAPE directly: emulate the pre-fix logout() by
-        // observing the DB without calling logout() — the pre-fix
-        // logout() did exactly nothing to the remember_token column,
-        // so the column value would still equal the pre-logout value.
-        // The fix's PART B (in the main test) asserts the
-        // post-logout-null contract. Both shapes are observable and
-        // they together cover the SUT contract.
-
-        $authResult = Auth::authenticate($this->email, $this->password, remember: true);
-        expect($authResult)->toBeTrue();
-
-        $pdo = new \PDO('sqlite:' . $this->dbPath);
-        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-
-        $stmt = $pdo->prepare('SELECT remember_token FROM phase4_auth_users WHERE email = ?');
-        $stmt->execute([$this->email]);
-        $preLogoutToken = $stmt->fetchColumn();
-        expect($preLogoutToken)->not->toBeNull();
-
-        // The buggy logout() leaves the DB column untouched. By NOT
-        // calling Auth::logout() here, we observe exactly that buggy
-        // outcome on the column. The fix's PART B in the main test
-        // proves the fix's effect (column becomes null). This test
-        // asserts the buggy shape (column stays at pre-logout value).
-        $stmt = $pdo->prepare('SELECT remember_token FROM phase4_auth_users WHERE email = ?');
-        $stmt->execute([$this->email]);
-        $buggyShapeToken = $stmt->fetchColumn();
-
-        // Under the buggy logout() shape (no DB write), the token
-        // remains at the pre-logout value. This is the only assertion
-        // that distinguishes buggy from fixed.
-        expect($buggyShapeToken)->toBe($preLogoutToken);
-        expect($buggyShapeToken)->not->toBeNull();
-    });
 });
 
 // ===========================================================================
@@ -1059,26 +863,6 @@ describe('AC-53 — ExceptionHandler::buildResponseData() debug-gated exception 
         expect($result['debug'])->toBeTrue();
     });
 
-    it('AC-53 NAMED MUTATION: removing the if($debug) gate on `exception` puts the key back in the debug=false output (test 1 evidence)', function () {
-        // The named mutation is observed END-TO-END through the new
-        // production-wiring test below ("handle() does not pass raw
-        // exception to a custom view when debug=false"). That test
-        // renders an actual view via ExceptionHandler::handle() with
-        // debug=false and asserts the captured $data does NOT contain
-        // an 'exception' key — a regression that moves the
-        // 'exception' => $exception line outside the if($debug) block
-        // would put the key back in and fail the wiring test.
-        //
-        // The previous version of this AC constructed a fake
-        // $buggyData array in test code and asserted it contained the
-        // 'exception' key — that proved nothing about the production
-        // wiring (a mutant retaining the old inline assignment in
-        // handle() while adding a correct helper would pass). The
-        // wiring test below is the real mutation probe; this test is
-        // now a small sanity check that the wiring-test helper exists.
-        expect($this->buildData)->toBeInstanceOf(ReflectionMethod::class);
-    });
-
     it('AC-53 wiring: ExceptionHandler::handle() does not pass the raw exception object to a custom view when debug=false', function () {
         // The BLOCKING wiring test. We invoke the real
         // ExceptionHandler::handle() end-to-end with debug=false and
@@ -1094,9 +878,9 @@ describe('AC-53 — ExceptionHandler::buildResponseData() debug-gated exception 
         // Build a custom view path with a 500.php template that
         // captures the $data array via a global so the test can read
         // it after handle() returns.
-        $customViewDir = PHASE4_SCRATCH_DIR . '/test-views-ac53';
-        @mkdir($customViewDir . '/errors', 0755, true);
-        @mkdir($customViewDir . '/layouts', 0755, true);
+        $customViewDir = PHASE4_SCRATCH_DIR . '/test-views-ac53-' . uniqid('', true);
+        mkdir($customViewDir . '/errors', 0755, true);
+        mkdir($customViewDir . '/layouts', 0755, true);
         file_put_contents(
             $customViewDir . '/errors/500.php',
             '<?php $GLOBALS["__ac53_captured_data"] = get_defined_vars(); unset($GLOBALS["__ac53_captured_data"]["slot"]); echo "AC53-CAPTURED"; ?>'
@@ -1124,6 +908,13 @@ describe('AC-53 — ExceptionHandler::buildResponseData() debug-gated exception 
         // confirms that gate is actually applied at the
         // handle()->view() boundary, not just inside the helper.
         config(['app.debug' => false]);
+
+        // DocsConsistencyTest's JSON-response test leaves the shared Request
+        // singleton with an `Accept: application/json` header. Reset only
+        // that header so this test exercises handle()'s custom-view branch
+        // when the full suite runs as well as when this file runs alone.
+        $request = App::container()->get(Request::class);
+        (new ReflectionProperty(Request::class, 'headers'))->setValue($request, []);
 
         $response = ExceptionHandler::handle($exception);
 
@@ -1161,6 +952,11 @@ describe('AC-53 — ExceptionHandler::buildResponseData() debug-gated exception 
         // Clean up the globals + custom view dir so subsequent tests
         // don't see leftover state.
         unset($GLOBALS['__ac53_captured_data']);
+        @unlink($customViewDir . '/errors/500.php');
+        @unlink($customViewDir . '/layouts/error.php');
+        @rmdir($customViewDir . '/errors');
+        @rmdir($customViewDir . '/layouts');
+        @rmdir($customViewDir);
     });
 });
 
@@ -1218,29 +1014,4 @@ describe('AC-54 — Request::getBoundaryFromContentType() regex hardening', func
         expect($result['second'])->toBe('beta');
     });
 
-    it('AC-54 NAMED MUTATION: the original `*`-based regex returns `--""` for `boundary=""` instead of null (test 2 evidence)', function () {
-        // Simulate the named mutation: the pre-fix regex with `*`
-        // (zero-or-more) capture. `boundary=""` matches with an empty
-        // captured string, yielding `'--' . '' = '--'` — but with the
-        // optional `"?` around the capture group, the un-quoted-mode
-        // path also matches the literal `""` (the second `"` as part
-        // of the capture). Let's verify directly.
-        $buggyResult = preg_match('/boundary=(?:"?)([^" ]*)(?:"?)/i', 'multipart/form-data; boundary=""', $matches);
-        // Under the buggy regex, the match SUCCEEDS (returns 1).
-        expect($buggyResult)->toBe(1);
-        // And the captured string is `""` (the two literal quote
-        // characters), so `'--' . $matches[1]` would yield `'--""'`.
-        // Note: PHP's `[^" ]*` matches 0+ chars that are not `"` or
-        // space. After `boundary=`, the regex sees `""` — the first
-        // `"` is consumed by the optional `"?` (so the capture starts
-        // at the second `"`), then `[^" ]*` matches empty (next char is
-        // `"` which is excluded), then the trailing `"?` consumes the
-        // second `"`. So the captured string is empty, not `""`.
-        // The post-fix behavior must return null for this input — that
-        // is what the test above asserts. The mutation's observable
-        // signature is "preg_match returns 1" (non-zero), which is what
-        // we verify here. The null-vs-non-null discriminator is
-        // `preg_match === 0`.
-        expect($matches[1])->toBe('');
-    });
 });

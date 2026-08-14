@@ -51,43 +51,89 @@ class Auth
     /**
      * Log the current user out.
      *
-     * Captures $user via self::user() BEFORE any session/cookie mutation
-     * so that any lazy-resolution side effect in user() (which can
-     * itself trigger session-regeneration when resolving a remember-me
-     * cookie) runs first and cleanly, with the session
-     * removal/regeneration and remember-token clearing happening in
-     * stable order afterward. Invalidates the server-side remember-me
-     * token so a cookie captured before logout cannot re-authenticate
-     * the attacker after the legitimate user logs out.
+     * Security-critical — three invariants this method must preserve:
+     *
+     * 1. Capture $user via self::user() BEFORE any session/cookie mutation
+     *    so that any lazy-resolution side effect in user() (which can itself
+     *    trigger session-regeneration when resolving a remember-me cookie)
+     *    runs first and cleanly, with the session removal/regeneration and
+     *    remember-token clearing happening in stable order afterward.
+     *
+     * 2. Token revocation runs OUTSIDE the session-teardown try/catch, in
+     *    its own try/catch with a guaranteed cleanup. If the session
+     *    container throws during remove()/regenerate(), the outer catch
+     *    must NOT skip the token revocation — a remembered-me cookie
+     *    captured before logout still authenticates against the un-rotated
+     *    DB token otherwise.
+     *
+     * 3. Token revocation uses an UNCONDITIONAL UPDATE on the
+     *    remember_token column, NOT $user->save(). Model::save() uses
+     *    getDirty() which compares $attributes to $original — if the
+     *    loaded user had remember_token=null in $original (e.g. pre-login
+     *    snapshot, or fresh user) and a concurrent login wrote a token to
+     *    the DB, then setRememberToken(null) writes null to $attributes
+     *    (no change), getDirty() returns empty for remember_token, and
+     *    save() is a no-op — the concurrently-written token stays valid.
+     *    Bypass dirty tracking entirely with a direct conditional UPDATE.
+     *
+     * Invalidates the server-side remember-me token so a cookie captured
+     * before logout cannot re-authenticate the attacker after the legitimate
+     * user logs out.
      */
     public static function logout(): void
     {
-        try {
-            $user = self::user();
+        // Step 1: capture $user BEFORE any session/cookie mutation so any
+        // lazy-resolution side effect in user() runs first and cleanly.
+        $user = self::user();
 
+        // Step 2: tear down session/cookie. A failure here must NOT skip
+        // the token revocation below — log and continue.
+        try {
             $session = App::container()->get(SessionManager::class);
             $session->remove(self::AUTH_SESSION_KEY);
             $session->regenerate(true);
 
             Cookie::delete('remember_me');
-
-            // Invalidate the server-side remember-me token: a remember-me
-            // cookie captured before logout must NOT authenticate after
-            // logout, so rotate the stored hashed token to null. DB failure
-            // here is logged (not propagated) — a token-persistence bug
-            // must not block the rest of logout.
-            if ($user !== null) {
-                try {
-                    $user->setRememberToken(null);
-                    $user->save();
-                } catch (\Throwable $tokenErr) {
-                    self::logger()->error("Failed to clear remember token on logout.", ['exception' => $tokenErr]);
-                }
-            }
         } catch (\Throwable $e) {
             $message = "Logout error: Failed to access session, regenerate ID, or delete cookie.";
             self::logger()->error($message, ['exception' => $e]);
         }
+
+        // Step 3: unconditional token revocation. OUTSIDE the try/catch
+        // above so a session-teardown exception does not skip this
+        // critical security step. Wrapped in its own try/catch so a DB
+        // failure here is logged but does not propagate to the caller —
+        // logout is best-effort, but token invalidation is mandatory.
+        if ($user !== null) {
+            try {
+                $tokenColumn = $user->getRememberTokenName();
+                $idColumn = $user->getAuthIdentifierName();
+                $idValue = $user->getAuthIdentifier();
+                $modelClass = $user::class;
+
+                // Direct conditional UPDATE on the token column. Use
+                // Model::query() so the framework's table/connection
+                // resolution path is respected. The WHERE clause keys on
+                // the user's authenticatable identifier — same lookup
+                // key the remember-me path uses to load the user.
+                $updateResult = $modelClass::query()
+                    ->where($idColumn, '=', $idValue)
+                    ->update([$tokenColumn => null]);
+
+                if ($updateResult === false) {
+                    // DB UPDATE returned false (PDOException was caught
+                    // and logged by Database::update). The token may or
+                    // may not have been cleared — log explicitly so the
+                    // operator can investigate.
+                    self::logger()->error("Failed to clear remember token on logout (DB update returned false).", [
+                        'user_id' => $idValue,
+                    ]);
+                }
+            } catch (\Throwable $tokenErr) {
+                self::logger()->error("Failed to clear remember token on logout.", ['exception' => $tokenErr, 'user_id' => $user->getAuthIdentifier()]);
+            }
+        }
+
         self::$authenticatedUser = null;
     }
 

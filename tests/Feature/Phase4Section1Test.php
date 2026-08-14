@@ -26,15 +26,23 @@
 
 namespace Tests\Feature;
 
-// Ensure the body-carrying request helper from Phase3HardeningTest.php
-// (phase3BuildRequest) is declared when this file is loaded. PHPUnit/Pest
-// load only the relevant test file at execution time — without this
-// require, calling phase3BuildRequest() from AC-49's tests would fail
-// with "Call to undefined function" when this test file runs before
-// (or instead of) Phase3HardeningTest's tests. The SPEC directs us to
-// "call phase3BuildRequest() directly — do not declare a new, duplicate
-// helper"; ensuring it is loaded is the supported way to do that.
-require_once __DIR__ . '/Phase3HardeningTest.php';
+// Ensure the body-carrying request helper (phase3BuildRequest) is available
+// when this test file is loaded. We load ONLY the helper extracted to
+// tests/Support/Phase3TestHelpers.php — NOT the full Phase3HardeningTest.php.
+//
+// Loading the full Phase3HardeningTest.php was a hook-pollution source: when
+// only Phase4Section1Test was selected (e.g. `./vendor/bin/pest
+// tests/Feature/Phase4Section1Test.php`), the AC-40–AC-46 tests from
+// Phase3HardeningTest ran as a side effect, polluting the test output and
+// pulling unrelated failures into the Phase 4 verdict.
+//
+// The helper file uses a `function_exists` guard so the declaration is
+// compatible with the identical body in Phase3HardeningTest.php: when the
+// FULL suite runs (Pest discovers Phase3HardeningTest.php first), the
+// helper file is a no-op load and the function is the one declared by
+// Phase3HardeningTest. When this file is loaded alone, the helper file
+// declares the function itself.
+require_once __DIR__ . '/../Support/Phase3TestHelpers.php';
 
 use SwallowPHP\Framework\Auth\Auth;
 use SwallowPHP\Framework\Auth\AuthenticatableModel;
@@ -120,6 +128,28 @@ class Phase4TestSessionManager extends SessionManager
     public function regenerate(bool $deleteOldSession = true): bool
     {
         return true;
+    }
+}
+
+/**
+ * Subclass of SessionManager used ONLY in the HIGH #2 robustness test
+ * for AC-52. Overrides remove() to throw — simulates a session-teardown
+ * failure (e.g., headers already sent, session save handler error).
+ * The fix's invariant: Auth::logout() must still clear the
+ * remember-me DB token even when the session teardown throws, because
+ * a remembered-me cookie captured before logout would otherwise still
+ * authenticate afterwards.
+ */
+class Phase4ThrowingSessionManager extends SessionManager
+{
+    public function regenerate(bool $deleteOldSession = true): bool
+    {
+        return true;
+    }
+
+    public function remove(string $key): void
+    {
+        throw new \RuntimeException('simulated session-teardown failure');
     }
 }
 
@@ -782,6 +812,148 @@ describe('AC-52 — Auth logout() invalidates remember-me DB token', function ()
         // assertion fail because the lazy cookie path would still
         // authenticate.
         expect($userAfterLogout)->toBeNull();
+    });
+
+    it('AC-52: session-teardown failure does NOT skip remember-token revocation (HIGH #2 robustness)', function () {
+        // The reviewer's HIGH #2 finding: the previous logout() had
+        // token revocation INSIDE the same try/catch as session teardown.
+        // If $session->remove()/regenerate() threw, control jumped to the
+        // outer catch and skipped the token revocation — a remembered-me
+        // cookie captured before logout would still authenticate
+        // afterwards. The fix moves token revocation OUTSIDE the
+        // session-teardown try/catch. This test verifies that path:
+        // inject a SessionManager subclass whose remove() throws, prove
+        // that the DB token is still cleared post-logout.
+
+        // Sign in with remember=true FIRST (before swapping the session
+        // manager) — the throwing session manager's remove() would
+        // break the post-authenticate clear-cached-session step we
+        // need for the test setup.
+        $authResult = Auth::authenticate($this->email, $this->password, remember: true);
+        expect($authResult)->toBeTrue();
+
+        // Move the queued remember_me cookie into $_COOKIE so the lazy
+        // resolution path in Auth::user() can find it (Cookie::set()
+        // only queues, doesn't add to $_COOKIE in CLI).
+        $cookieRef = new ReflectionClass(Cookie::class);
+        $queue = $cookieRef->getProperty('queuedCookies')->getValue();
+        $rememberCookie = $queue['__Secure-remember_me']['value']
+            ?? $queue['remember_me']['value']
+            ?? null;
+        expect($rememberCookie)->not->toBeNull();
+        $_COOKIE['__Secure-remember_me'] = $rememberCookie;
+        $_COOKIE['remember_me'] = $rememberCookie;
+
+        // Clear cached user + session so the test exercises the actual
+        // logout() path (not a cached return).
+        $authRef = new ReflectionProperty(Auth::class, 'authenticatedUser');
+        $authRef->setValue(null, null);
+        $session = App::container()->get(SessionManager::class);
+        $session->remove((new ReflectionClass(Auth::class))->getConstant('AUTH_SESSION_KEY'));
+
+        // Now bind the THROWING session manager to simulate a
+        // session-teardown failure. The fix's invariant: the token
+        // revocation runs in a SEPARATE try/catch from session teardown,
+        // so a teardown exception does not skip the revocation.
+        $cont = (new ReflectionClass(App::class))->getProperty('container')->getValue();
+        $cont->extend(\SwallowPHP\Framework\Session\SessionManager::class)
+            ->setConcrete(Phase4ThrowingSessionManager::class);
+
+        // Capture pre-logout token.
+        $pdo = new \PDO('sqlite:' . $this->dbPath);
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $stmt = $pdo->prepare('SELECT remember_token FROM phase4_auth_users WHERE email = ?');
+        $stmt->execute([$this->email]);
+        $preLogoutToken = $stmt->fetchColumn();
+        expect($preLogoutToken)->not->toBeNull();
+
+        // logout() must NOT propagate the session teardown exception.
+        // The SessionManager::remove() throws, but the outer try/catch
+        // catches it; the token revocation runs in its own try/catch
+        // (outside the outer one).
+        Auth::logout();
+
+        // Post-logout token MUST be different from pre-logout (and
+        // preferably null). If HIGH #2 regressed (token revocation
+        // moved back inside the outer try), this assertion fails
+        // because the teardown exception skipped the revocation.
+        $stmt = $pdo->prepare('SELECT remember_token FROM phase4_auth_users WHERE email = ?');
+        $stmt->execute([$this->email]);
+        $postLogoutToken = $stmt->fetchColumn();
+
+        expect($postLogoutToken)->not->toBe($preLogoutToken);
+        expect($postLogoutToken === null || $postLogoutToken === '')->toBeTrue();
+    });
+
+    it('AC-52: dirty-tracking bypass (MEDIUM #3) — pre-loaded user with null $original cannot prevent logout revocation', function () {
+        // The reviewer's MEDIUM #3 finding: Model::save() uses
+        // getDirty() which compares $attributes to $original. If the
+        // loaded user had remember_token=null in $original (e.g. fresh
+        // user, no prior remember-me activity) and a concurrent login
+        // writes a token to the DB, then setRememberToken(null) writes
+        // null to $attributes (no change), getDirty() returns empty for
+        // remember_token, and save() is a no-op — the concurrently
+        // written token stays valid after logout.
+        //
+        // The fix uses an unconditional UPDATE on the remember_token
+        // column, bypassing dirty tracking entirely. This test simulates
+        // the exact scenario: a user model is loaded with
+        // remember_token=null in $original, the DB column is then
+        // updated by a "concurrent login" (raw SQL UPDATE), and
+        // logout() is called with the stale user (preserved in
+        // Auth::$authenticatedUser via reflection so logout()'s
+        // self::user() returns the stale instance instead of lazy-
+        // reloading from the DB). The assertion is that the DB column
+        // ends up = null (the unconditional UPDATE worked), not the
+        // concurrently-written token.
+        $pdo = new \PDO('sqlite:' . $this->dbPath);
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        // Step 1: load the user through the framework so the $original
+        // gets populated from the DB. The user has remember_token=null
+        // at this point (the test fixture inserts a user without a
+        // remember token).
+        $staleUser = Phase4AuthUser::query()->where('email', '=', $this->email)->first();
+        expect($staleUser)->not->toBeNull();
+        $originalRef = new ReflectionProperty(\SwallowPHP\Framework\Database\Model::class, 'original');
+        $userOriginal = $originalRef->getValue($staleUser);
+        expect($userOriginal['remember_token'] ?? null)->toBeNull();
+
+        // Step 2: simulate a "concurrent login" that writes a token
+        // directly to the DB — bypassing the user model's $original.
+        $concurrentToken = bin2hex(random_bytes(32));
+        $stmt = $pdo->prepare('UPDATE phase4_auth_users SET remember_token = ? WHERE email = ?');
+        $stmt->execute([$concurrentToken, $this->email]);
+
+        // Confirm the DB now has the concurrent token.
+        $stmt = $pdo->prepare('SELECT remember_token FROM phase4_auth_users WHERE email = ?');
+        $stmt->execute([$this->email]);
+        expect($stmt->fetchColumn())->toBe($concurrentToken);
+
+        // Step 3: cache the stale user in Auth::$authenticatedUser so
+        // logout()'s self::user() returns the stale instance (with
+        // $original['remember_token'] = null) instead of lazy-reloading
+        // from the DB and getting a fresh user with the concurrent
+        // token in $original.
+        $authRef = new ReflectionProperty(Auth::class, 'authenticatedUser');
+        $authRef->setValue(null, $staleUser);
+
+        // Step 4: call logout(). Self::user() returns the stale user.
+        // With the fix (unconditional UPDATE), the DB token is forced
+        // to NULL regardless of $original. With the named mutation
+        // (revert to $user->setRememberToken(null) + $user->save()),
+        // getDirty() returns empty for remember_token (null === null),
+        // save() is a no-op, and the DB still has the concurrent token.
+        Auth::logout();
+
+        // Step 5: assert the DB token is now null (the unconditional
+        // UPDATE worked), not the concurrent token.
+        $stmt = $pdo->prepare('SELECT remember_token FROM phase4_auth_users WHERE email = ?');
+        $stmt->execute([$this->email]);
+        $postLogoutToken = $stmt->fetchColumn();
+
+        expect($postLogoutToken === null || $postLogoutToken === '')->toBeTrue();
+        expect($postLogoutToken)->not->toBe($concurrentToken);
     });
 
 });

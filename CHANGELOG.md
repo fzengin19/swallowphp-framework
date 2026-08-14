@@ -5,12 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.1] - 2026-08-14 (in progress)
+## [3.0.1] - 2026-08-14
 
 Continuation of the correctness/security hardening series: a fresh comprehensive
-bugfix/stabilization scan (explicitly not new features). This entry covers Sections 1-3
-(security-critical; Database/Model correctness; Session; Foundation) of a 4-section
-sweep; Section 4 (Cache/Log stabilization) will be appended as it lands.
+bugfix/stabilization scan (explicitly not new features), covering all 4 sections —
+security-critical fixes, Database/Model correctness, Session, Foundation, and Cache/Log
+stabilization. No breaking changes; every fix here either closes a genuine bug or
+rejects previously-unvalidated invalid/malicious input (never silently, always with a
+clear error), consistent with this project's existing "Fixed, not Action required"
+convention for that class of change.
 
 ### Fixed
 - `Database::select()`/`table()` now quote identifiers before interpolating them into
@@ -69,12 +72,24 @@ sweep; Section 4 (Cache/Log stabilization) will be appended as it lands.
   session is active.
 - `SessionManager::reflash()`/`keep()` no longer let a stale re-flashed value overwrite
   a freshly-flashed value under the same key.
+- `SqliteCache::set()` now computes the expiration timestamp once instead of via two
+  independent `ttlToTimestamp()` calls.
+- `FileLogger`'s `minLevel` lookup is now case-insensitive, closing a silent fallback to
+  logging everything at DEBUG when configured with an uppercase level name (e.g.
+  `'WARNING'`).
+- `FileLogger` now applies safe permissions to a pre-existing log file too, not only a
+  newly-created one — while rejecting symlinks (`chmod()` follows symlinks and could
+  otherwise silently change a sensitive target's mode) and preserving any stricter
+  existing permission instead of loosening it.
+- `formatDateForHumans()` no longer produces a nonsensical negative-prefixed string for
+  future dates (e.g. `'-3600 saniye önce'`); future dates now use `'sonra'` wording.
 
 ### Added
 - `tests/Feature/Phase4Section1Test.php` — regression suite for the Section 1 fixes.
 - `tests/Feature/Phase4Section2Test.php` — regression suite for the Section 2 fixes.
 - `tests/Feature/Phase4Section3bTest.php` — regression suite for the Section 3b fixes.
 - `tests/Feature/Phase4Section3aTest.php` — regression suite for the Section 3a fixes.
+- `tests/Feature/Phase4Section4Test.php` — regression suite for the Section 4 fixes.
 
 In addition to the standard Keep-a-Changelog subsections (Added / Changed /
 Deprecated / Removed / Fixed / Security), this project uses an additional

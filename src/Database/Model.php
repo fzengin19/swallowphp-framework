@@ -660,10 +660,17 @@ class Model
             throw new \RuntimeException("Related model not found: {$relatedModel}");
         }
         $foreignValue = $this->attributes[$foreignKey] ?? null;
-
-        // Build the query regardless of whether the foreign key is set.
-        // The Relation object can handle fetching (or not fetching) later.
-        $builder = $relatedModel::query()->where($ownerKey, '=', $foreignValue);
+        // Mirror hasMany(): when the FK is null there's nothing to look up,
+        // so short-circuit with an always-false predicate instead of letting
+        // `where($ownerKey, '=', null)` round-trip a real `IS NULL` query
+        // against the related table. Functional result is unchanged (both
+        // shapes return zero rows), but this skips an unnecessary DB hit
+        // and keeps the two relation methods consistent.
+        if ($foreignValue === null) {
+            $builder = $relatedModel::query()->whereRaw('1 = 0');
+        } else {
+            $builder = $relatedModel::query()->where($ownerKey, '=', $foreignValue);
+        }
 
         // Pass 'one' as the relation type
         return new \SwallowPHP\Framework\Database\Relation($builder, 'one');

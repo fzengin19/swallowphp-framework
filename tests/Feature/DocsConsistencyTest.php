@@ -294,10 +294,14 @@ it('AC-9: docs/session.md uses getFlash()', function () {
 
 it('AC-9 regression: session("success") returns null when the key is in the flash bucket', function () {
     // Wire up the App container so the session() helper can resolve the
-    // SessionManager. We don't call SessionManager::start() — that would
-    // require a writable session.files directory and headers not yet sent.
-    // Instead we manipulate $_SESSION directly to simulate the post-age
-    // state the framework would have (flash in _flash.old).
+    // SessionManager. We do NOT manually seed $_SESSION before the first
+    // accessor call anymore — the ensureSessionStarted() fix (HIGH #1 in
+    // Phase 4 Section 3a) now also checks session_status() and triggers
+    // start() if the engine is inactive, which would otherwise call
+    // session_start() and wipe any manually-seeded $_SESSION. So the
+    // post-age flash bucket is seeded AFTER the first accessor has
+    // triggered start() — at that point session_status() is ACTIVE and
+    // ensureSessionStarted() is a no-op for subsequent accessors.
     App::container();
     config(['app.storage_path' => dirname(__DIR__, 2) . '/.scratch']);
     config(['session.driver' => 'file']);
@@ -307,22 +311,42 @@ it('AC-9 regression: session("success") returns null when the key is in the flas
         mkdir($sessionsDir, 0755, true);
     }
 
-    // Seed $_SESSION as if ageFlashData() had run: the new key was moved
-    // into _flash.old, and _flash.old is what getFlash() reads.
+    // Close any leftover session from a prior test, then set up a clean
+    // CLI-SAPI session environment so SessionManager::start() can call
+    // session_start() without hitting the headers-sent / cookies-
+    // disabled warnings.
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        @session_write_close();
+    }
+    unset($_SESSION);
+    @ini_set('session.use_cookies', '0');
+    if (ob_get_level() === 0) {
+        ob_start();
+    }
+    session_id('docsac9' . preg_replace('/[^A-Za-z0-9]/', '', uniqid('', true)));
+
+    // First plain session() call — triggers start() (the fix's behavior).
+    // Plain session() reads $_SESSION[$key] DIRECTLY, where 'success' is
+    // not at the top level — it's inside _flash.old. So the plain form
+    // returns the default (null here), missing the flashed value. This
+    // is the bug under test (and it still returns null regardless of
+    // whether start() has wiped the seed).
+    expect(\session('success'))->toBeNull();
+
+    // Now seed $_SESSION as if ageFlashData() had run: the new key was
+    // moved into _flash.old, and _flash.old is what getFlash() reads.
+    // Seeding AFTER the first accessor call ensures the value survives
+    // the session_start() the fix now triggers.
     $_SESSION = [
         '_flash.old' => ['success' => 'Saved!'],
     ];
-
-    // Plain session($key) helper reads $_SESSION[$key] DIRECTLY. 'success'
-    // is not at the top level — it's inside _flash.old. So the plain form
-    // returns the default (null here), missing the flashed value.
-    expect(\session('success'))->toBeNull();
 
     // The correct accessor reads the flash bucket, where the value lives.
     expect(\session()->getFlash('success'))->toBe('Saved!');
     expect(\session()->hasFlash('success'))->toBeTrue();
 
     $_SESSION = [];
+    @session_write_close();
 });
 
 /* ===========================================================================

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-08-14 (in progress)
+
+Continuation of the correctness/security hardening series: a fresh comprehensive
+bugfix/stabilization scan (explicitly not new features). This entry covers Section 1
+(security-critical) of a 4-section sweep; Sections 2-4 (Database/Model correctness,
+Session/Foundation, Cache/Log stabilization) will be appended as they land.
+
+### Fixed
+- `Database::select()`/`table()` now quote identifiers before interpolating them into
+  SQL (`select()` closes a raw-column-name injection vector for plain identifiers;
+  `table()` validates against a strict identifier pattern). Expression-style `select()`
+  calls (e.g. `COUNT(*) as total`) are unaffected — deliberate scope: this closes the
+  raw-identifier vector only.
+- `Database::initialize()` validates `host`/`port`/`database`/`charset` config values
+  for mysql/pgsql connections before building the DSN, rejecting DSN-breaking characters.
+- `VerifyCsrfToken::isReading()` no longer trusts the `_method` body/query override —
+  a `POST` with `_method=GET` in its body is now correctly CSRF-checked instead of
+  silently bypassing the token comparison.
+- `FileLogger` sanitizes `\r`/`\n` in log messages, closing a log-injection/log-forging
+  vector reachable via `mailto()` and `webpImage()` (both funnel through the same
+  logger choke point).
+- `FileCache::saveCache()` uses a CSPRNG-backed temp filename (`random_bytes`) instead
+  of `uniqid(mt_rand())`, closing a symlink-attack surface on its atomic rename.
+- `Auth::logout()` now invalidates the user's server-side remember-me token, so a
+  remember-me cookie captured before logout can no longer re-authenticate afterward.
+- `ExceptionHandler` no longer includes the raw exception object in the data handed to
+  the error view when `debug=false` (previously only the debug-only detail fields were
+  gated; the exception object itself was not). The bundled default error views already
+  guarded their own use of it, so this has no visible effect unless an app supplies a
+  custom production error view that reads `$exception` directly.
+- `Request::getBoundaryFromContentType()` no longer returns a degenerate `'--'`
+  boundary for a malformed/empty `boundary=` value (which could corrupt multipart
+  parsing), and no longer truncates a quoted boundary value at its first internal space.
+
+### Added
+- `tests/Feature/Phase4Section1Test.php` — regression suite for the fixes above.
+
 In addition to the standard Keep-a-Changelog subsections (Added / Changed /
 Deprecated / Removed / Fixed / Security), this project uses an additional
 `### Action required` subsection as a documented convention: any release entry

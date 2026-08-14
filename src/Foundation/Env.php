@@ -90,12 +90,21 @@ class Env
                 $name = trim(substr($name, 7));
             }
 
-            // Skip malformed lines (e.g. "=value" with an empty name).
-            // putenv() with an empty name throws \ValueError on PHP 8+
-            // and would abort the whole load() loop — every line AFTER
-            // the malformed one would silently never load.
-            if ($name === '') {
-                error_log("Warning: Skipping malformed .env line (no variable name): " . $line);
+            // Skip malformed lines:
+            //  - empty/whitespace-only name (e.g. "=value" — `=value` after
+            //    explode+trim leaves an empty $name; putenv("=value") throws
+            //    \ValueError on PHP 8+ and would abort the whole load loop);
+            //  - name containing internal whitespace (e.g. "BAD NAME=val").
+            //    trim() only strips leading/trailing whitespace, so a name
+            //    like "INTERNAL SPACE=val" survives trim as "INTERNAL SPACE"
+            //    and is a malformed env var by POSIX convention even though
+            //    PHP's putenv() happens to accept it silently. We reject it
+            //    defensively so callers can't later index $_ENV/getenv() with
+            //    a key that contains whitespace.
+            // In both cases we log via error_log() and `continue` so a single
+            // bad line does NOT abort loading of all lines after it.
+            if ($name === '' || preg_match('/\s/', $name) === 1) {
+                error_log("Warning: Skipping malformed .env line (invalid variable name): " . $line);
                 continue;
             }
 

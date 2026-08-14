@@ -48,7 +48,7 @@ class FileLogger implements LoggerInterface
         if (!defined(LogLevel::class . '::' . $minLevelUpper)) {
              throw new \InvalidArgumentException("Invalid minimum log level specified: {$minLevel}");
         }
-        $this->minLevelValue = $this->logLevels[$minLevel] ?? $this->logLevels[LogLevel::DEBUG];
+        $this->minLevelValue = $this->logLevels[strtolower($minLevel)] ?? $this->logLevels[LogLevel::DEBUG];
 
         // Ensure log directory exists and is writable
         $logDir = dirname($this->logFilePath);
@@ -65,8 +65,8 @@ class FileLogger implements LoggerInterface
               if (!@touch($this->logFilePath)) {
                    throw new \RuntimeException("Log file does not exist and could not be created: {$this->logFilePath}");
               }
-              @chmod($this->logFilePath, 0644); // Set appropriate permissions
          }
+         @chmod($this->logFilePath, 0644); // Set appropriate permissions regardless of pre-existence
          if (!is_writable($this->logFilePath)) {
               throw new \RuntimeException("Log file is not writable: {$this->logFilePath}");
          }

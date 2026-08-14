@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.0.1] - 2026-08-14 (in progress)
 
 Continuation of the correctness/security hardening series: a fresh comprehensive
-bugfix/stabilization scan (explicitly not new features). This entry covers Sections 1-2
-(security-critical; Database/Model correctness) of a 4-section sweep; Sections 3-4
-(Session/Foundation, Cache/Log stabilization) will be appended as they land.
+bugfix/stabilization scan (explicitly not new features). This entry covers Sections 1-3b
+(security-critical; Database/Model correctness; Session; Foundation) of a 4-section
+sweep; Section 4 (Cache/Log stabilization) will be appended as it lands.
 
 ### Fixed
 - `Database::select()`/`table()` now quote identifiers before interpolating them into
@@ -47,10 +47,18 @@ bugfix/stabilization scan (explicitly not new features). This entry covers Secti
 - `Database::cursorPaginate()`'s `prev_page_url` no longer returns a dangling
   `?cursor=` link with an empty value; it points back at the base URL instead (no real
   previous-cursor value is tracked by this implementation).
+- `Env::load()` no longer aborts the entire `.env` parse on one malformed line (empty or
+  whitespace-containing variable name) — skips just that line with a warning instead.
+- `Env::load()` no longer mirrors `.env` values into `$_SERVER` (only `$_ENV`/
+  `putenv()`), closing a path where a `.env` entry could silently override
+  request-supplied `$_SERVER` values like `HTTP_HOST`.
+- `Config::set()` now throws instead of silently destroying an existing scalar value
+  when a dotted sub-key traversal collides with it.
 
 ### Added
 - `tests/Feature/Phase4Section1Test.php` — regression suite for the Section 1 fixes.
 - `tests/Feature/Phase4Section2Test.php` — regression suite for the Section 2 fixes.
+- `tests/Feature/Phase4Section3bTest.php` — regression suite for the Section 3b fixes.
 
 In addition to the standard Keep-a-Changelog subsections (Added / Changed /
 Deprecated / Removed / Fixed / Security), this project uses an additional

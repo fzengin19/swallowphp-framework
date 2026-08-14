@@ -651,10 +651,16 @@ class Database
      * cannot mask the no-WHERE contract (callers would otherwise receive the
      * generic init Exception instead of the documented RuntimeException).
      *
+     * Returns the number of affected rows on success, or `false` if the
+     * statement threw a PDOException. Callers MUST distinguish the two
+     * cases: 0 is a legitimate "no rows matched" result, while `false`
+     * signals that the write genuinely failed (mirrors `update()`).
+     *
+     * @return int|false Number of affected rows, or false on PDOException.
      * @throws \RuntimeException When no WHERE condition is set, or when a
      *                           nested where() closure produced no predicate.
      */
-    public function delete(): int
+    public function delete(): int|false
     {
         // Guard BEFORE initialize(): a connection-init failure should not mask
         // the no-WHERE contract — callers rely on receiving the documented
@@ -692,7 +698,7 @@ class Database
                 $this->logger->error($errorMsg, ['exception' => $e, 'sql' => $sql]);
             else
                 error_log($errorMsg . ": " . $e->getMessage() . " | SQL: " . $sql);
-            return 0;
+            return false;
         }
     }
 
@@ -903,7 +909,11 @@ class Database
             'current_cursor' => $cursor,
             'last_page' => 0, // Set a valid default for lastPage
             'next_page_url' => $hasMorePages ? ($baseUrl . '?cursor=' . urlencode($nextCursor)) : null,
-            'prev_page_url' => $cursor ? ($baseUrl . '?cursor=') : null,
+            // No real previous-cursor value is computed/tracked (only the
+            // forward `$nextCursor`), so the honest "back to first page" link
+            // is the un-cursored base URL. The previous-shape `?cursor=` was
+            // a dangling empty-value link — never a working URL.
+            'prev_page_url' => $cursor ? $baseUrl : null,
             'query' => $queryParams
         ];
 

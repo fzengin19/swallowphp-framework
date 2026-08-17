@@ -875,17 +875,37 @@ if (!function_exists('view')) {
         $findViewFile = function (string $viewName, ?string $primaryPath, string $fallbackPath): ?string {
             $viewFilePath = str_replace('.', '/', $viewName) . '.php';
 
+            // AC-73: realpath()-based directory confinement. The view-name
+            // transform (str_replace('.', '/', $viewName)) destroys literal
+            // ".." sequences today — so string-traversal attacks via plain
+            // $viewName are already inert — but a future refactor of the
+            // separator convention, or any other $viewName-producing code
+            // path (e.g. symlinked filenames, realpath()-resolved entries
+            // inside the configured base) could silently reopen a
+            // local-file-inclusion hole with no test catching it. This
+            // explicit confinement check is the standard, robust fix:
+            // a resolved path is only accepted if it actually lives under
+            // the realpath()-resolved base directory. Unconfined paths
+            // fall through to the existing "return null" (→ not found /
+            // ViewNotFoundException), the same contract as any other miss.
+            $isPathConfined = function (string $fullPath, string $basePath): bool {
+                $realBase = realpath($basePath);
+                $realFull = realpath($fullPath);
+                return $realBase !== false && $realFull !== false
+                    && str_starts_with($realFull, $realBase . DIRECTORY_SEPARATOR);
+            };
+
             // Check primary (app) path first
             if ($primaryPath && is_dir($primaryPath)) {
                 $fullPath = rtrim($primaryPath, '/\\') . '/' . $viewFilePath;
-                if (file_exists($fullPath)) {
+                if (file_exists($fullPath) && $isPathConfined($fullPath, $primaryPath)) {
                     return $fullPath;
                 }
             }
             // Check fallback (framework) path
             if (is_dir($fallbackPath)) {
                 $fullPath = rtrim($fallbackPath, '/\\') . '/' . $viewFilePath;
-                if (file_exists($fullPath)) {
+                if (file_exists($fullPath) && $isPathConfined($fullPath, $fallbackPath)) {
                     return $fullPath;
                 }
             }

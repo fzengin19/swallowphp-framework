@@ -5,6 +5,8 @@ namespace SwallowPHP\Framework\Database;
 use DateTime;
 use InvalidArgumentException;
 use SwallowPHP\Framework\Database\Paginator; // Import Paginator
+use SwallowPHP\Framework\Foundation\App;
+use Psr\Log\LoggerInterface;
 
 /**
  * Model class manages database operations and data manipulation.
@@ -116,15 +118,44 @@ class Model
     public function __set(string $key, $value): void
     {
         // Use correct logical AND operator '&&'
-        // AC-71: empty $fillable means NOTHING is mass-assignable by default
-        // (explicit opt-in required). An empty array is NOT a wildcard
-        // "everything but guarded" any more — the old default was a
-        // classic forgot-to-set-$fillable vulnerability exposing every
-        // column on a new model through both fill() AND __set().
         if (in_array($key, $this->fillable, true) && !in_array($key, $this->guarded, true)) {
+            $this->attributes[$key] = $value;
+        } elseif (empty($this->fillable) && !in_array($key, $this->guarded, true)) {
+            // Deprecated fallback (see logDeprecatedMassAssignment()'s docblock):
+            // retained for backward compatibility this release; will be removed
+            // in a future major version once the safe default has had a
+            // migration window.
+            static::logDeprecatedMassAssignment($key);
             $this->attributes[$key] = $value;
         } elseif (in_array($key, $this->guarded, true)) {
             throw new InvalidArgumentException("Attribute '{$key}' is protected and cannot be set directly.");
+        }
+    }
+
+    /**
+     * Log a deprecation notice for mass assignment that only succeeded
+     * because the model never declared $fillable (the old, insecure
+     * default — every key except $guarded used to be silently
+     * mass-assignable). This fallback is intentionally still FUNCTIONAL
+     * this release (non-breaking) — it only warns. A future major version
+     * will remove the fallback and make an undeclared $fillable reject
+     * mass assignment outright; declaring $fillable explicitly now silences
+     * this warning and opts a model into that safe behavior early.
+     */
+    protected static function logDeprecatedMassAssignment(string $key): void
+    {
+        $message = sprintf(
+            "Deprecated: mass assignment accepted key '%s' on %s only because "
+            . "\$fillable is not declared (empty). This fallback will be removed in "
+            . "a future major version — declare `protected array \$fillable = [...]` "
+            . "on this model to opt into the safe default now and silence this warning.",
+            $key,
+            static::class
+        );
+        try {
+            App::container()->get(LoggerInterface::class)->warning($message);
+        } catch (\Throwable $e) {
+            @error_log($message);
         }
     }
 
@@ -404,12 +435,13 @@ class Model
     {
         foreach ($data as $key => $value) {
             // Use correct logical AND operator '&&'
-            // AC-71: empty $fillable means NOTHING is mass-assignable by default.
-            // See __set() docblock for the rationale; this guard is the
-            // identical-condition twin of the magic-setter guard and must
-            // stay in lock-step with it (test 2 in PentestFixesTest binds
-            // the two-method symmetry explicitly).
+            // This guard is the identical-condition twin of __set()'s guard
+            // and must stay in lock-step with it — see logDeprecatedMassAssignment()
+            // for the deprecation-fallback rationale shared by both methods.
             if (in_array($key, $this->fillable, true) && !in_array($key, $this->guarded, true)) {
+                $this->attributes[$key] = $value;
+            } elseif (empty($this->fillable) && !in_array($key, $this->guarded, true)) {
+                static::logDeprecatedMassAssignment($key);
                 $this->attributes[$key] = $value;
             }
         }

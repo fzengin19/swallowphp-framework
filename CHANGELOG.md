@@ -5,25 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] - 2026-08-17
+## [3.0.2] - 2026-08-17
 
-Three critical fixes from a fresh, lightweight pentest scan across previously-unaudited
-areas of the framework (Routing, Auth, Database, Views, file handling, HTTP layer).
-Bugfix/stabilization scope — one of the three fixes is a genuine breaking change to a
-default (see below), which is why this is a major version bump under this project's
-strict SemVer convention.
+Three fixes from a fresh, lightweight pentest scan across previously-unaudited areas of
+the framework (Routing, Auth, Database, Views, file handling, HTTP layer).
+Bugfix/stabilization scope — no breaking changes in this release.
 
-### Action required
-- **`Model`'s mass-assignment default has flipped from open to closed.** Previously, a
-  `Model` subclass that didn't declare `$fillable` accepted every attribute except
-  `$guarded` (`['id']` by default) via `fill()`, `create()`, and direct property
-  assignment (`$model->x = y`). This was a mass-assignment vulnerability — any subclass
-  that forgot to declare `$fillable` was silently wide open. **Every existing `Model`
-  subclass in your application that relies on this old, undeclared-`$fillable` default
-  must now explicitly declare `protected array $fillable = [...]` listing the columns
-  it intends to allow mass assignment on** — otherwise `fill()`/`create()`/direct
-  property assignment will silently accept nothing. This does not affect any model that
-  already declares `$fillable` explicitly (the normal, recommended pattern).
+### Deprecated
+- **Mass-assignment via an undeclared `$fillable`.** A `Model` subclass that doesn't
+  declare `$fillable` currently accepts every attribute except `$guarded` (`['id']` by
+  default) via `fill()`, `create()`, and direct property assignment (`$model->x = y`) —
+  this is a mass-assignment vulnerability class if such a model ever receives unfiltered
+  input. **This still works exactly as before in this release** (non-breaking) — but
+  every time this fallback is what let a key through, a PSR-3 `warning`-level log entry
+  is now emitted (or `error_log()` if no logger is available), naming the model class
+  and the key. **Action recommended, not required:** declare `protected array $fillable
+  = [...]` explicitly on any model relying on this fallback to silence the warning and
+  opt into the safe behavior now. This fallback is planned for removal in a future major
+  version once given a migration window — declaring `$fillable` explicitly today avoids
+  any future breaking impact.
 
 ### Fixed
 - `Response::redirect()` now rejects a protocol-relative (`//host/...`) target and a

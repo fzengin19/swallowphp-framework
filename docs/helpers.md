@@ -90,6 +90,8 @@ $searchUrl = route('search', ['q' => 'php', 'page' => 2]);
 // http://localhost/search?q=php&page=2
 ```
 
+Throws SwallowPHP Framework Exceptions RouteNotFoundException (code 404) if no route with that name is registered — use hasRoute(name) to check first.
+
 ### `hasRoute($name)`
 
 Check if a named route exists.
@@ -175,6 +177,8 @@ Get the client's IP address.
 $ip = getIp();
 // Returns: '192.168.1.1' or null
 ```
+
+getIp() returns REMOTE_ADDR unless the peer matches config app.trusted_proxies (or it is wildcard), in which case it honors X-Forwarded-For. Behind a load balancer, configure trusted_proxies or you will receive the proxy IP.
 
 ### `sendJson($data, $status = 200)`
 
@@ -300,6 +304,17 @@ if ($users === null) {
     $users = User::get();
     cache()->set('users', $users, 600);
 }
+
+// PSR-16 bulk operations
+$values = cache()->getMultiple(['key1', 'key2', 'key3'], 'default');
+cache()->setMultiple(['key1' => 'a', 'key2' => 'b'], 3600);
+cache()->deleteMultiple(['key1', 'key2']);
+
+// Counter operations
+$count = cache()->increment('visits');           // increment(string, int=1): int|false
+$count = cache()->increment('visits', 5);
+$count = cache()->decrement('visits');           // decrement(string, int=1): int|false
+$count = cache()->decrement('visits', 3);
 ```
 
 ---
@@ -418,6 +433,8 @@ fetch('/api/data', {
 });
 ```
 
+If VerifyCsrfToken is unavailable or the session cannot be started, csrf_token() logs the error, emits an HTML comment marker, and returns null.
+
 ### `method($method)`
 
 Generate a hidden input for HTTP method spoofing.
@@ -455,7 +472,7 @@ e(['key' => 'value']);                       // JSON encoded for debugging
 
 ### `raw($value)`
 
-Returns the given value as a plain string, unmodified.
+Returns an empty string for null and unsupported types; casts scalars and Stringable to string; JSON-encodes arrays/objects.
 
 ```php
 // For pre-escaped HTML content
@@ -553,28 +570,32 @@ echo formatDateForHumans(new DateTime('yesterday'));
 - < 7 days: "X gün önce"
 - >= 7 days: "d F Y" format
 
+Future timestamps use the sonra suffix; null/empty input returns an empty string; unparseable strings are returned unchanged.
+
 ---
 
 ## Images
 
-### `webpImage($source, $quality, $removeOld, $fileName, $destinationDir)`
+### `webpImage($source, $quality=75, $removeOld=false, $fileName=null, $destinationDir=files/)`
 
 Convert an image to AVIF or WebP format.
 
 ```php
 // Basic usage
-$newName = webpImage('/path/to/image.jpg');
+$newName = webpImage('uploads/photo.jpg');
 // Returns: 'abc123def456.avif' or 'abc123def456.webp'
 
 // With options
 $newName = webpImage(
-    '/path/to/image.jpg',  // Source file
+    'uploads/photo.jpg',    // Source file
     75,                     // Quality (0-100)
     true,                   // Delete original
     'my-image',             // Output filename (without extension)
     'uploads/'              // Destination directory
 );
 ```
+
+Both source and destination paths are validated by isUnsafeFilesystemPath(); absolute paths and parent-directory traversal are rejected.
 
 **Conversion Priority:**
 1. Tries AVIF first (if `imageavif()` available)
@@ -702,4 +723,5 @@ return [
 | `formatDateForHumans()` | Relative date |
 | `webpImage()` | Image conversion |
 | `getFile()` | File URL |
+| `isUnsafeFilesystemPath()` | Validate filesystem path (rejects absolute and traversal) |
 | `mailto()` | Send email |

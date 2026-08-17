@@ -2,8 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [4.0.0] - 2026-08-17 (yanked)
+
+This release was tagged and reverted in the same day (see commit 501e1c1, which softened the
+AC-71 mass-assignment fix back to a non-breaking deprecation warning). The 4.0.0 bump was
+withdrawn because the change it introduced was not actually breaking — the deprecation
+warning fires on the same code path that previously worked silently, so consumer
+applications did not need a major-version signal. The reverted change lives on as the
+deprecation note in [3.0.2] below; no separate 4.x release was published.
+
+## [3.0.3] - 2026-08-17
+
+Documentation accuracy sweep + dead-config cleanup. Patch release — no API changes, no
+runtime behavior changes. Source-identical to 3.0.2.
+
+### Changed
+- **README.md** — version badge 2.0.0 → 3.0.3 (Total Downloads shield retained — package
+  is published on Packagist),
+  Quick Start now uses `$request->routeParams()['id']` for URL-segment parameters
+  (v3 API split), Sessions → Session (singular), added `composer test` one-liner,
+  Directory Structure now lists `config/logging.php` and `config/security.php`,
+  requirement list trimmed to PHP 8.2+ and PDO.
+- **CHANGELOG.md** — added `[4.0.0] - yanked` record (was missing), fixed intro paragraph,
+  corrected v1.1.0 date (2024 → 2025).
+- **docs/http.md** — `APP_KEY` setup section now warns that the env var must also be
+  mapped into `src/Config/app.php` (`'key' => env('APP_KEY')`) or every cookie operation
+  silently fails; documented `Cookie::set()` queue semantics (cookies are queued, sent
+  by `Response::sendHeaders()`); added `Request::routeParams()` / `setRouteParams()`
+  subsection; documented `setStatusCode()` throws for codes outside `STATUS_TEXTS`;
+  `Response::redirect()` CR/LF + protocol-relative guards; `getScheme()` ignores
+  `X-Forwarded-Proto`; corrected status-text 419 to `Page Expired` (matches
+  `STATUS_TEXTS`); encryption now describes the HMAC-derived enc/mac subkeys correctly.
+- **docs/routing.md** — Resolution Order step 1 corrected: route-parameter DI binding
+  reads **only** from `$request->routeParams()` (not from the legacy merged data);
+  contradiction note rewritten; documented `{param+}` greedy capture, `_method` POST
+  spoofing, `Router::getRequest()`, array-form controller action, `controller_namespace`
+  fallback to `\App\Controllers`.
+- **docs/session.md** — `lottery` removed from example config (dead key); `files` default
+  aligned with configuration.md; added `ageFlashData()` row to API reference; CSRF token
+  example now points at `VerifyCsrfToken` auto-management; `regenerate()` lazy-start
+  behavior documented; flash-lifecycle parenthetical softened for `reflash()`/`keep()`.
+- **docs/configuration.md** — Env `Variable Storage` no longer lists `$_SERVER` as a
+  write target (kept only as read-only BC); added `log_path` row to app.php table;
+  added `file_permission` row to session.php table; `app.key` description corrected
+  (32-byte base64-encoded, not 32-character); `database.log_queries` example aligned
+  to literal `false` (matches table + database.md).
+- **docs/cache.md** — `cache.ttl` scope note corrected (applies to `increment()` /
+  `decrement()` / `RateLimit`, not just RateLimit); `cache.prefix` row removed (key
+  also deleted from `src/Config/cache.php`).
+- **docs/database.md** — `whereRaw()` 3rd boolean joiner documented; `Model::insert()`
+  static helper added; unverifiable version stamps dropped.
+- **docs/helpers.md** — `webpImage()` examples rewritten with relative paths
+  (absolute paths are rejected by `isUnsafeFilesystemPath()`); signature now shows all
+  defaults; `raw()` wording aligned with implementation; `csrf_token()` failure path
+  documented; `route()` `RouteNotFoundException` documented; `getIp()` trusted-proxy
+  precondition documented; `formatDateForHumans()` future-date + invalid-input
+  behavior added; `isUnsafeFilesystemPath()` added to Quick Reference; cache helpers
+  now cover `getMultiple` / `setMultiple` / `increment` / `decrement`.
+- **docs/views.md** — `Always Escape Output` recommends framework `e()` / `attr()`
+  helpers over raw `htmlspecialchars()`; added Pagination View subsection
+  (`app.pagination_view`); documented `layouts.error` view contract used by
+  `ExceptionHandler`; `view()` return-type now references the FQ `Response` class.
+- **docs/logging.md** — Exception JSON example corrected to show Throwable as a JSON
+  object (not a formatted string); Context Value Types table clarifies Throwable
+  formatting applies only to `{key}` placeholders, JSON context keeps the raw
+  Throwable; TOC now includes Best Practices anchor.
+- **docs/middleware.md** — TOC and Validate Post Size placement reconciled;
+  AdminMiddleware example returns the redirect.
+- **docs/authentication.md** — `logout()` step list now has 5 steps (added the
+  remember-token DB revocation step, so a cookie captured before logout cannot
+  re-authenticate).
+
+### Added
+- **docs/foundation.md** (new) — Application boot, `Env::load()`, Config loader,
+  `ExceptionHandler` (4 method tables, full TOC).
+- **docs/exceptions.md** (new) — Catalog of all framework exceptions with their
+  HTTP status mappings (11 method tables, full TOC).
+- **docs/contracts.md** (new) — `CacheInterface` and `AuthenticatableInterface`
+  extension points, with implementation examples (2 method tables, full TOC).
+
+### Removed
+- **src/Config/cache.php** — `cache.prefix` config key (defined but unused by any
+  driver; no application code references it).
+- **src/Config/session.php** — `session.lottery` config key (placeholder for a
+  feature that was never built; no application code references it).
+
+### Changed (config)
+- **src/Config/app.php** — added default `'trusted_proxies' => []` (was previously
+  documented but missing from the file).
+- **composer.json** — removed hand-maintained `"version": "3.0.2"` field; version
+  now lives only in git tags (per Composer convention).
+
+### Tests
+- **tests/Feature/DocsConsistencyTest.php** — AC-1 and AC-31 tests updated to assert
+  the corrected v3 documentation (route-param binding from `$request->routeParams()`
+  only; README mentions current 3.x version).
 
 ## [3.0.2] - 2026-08-17
 
@@ -334,7 +429,7 @@ failure reporting (see "Fixed" below for the bugs they close).
 - `Cookie` memoizes the decoded application key; `LoggedPDOStatement` only
   captures bindings when query logging is enabled.
 
-## [1.1.0] - 2024-12-24
+## [1.1.0] - 2025-12-24
 
 ### Added
 - **Subdirectory Support**: Routes and file URLs now respect `app.path` configuration for subdirectory installations
@@ -349,6 +444,8 @@ failure reporting (see "Fixed" below for the bugs they close).
 - Remember me cookie lifetime now correctly uses days instead of minutes
 - Queued cookies are now properly sent on redirect responses
 - Large file uploads return 413 (Payload Too Large) instead of incorrect CSRF 419 error
+
+> **Note:** 1.2.0 was rolled directly into 1.3.0; no separate 1.2.0 release was published.
 
 ## [1.0.1] - 2025-12-23
 

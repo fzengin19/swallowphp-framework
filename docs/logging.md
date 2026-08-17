@@ -10,6 +10,7 @@ SwallowPHP provides a PSR-3 compliant logging system for application debugging a
 - [Context and Placeholders](#context-and-placeholders)
 - [Exception Logging](#exception-logging)
 - [Log Format](#log-format)
+- [Best Practices](#best-practices)
 
 ---
 
@@ -201,7 +202,7 @@ logger()->info('User {user_id} purchased item {item_id}', [
 | String | Used as-is |
 | Array | Replaced with `[array]` in message, full JSON in context |
 | Object with `__toString` | Converted via `__toString()` |
-| Throwable | Formatted as `[Exception Class: message in file:line]` |
+| Throwable | Formatted as `[Exception Class: message in file:line]` only in `{key}` placeholder interpolation; the JSON context retains the original Throwable object (serialized as a JSON object) |
 | Other objects | Replaced with `[object ClassName]` |
 
 ---
@@ -222,8 +223,10 @@ try {
 
 **Output:**
 ```
-[2024-01-15 10:30:45.123456] production.ERROR: Operation failed {"exception":"[Exception RuntimeException: Database connection failed in /path/to/file.php:42]"}
+[2024-01-15 10:30:45.123456] production.ERROR: Operation failed {"exception":{"class":"RuntimeException","message":"Database connection failed","code":0,"file":"\/path\/to\/file.php","line":42,"trace":"..."}}
 ```
+
+Throwable values in context are emitted as JSON objects, not as formatted strings.
 
 ### Complete Error Logging
 
@@ -266,7 +269,7 @@ try {
 ```
 [2024-01-15 10:30:45.123456] production.INFO: User logged in {"user_id":123}
 [2024-01-15 10:30:46.234567] production.WARNING: Slow query detected {"duration_ms":1500,"sql":"SELECT * FROM users..."}
-[2024-01-15 10:30:47.345678] production.ERROR: Payment failed {"order_id":456,"exception":"[Exception PaymentException: Invalid card in /app/Services/Payment.php:78]"}
+[2024-01-15 10:30:47.345678] production.ERROR: Payment failed {"order_id":456,"exception":{"class":"PaymentException","message":"Invalid card","code":0,"file":"/app/Services/Payment.php","line":78,"trace":"..."}}
 ```
 
 ---

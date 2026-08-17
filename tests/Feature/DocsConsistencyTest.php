@@ -172,8 +172,8 @@ it('AC-1: README mentions PHP 8.2', function () {
     docPregMatch('README.md', '/8\.2/', 1, 'AC-1: README must mention PHP 8.2');
 });
 
-it('AC-1: README mentions v2.0.0', function () {
-    docPregMatch('README.md', '/2\.0\.0/', 1, 'AC-1: README must mention v2.0.0');
+it('AC-1: README mentions current 3.x version', function () {
+    docPregMatch('README.md', '/3\.\d+\.\d+/', 1, 'AC-1: README must mention current 3.x version');
 });
 
 /* ===========================================================================
@@ -1042,22 +1042,17 @@ it('AC-30: docs/cache.md `set()` API example says never expires, not default TTL
  * AC-31 — docs/routing.md: dependency injection source description
  * =========================================================================== */
 
-it('AC-31: docs/routing.md says DI resolves from merged request data, not route params alone', function () {
-    // The pre-fix description named "route parameters" as the source. The
-    // fix narrows it to "the merged request data (route parameters, query
-    // string, and request body)".
+it('AC-31: docs/routing.md says route-param DI binding reads from $request->routeParams() only', function () {
+    // v3 fix: route-parameter dependency-injection binding reads only from
+    // URL-segment route parameters ($request->routeParams()). The legacy merge
+    // into $request->get()/$request->all() still exists for backward
+    // compatibility but should not be relied upon for new code.
     $content = doc('docs/routing.md');
-    expect(stripos($content, 'merged request data') !== false)->toBeTrue(
-        'AC-31: "merged request data" wording must be present'
+    expect(stripos($content, 'routeParams()') !== false)->toBeTrue(
+        'AC-31: docs/routing.md must reference $request->routeParams()'
     );
-    expect(stripos($content, 'route parameters') !== false)->toBeTrue(
-        'AC-31: "route parameters" must still appear (within the merged-data framing)'
-    );
-    expect(stripos($content, 'query string') !== false)->toBeTrue(
-        'AC-31: "query string" must appear in the resolution-source description'
-    );
-    expect(stripos($content, 'request body') !== false)->toBeTrue(
-        'AC-31: "request body" must appear in the resolution-source description'
+    expect(stripos($content, 'URL-segment') !== false)->toBeTrue(
+        'AC-31: docs/routing.md must describe route params as URL-segment'
     );
 });
 
@@ -1070,7 +1065,7 @@ it('AC-31: docs/routing.md says DI resolves from merged request data, not route 
  * assert the SAME list item that names route parameters also names
  * the merged request data, query string, and request body.
  */
-it('AC-31: docs/routing.md Resolution Order list item itself describes the merged data', function () {
+it('AC-31: docs/routing.md Resolution Order list item describes URL-segment-only source', function () {
     $content = doc('docs/routing.md');
     $start = strpos($content, '**Resolution Order:**');
     expect($start)->toBeGreaterThan(0, 'AC-31: Resolution Order list must exist');
@@ -1100,14 +1095,13 @@ it('AC-31: docs/routing.md Resolution Order list item itself describes the merge
     }
     expect(trim($firstItem))->not->toBeEmpty('AC-31: Resolution Order list item #1 must exist');
 
-    expect(stripos($firstItem, 'merged request data') !== false)->toBeTrue(
-        'AC-31: Resolution Order list item #1 must reference the merged request data'
+    // v3 fix: route-parameter binding reads only from URL-segment route
+    // parameters via $request->routeParams(). The list item must reflect that.
+    expect(stripos($firstItem, 'routeParams()') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must reference $request->routeParams()'
     );
-    expect(stripos($firstItem, 'query string') !== false)->toBeTrue(
-        'AC-31: Resolution Order list item #1 must mention the query string'
-    );
-    expect(stripos($firstItem, 'request body') !== false)->toBeTrue(
-        'AC-31: Resolution Order list item #1 must mention the request body'
+    expect(stripos($firstItem, 'URL-segment') !== false)->toBeTrue(
+        'AC-31: Resolution Order list item #1 must describe the source as URL-segment route parameters'
     );
 });
 

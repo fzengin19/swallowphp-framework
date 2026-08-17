@@ -183,6 +183,8 @@ $orders = db()->table('orders')
     ->get();
 ```
 
+Optional 3rd argument is the boolean joiner (default AND; use OR for disjunctions).
+
 #### Null Predicates
 
 `where(col, null)` / `where(col, '=', null)` is translated to `IS NULL` —
@@ -200,7 +202,7 @@ $rows = db()->table('users')->where('deleted_at', null)->get();
 $rows = db()->table('users')->where('deleted_at', '!=', null)->get();
 // SQL: WHERE `deleted_at` IS NOT NULL
 
-// Explicit helpers (available since v1.3.0)
+// Explicit helpers
 $rows = db()->table('users')->whereNull('deleted_at')->get();
 // SQL: WHERE `deleted_at` IS NULL
 
@@ -266,6 +268,21 @@ if ($id !== false) {
 }
 ```
 
+#### `Model::insert()` Static Helper
+
+```php
+// Bypass fillable/guarded and model events — use for trusted bulk inserts only
+$id = User::insert([
+    'name' => 'John Doe',
+    'email' => 'john@example.com',
+]);
+```
+
+`Model::insert(array $data): int|false` performs a raw insert against the
+model's table, bypassing `$fillable`/`$guarded` mass-assignment checks and
+firing no model events. Use for trusted bulk inserts only——untrusted input
+must still go through `create()` or `save()` so the safety checks apply.
+
 ### Updates
 
 ```php
@@ -299,12 +316,12 @@ echo "{$affectedRows} rows deleted";
 ```
 
 > [!IMPORTANT]
-> **Breaking Change (v2.0.0):** As of v2.0.0, `delete()` throws
-> `\RuntimeException` when called without a `where(...)` condition (one that
-> actually renders a predicate). This guard prevents an accidental
-> `DELETE FROM <table>` with no `WHERE` from silently wiping a table — for
-> example, a forgotten `where('id', $id)` would otherwise delete every row.
-> For the explicit "wipe the table" case, use `deleteAll()`:
+> **Breaking Change:** `delete()` throws `\RuntimeException` when called
+> without a `where(...)` condition (one that actually renders a predicate).
+> This guard prevents an accidental `DELETE FROM <table>` with no `WHERE`
+> from silently wiping a table — for example, a forgotten `where('id', $id)`
+> would otherwise delete every row. For the explicit "wipe the table" case,
+> use `deleteAll()`:
 
 ```php
 // Explicit, intentional "delete every row" — opt-in only

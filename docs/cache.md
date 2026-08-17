@@ -51,7 +51,7 @@ return [
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `default` | string | `'file'` | Default driver name |
-| `ttl` | int | `3600` | Default TTL in seconds |
+| `ttl` | int | `3600` | Rate-limit window / counter TTL (seconds) — not applied as default for set() |
 | `stores.file.path` | string | - | Path to cache JSON file |
 | `stores.file.max_size` | int | `52428800` | Maximum file size (50MB) |
 | `stores.sqlite.path` | string | - | Path to SQLite database |
@@ -99,12 +99,7 @@ cache()->delete('user:123');
 cache()->clear();
 ```
 
-> **Note on TTL.** Omitting the TTL argument (or passing `null`) means the
-> cached value **never expires** — there is no separate "default TTL"
-> number applied automatically. To get a finite TTL, always pass an explicit
-> integer (seconds) or `DateInterval`. The `cache.ttl` config value is only
-> used by back-end operations that explicitly reference it (e.g. the
-> `RateLimit` middleware's default window), not by `set()` itself.
+> **Note on TTL.** The cache.ttl config value is applied by increment()/decrement() as the TTL for newly-created counters, and by the RateLimit middleware as the window length. set() ignores it (always uses the TTL passed by the caller).
 
 ### Using CacheManager Facade
 

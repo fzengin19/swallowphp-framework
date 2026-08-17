@@ -7,7 +7,9 @@ SwallowPHP provides a simple, PHP-based templating system for rendering HTML pag
 - [Basic Usage](#basic-usage)
 - [Passing Data](#passing-data)
 - [Layouts](#layouts)
+  - [Error Layout](#error-layout)
 - [View Resolution](#view-resolution)
+  - [Pagination View](#pagination-view)
 - [HTML Minification](#html-minification)
 
 ---
@@ -95,6 +97,10 @@ Use `htmlspecialchars()` to prevent XSS:
 <p><?= $userInput ?></p>
 ```
 
+Prefer the framework helpers `e($value)` (HTML-escape) and `attr($value)`
+(attribute-escape) over raw `htmlspecialchars()` — they handle null/array
+and follow the framework escape conventions.
+
 ---
 
 ## Layouts
@@ -166,6 +172,12 @@ return view('users.profile', [
 
 Both `users/profile.php` and `layouts/main.php` can access `$user` and `$title`.
 
+### Error Layout
+
+The framework error pages call `view()` with `errors.{statusCode}`, `data`,
+`layouts.error` — provide a `layouts.error` view with slots `statusCode`,
+`statusText`, `message`, `debug` to customize error rendering.
+
 ---
 
 ## View Resolution
@@ -188,6 +200,16 @@ Set the view path in `config/app.php`:
 ### View Not Found
 
 If a view is not found, `ViewNotFoundException` is thrown (HTTP 404).
+
+### Pagination View
+
+Set `app.pagination_view` to a view name (e.g. `components.pagination`) to
+override the default; the framework renders this view with `$paginator`.
+
+```php
+// config/app.php
+'pagination_view' => 'components.pagination',
+```
 
 ---
 
@@ -421,5 +443,7 @@ view(
 | `$status` | int | `200` | HTTP response status code |
 
 **Returns:** `Response` object
+
+Always use the framework `Response` class when typing the return.
 
 **Throws:** `ViewNotFoundException` if view or layout not found

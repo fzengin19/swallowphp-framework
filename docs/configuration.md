@@ -67,7 +67,8 @@ The `Env` class (`SwallowPHP\Framework\Foundation\Env`) handles environment load
 4. **Variable Storage**: Values are stored in:
    - `putenv()` - for `getenv()` access
    - `$_ENV` superglobal
-   - `$_SERVER` superglobal
+
+> `env()` consults `$_SERVER` read-only for BC; the loader does not write to it.
 
 ### Accessing Environment Variables
 
@@ -203,7 +204,7 @@ Main application configuration.
 | `path` | string | `''` | Subdirectory path for installations not at domain root (e.g., `/myapp`). When set, all generated route URLs and file URLs will include this prefix. |
 | `timezone` | string | `'UTC'` | PHP timezone |
 | `locale` | string | `'en'` | Application locale |
-| `key` | string | `null` | **Required**. 32-character encryption key |
+| `key` | string | `null` | **Required**. 32-byte (256-bit) base64-encoded encryption key |
 | `cipher` | string | `'AES-256-CBC'` | Encryption cipher for cookies |
 | `storage_path` | string | `null` | Path to storage directory |
 | `view_path` | string | `null` | Path to views directory |
@@ -213,6 +214,7 @@ Main application configuration.
 | `ssl_redirect` | bool | `false` | Force HTTPS redirect |
 | `gzip_compression` | bool | `true` | Enable zlib output compression |
 | `error_reporting_level` | int | `E_ALL` | PHP error reporting level |
+| `log_path` | string | `null` | Path to the log file |
 | `minify_html` | bool | `false` | Enable HTML minification for views |
 | `trusted_proxies` | array | `[]` | List of proxy IPs whose forwarded headers (`X-Forwarded-For`, `Client-IP`, ...) are honored by `Request::getClientIp()`. Use `['*']` to trust all proxies. If unset / empty, only `REMOTE_ADDR` is consulted. **Action required for proxied/load-balanced deployments**: configure this or the client IP will resolve to the proxy's address and features keying off the IP (Auth brute-force lockout, rate limiter, audit logs) will misbehave. |
 
@@ -305,7 +307,7 @@ return [
         ],
     ],
     
-    'log_queries' => env('APP_DEBUG', false),
+    'log_queries' => false,
     'slow_threshold_ms' => 500,
 ];
 ```
@@ -328,6 +330,7 @@ Session configuration.
 | `secure` | bool\|null | `null` | HTTPS only (auto-detected; `null` auto-detects from the request) |
 | `http_only` | bool | `true` | HTTP only access |
 | `same_site` | string | `'Lax'` | SameSite policy (Lax, Strict, None) |
+| `file_permission` | int | `0600` | File permissions for session files |
 
 The following keys are accepted in `config/session.php` but **not currently consumed by any driver** in the framework — they are reserved for a future database-backed driver and have no runtime effect today:
 

@@ -30,7 +30,7 @@ return [
     'expire_on_close' => false,
     
     // File storage path (for 'file' driver)
-    'files' => 'framework/sessions',  // Relative to storage_path
+    'files' => BASE_PATH . '/stored/sessions',
     
     // File permissions (for 'file' driver)
     'file_permission' => 0600,
@@ -42,9 +42,6 @@ return [
     'secure' => env('SESSION_SECURE', null),  // Auto-detect if null
     'http_only' => true,
     'same_site' => 'Lax',  // 'Strict', 'Lax', or 'None'
-    
-    // Garbage collection lottery (1 in X chance)
-    'lottery' => [2, 100],
 ];
 ```
 
@@ -212,7 +209,9 @@ session()->keep(['success', 'warning']);
 3. **Request N+2:** `ageFlashData()` runs again — the very first step is to
    remove `_flash.old` (which is what finally discards the data aged in
    step 2), then it would move whatever is in `_flash.new` (nothing in
-   the plain `flash()` flow) into `_flash.old`, and clear `_flash.new`.
+   the plain `flash()` flow, unless the prior request ended with
+   `reflash()` or `keep()` — these promote old flash into the new bucket)
+   into `_flash.old`, and clear `_flash.new`.
    `session()->getFlash('success')` now returns `null`.
 
 ---
@@ -236,6 +235,8 @@ session()->regenerate(false);
 - After privilege level changes
 - Periodically for long sessions
 
+**Lazy start:** `regenerate()` will lazily start the session if it is not active; on failure (e.g. headers already sent), it returns `false` and logs a warning.
+
 ### Session Destruction
 
 Completely destroy the session:
@@ -255,8 +256,7 @@ session()->destroy();
 Store sensitive tokens in the session:
 
 ```php
-// CSRF token (handled automatically)
-$_SESSION['_token'] = bin2hex(random_bytes(32));
+// CSRF tokens are managed automatically by VerifyCsrfToken (applied globally by App::run); you do not need to set or rotate them manually.
 
 // Custom tokens
 session()->put('2fa_verified', true);
@@ -383,5 +383,6 @@ session()->remove('cart');
 | `hasFlash($key)` | bool | Check if flash key exists |
 | `reflash()` | void | Keep all flash data |
 | `keep($keys)` | void | Keep specific flash keys |
+| `ageFlashData()` | void | Age flash data (called once per request by start()) |
 | `regenerate($delete)` | bool | Regenerate session ID |
 | `destroy()` | bool | Destroy the session |

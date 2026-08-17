@@ -41,6 +41,8 @@ public function store(Request $request)
 }
 ```
 
+Requests are built via the static `Request::createFromGlobals()` factory (the constructor is protected).
+
 ### Accessing Input Data
 
 #### Get a Single Value
@@ -100,6 +102,8 @@ $scheme = $request->getScheme();
 // Host name
 $host = $request->getHost();  // example.com
 
+// Note: getScheme() reads SERVER HTTPS and SERVER_PORT only — it does NOT honor X-Forwarded-Proto. Behind a TLS-terminating proxy, configure app.trusted_proxies and consult the proxy header upstream.
+
 // Full URL
 $fullUrl = $request->fullUrl();  // https://example.com/users?page=2
 
@@ -112,6 +116,16 @@ $ip = getIp();  // 192.168.1.1 (uses the framework's helper; see Request::getCli
 
 // Raw request body
 $raw = $request->rawInput();
+```
+
+#### Route Parameters
+
+```php
+// URL-segment route parameters (set by Router during dispatch)
+$params = $request->routeParams();  // array
+
+// Override (used by the Router; rarely needed in application code)
+$request->setRouteParams(['id' => 42]);
 ```
 
 ### Headers
@@ -209,10 +223,12 @@ $code = $response->getStatusCode();
 // 200 OK, 201 Created, 204 No Content
 // 301 Moved Permanently, 302 Found, 304 Not Modified
 // 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found
-// 413 Payload Too Large, 419 CSRF Token Mismatch, 429 Too Many Requests
+// 413 Payload Too Large, 419 Page Expired, 429 Too Many Requests
 // 500 Internal Server Error, 503 Service Unavailable
 // ... and many more
 ```
+
+> Throws `InvalidArgumentException` for codes not in `Response::STATUS_TEXTS` (pass an explicit text as the 2nd arg to override).
 
 #### Set Headers
 
@@ -286,6 +302,8 @@ return Response::redirect('/login', 302, [
 ]);
 ```
 
+> `redirect()` rejects targets containing CR/LF or starting with `//`; out-of-range status codes are clamped to 302.
+
 ### Default Security Headers
 
 Responses automatically include these security headers:
@@ -327,6 +345,8 @@ Cookie::set(
 );
 ```
 
+`Cookie::set()` only queues the cookie into the response. The cookie is sent when `Response::sendHeaders()` runs (or when the response is returned from a controller).
+
 ### Cookie Parameters
 
 | Parameter | Type | Default | Description |
@@ -336,7 +356,7 @@ Cookie::set(
 | `days` | int | `0` | Days until expiration (0 = session) |
 | `path` | string | `'/'` | Cookie path |
 | `domain` | string | `null` | Cookie domain |
-| `secure` | bool | auto | HTTPS only |
+| `secure` | bool | `null` (production-aware fallback in SessionManager; not used by Cookie::set() directly) | HTTPS only |
 | `httpOnly` | bool | `true` | JavaScript inaccessible |
 | `sameSite` | string | `'Lax'` | SameSite policy |
 
@@ -373,7 +393,7 @@ All cookie values are encrypted using AES-256-CBC:
 
 1. Value is JSON encoded
 2. Random 16-byte IV generated
-3. Encrypted with `APP_KEY`
+3. Two 32-byte subkeys are HMAC-SHA256-derived from `APP_KEY`; the value is encrypted with the enc subkey via AES-256-CBC and signed with the mac subkey.
 4. HMAC-SHA256 signature appended
 5. Base64 encoded
 
@@ -385,6 +405,8 @@ You must set a 32-byte `APP_KEY` in your `.env`:
 # Generate with: php -r "echo 'base64:' . base64_encode(random_bytes(32));"
 APP_KEY=base64:your-32-byte-key-here
 ```
+
+> Without a config map, every cookie operation silently fails. In `src/Config/app.php` add a line mapping the env var into the config key.
 
 #### Secure Prefix
 
@@ -507,7 +529,7 @@ Auth::logout();
 | `getScheme()` | string | Get scheme (http/https) |
 | `getHost()` | string | Get host name |
 | `fullUrl()` | string | Get full URL |
-| `getClientIp()` | string\|null | Get client IP |
+| `Request::getClientIp()` (static) | string\|null | Get client IP |
 | `rawInput()` | string | Get raw body |
 | `server($key, $default)` | mixed | Get server variable |
 

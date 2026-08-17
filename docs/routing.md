@@ -94,6 +94,18 @@ Router::get('/categories/{category}/posts/{post}', function (Request $request) {
 });
 ```
 
+### Greedy Capture
+
+Use `{param+}` to capture a segment that may itself contain `/`. The value is everything after the prefix up to the next query string:
+
+```php
+Router::get('/files/{path+}', function (Request $request) {
+    $path = $request->routeParams()['path'] ?? '';
+    // /files/a/b/c  ->  path = 'a/b/c'
+    return "File: {$path}";
+});
+```
+
 ### Accessing Route Parameters
 
 Route parameters are merged into the request object and can be accessed via:
@@ -110,7 +122,7 @@ public function show(Request $request)
 }
 ```
 
-**Note:** Route parameters automatically override any query or body parameters with the same name.
+**Note:** When read via `$request->get('id')` or `$request->all()`, route parameters take precedence over query/body values due to a legacy merge in `Router::dispatch()`. For new code, read URL parameters via `$request->routeParams()['id']`.
 
 ---
 
@@ -209,6 +221,8 @@ Configure the controller namespace in `config/app.php`:
 'controller_namespace' => '\\App\\Controllers',
 ```
 
+The framework default is `null`; `Route::executeAction()` falls back to `App/Controllers` when this key is unset.
+
 When using controller string notation without a fully qualified name, this namespace is prepended:
 
 ```php
@@ -236,10 +250,7 @@ public function store(Request $request, LoggerInterface $logger)
 ```
 
 **Resolution Order:**
-1. Route parameter name match (e.g., `$id` matches `{id}`) — values are read
-   from the **merged request data** (route parameters, query string, and
-   request body), not from route parameters alone. Route parameters are
-   merged into the request by the router before `execute()` runs.
+1. Route parameter name match (e.g. `$id` matches `{id}`) — values are read from URL-segment route parameters only (`$request->routeParams()`). The legacy merge into `get()`/`all()` still exists but should not be relied upon for new code.
 2. `Request` type-hint → current request object
 3. Type-hint exists in container → resolved from container
 4. Has default value → uses default
@@ -322,6 +333,25 @@ Middleware forms an "onion" around the route action:
 
 ---
 
+## Method Spoofing
+
+HTML forms cannot send `PUT`, `PATCH`, or `DELETE`. The framework honors a hidden `_method` POST field, supplied by `Request::getMethod()`, to override the HTTP method:
+
+```html
+<form method="POST" action="/users/1">
+    <input type="hidden" name="_method" value="DELETE">
+    <button type="submit">Delete</button>
+</form>
+```
+
+```php
+Router::delete('/users/{id}', [UserController::class, 'destroy']);
+```
+
+When the form above is submitted, the request is dispatched as `DELETE /users/1`.
+
+---
+
 ## Rate Limiting
 
 Protect routes from excessive requests using rate limiting.
@@ -333,7 +363,7 @@ Protect routes from excessive requests using rate limiting.
 Router::get('/api/users', [ApiController::class, 'users'])
     ->limit(100, 60);
 
-// 10 requests with default TTL (from cache.ttl config)
+// 10 requests with default TTL (cache.ttl config; falls back to 60 seconds)
 Router::post('/api/login', [AuthController::class, 'login'])
     ->limit(10);
 ```
@@ -481,5 +511,17 @@ if ($currentRoute) {
     $name = $currentRoute->getName();
     $uri = $currentRoute->getUri();
     $method = $currentRoute->getMethod();
+}
+```
+
+### Accessing the Current Request
+
+`Router::getRequest()` returns the `Request` that is currently being dispatched. It is identical to the value provided via the `Request` type-hint in controller actions:
+
+```php
+$request = Router::getRequest();
+
+if ($request && $request->getMethod() === 'POST') {
+    // ...
 }
 ```

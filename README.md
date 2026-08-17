@@ -4,7 +4,7 @@ A lightweight, modern PHP framework designed for simplicity and rapid developmen
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-blue.svg)](https://php.net)
-[![Version](https://img.shields.io/badge/Version-2.0.0-orange.svg)](https://github.com/swallowphp/framework)
+[![Version](https://img.shields.io/badge/Version-3.0.3-orange.svg)](https://github.com/fzengin19/swallowphp-framework)
 [![Total Downloads](https://img.shields.io/packagist/dt/swallowphp/framework.svg)](https://packagist.org/packages/swallowphp/framework)
 
 ## Features
@@ -24,8 +24,6 @@ A lightweight, modern PHP framework designed for simplicity and rapid developmen
 
 - PHP 8.2 or higher
 - PDO extension (for database)
-- JSON extension
-- mbstring extension
 
 ## Installation
 
@@ -34,6 +32,8 @@ Install via Composer:
 ```bash
 composer require swallowphp/framework
 ```
+
+Running tests: `composer test` (Pest)
 
 ## Quick Start
 
@@ -113,7 +113,8 @@ Router::get('/', function () {
 
 // Route with parameter
 Router::get('/users/{id}', function (Request $request) {
-    return 'User ID: ' . $request->get('id');
+    // v3 API: route parameters live on a dedicated accessor (no longer in get())
+    return 'User ID: ' . $request->routeParams()['id'];
 })->name('users.show');
 
 // Controller route
@@ -208,7 +209,9 @@ your-project/
 │   ├── database.php
 │   ├── auth.php
 │   ├── session.php
-│   └── cache.php
+│   ├── cache.php
+│   ├── logging.php
+│   └── security.php
 ├── public/
 │   └── index.php
 ├── resources/
@@ -234,7 +237,7 @@ Detailed documentation is available in the `docs/` directory:
 - [Helpers](docs/helpers.md) - Global helper functions
 - [HTTP](docs/http.md) - Request, Response, and Cookies
 - [Views](docs/views.md) - View rendering and layouts
-- [Sessions](docs/session.md) - Session management
+- [Session](docs/session.md) - Session management
 - [Cache](docs/cache.md) - Caching system
 - [Logging](docs/logging.md) - Application logging
 - [Middleware](docs/middleware.md) - Custom middleware

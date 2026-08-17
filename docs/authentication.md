@@ -218,6 +218,7 @@ redirectToRoute('login');
 2. Regenerates session ID (security)
 3. Deletes "remember me" cookie
 4. Clears cached user instance
+5. Revokes the remember-me token in the database (sets remember_token to NULL via unconditional UPDATE) — so a cookie captured before logout cannot re-authenticate.
 
 ---
 

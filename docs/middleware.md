@@ -100,9 +100,9 @@ class AdminMiddleware extends Middleware
         
         if (!$user || !$user->is_admin) {
             session()->flash('error', 'Access denied.');
-            redirectToRoute('home');
+            return redirectToRoute('home');
         }
-        
+
         return $next($request);
     }
 }
@@ -420,16 +420,6 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 
 ---
 
-## Middleware Best Practices
-
-1. **Keep middleware focused** - Each middleware should do one thing
-2. **Order matters** - Place auth middleware before role-checking middleware
-3. **Avoid database calls** - Keep middleware fast; defer heavy logic to controllers
-4. **Use early returns** - Terminate early if conditions aren't met
-5. **Log appropriately** - Use debug/info levels, not warning/error for normal flow
-
----
-
 ### Validate Post Size
 
 **Class:** `SwallowPHP\Framework\Http\Middleware\ValidatePostSize`
@@ -493,3 +483,14 @@ requests are rendered through the view fallback chain in
 `ExceptionHandler::render()`: first `errors.413` is attempted, then
 `errors.default` if the status-specific view is missing, and finally a
 plain-HTML error page if neither view is found.
+
+---
+
+## Middleware Best Practices
+
+1. **Keep middleware focused** - Each middleware should do one thing
+2. **Order matters** - Place auth middleware before role-checking middleware
+3. **Avoid database calls** - Keep middleware fast; defer heavy logic to controllers
+4. **Use early returns** - Terminate early if conditions aren't met
+5. **Log appropriately** - Use debug/info levels, not warning/error for normal flow
+

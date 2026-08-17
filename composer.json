@@ -1,6 +1,5 @@
 {
     "name": "swallowphp/framework",
-    "version": "3.0.2",
     "description": "Swallow PHP framework",
     "type": "library",
     "keywords": [

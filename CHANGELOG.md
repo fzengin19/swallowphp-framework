@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-08-17
+
+Three critical fixes from a fresh, lightweight pentest scan across previously-unaudited
+areas of the framework (Routing, Auth, Database, Views, file handling, HTTP layer).
+Bugfix/stabilization scope — one of the three fixes is a genuine breaking change to a
+default (see below), which is why this is a major version bump under this project's
+strict SemVer convention.
+
+### Action required
+- **`Model`'s mass-assignment default has flipped from open to closed.** Previously, a
+  `Model` subclass that didn't declare `$fillable` accepted every attribute except
+  `$guarded` (`['id']` by default) via `fill()`, `create()`, and direct property
+  assignment (`$model->x = y`). This was a mass-assignment vulnerability — any subclass
+  that forgot to declare `$fillable` was silently wide open. **Every existing `Model`
+  subclass in your application that relies on this old, undeclared-`$fillable` default
+  must now explicitly declare `protected array $fillable = [...]` listing the columns
+  it intends to allow mass assignment on** — otherwise `fill()`/`create()`/direct
+  property assignment will silently accept nothing. This does not affect any model that
+  already declares `$fillable` explicitly (the normal, recommended pattern).
+
+### Fixed
+- `Response::redirect()` now rejects a protocol-relative (`//host/...`) target and a
+  target containing an embedded CR/LF, closing an open-redirect/phishing vector, while
+  still allowing legitimate external redirects (OAuth callbacks, payment gateway
+  returns, etc.) via an explicit scheme.
+- `view()`/layout resolution now confines the resolved file path to its configured base
+  directory via `realpath()`, closing a latent (symlink-reachable) local-file-inclusion
+  gap that was previously safe only by coincidence of the view-name-to-path transform,
+  not by an explicit, robust guard.
+
+### Added
+- `tests/Feature/PentestFixesTest.php` — regression suite for the 3 fixes above.
+
 ## [3.0.1] - 2026-08-14
 
 Continuation of the correctness/security hardening series: a fresh comprehensive

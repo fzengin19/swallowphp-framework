@@ -116,9 +116,14 @@ class Model
     public function __set(string $key, $value): void
     {
         // Use correct logical AND operator '&&'
-        if ((in_array($key, $this->fillable) || empty($this->fillable)) && !in_array($key, $this->guarded)) {
+        // AC-71: empty $fillable means NOTHING is mass-assignable by default
+        // (explicit opt-in required). An empty array is NOT a wildcard
+        // "everything but guarded" any more — the old default was a
+        // classic forgot-to-set-$fillable vulnerability exposing every
+        // column on a new model through both fill() AND __set().
+        if (in_array($key, $this->fillable, true) && !in_array($key, $this->guarded, true)) {
             $this->attributes[$key] = $value;
-        } elseif (in_array($key, $this->guarded)) {
+        } elseif (in_array($key, $this->guarded, true)) {
             throw new InvalidArgumentException("Attribute '{$key}' is protected and cannot be set directly.");
         }
     }
@@ -399,7 +404,12 @@ class Model
     {
         foreach ($data as $key => $value) {
             // Use correct logical AND operator '&&'
-            if ((in_array($key, $this->fillable) || empty($this->fillable)) && !in_array($key, $this->guarded)) {
+            // AC-71: empty $fillable means NOTHING is mass-assignable by default.
+            // See __set() docblock for the rationale; this guard is the
+            // identical-condition twin of the magic-setter guard and must
+            // stay in lock-step with it (test 2 in PentestFixesTest binds
+            // the two-method symmetry explicitly).
+            if (in_array($key, $this->fillable, true) && !in_array($key, $this->guarded, true)) {
                 $this->attributes[$key] = $value;
             }
         }

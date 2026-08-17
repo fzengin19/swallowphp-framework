@@ -223,9 +223,37 @@ class Response
         return new static($content, $status, $headers);
     }
 
-     /** Create a new redirect response. */
+     /**
+      * Create a new redirect response.
+      *
+      * Guards (AC-72):
+      *   - CRLF in $url: rejected (header-injection defense-in-depth;
+      *     PHP's header() already rejects this since 5.1.2, but closing
+      *     it at this layer costs nothing and removes the footgun if a
+      *     caller ever swaps in a different emission path).
+      *   - Protocol-relative target (`//host/...`): rejected. Browsers
+      *     resolve Location: //evil.example.com to the same scheme as
+      *     the current page, making this a classic open-redirect /
+      *     phishing vector; no legitimate application intent starts
+      *     with `//`. Applications that genuinely want to redirect
+      *     externally can prepend an explicit scheme (e.g.
+      *     "https://" . ltrim($target, '/')).
+      *
+      * NOT in scope: same-origin/allowlist policy (an application-level
+      * decision — this is a general-purpose helper meant to support
+      * legitimate external redirects like OAuth callbacks / payment
+      * returns); NUL-byte check (no HTTP-header truncation/injection
+      * semantics — distinct from the filesystem-path NUL check in
+      * isUnsafeFilesystemPath()).
+      */
      public static function redirect(string $url, int $status = 302, array $headers = []): static
      {
+         if (str_contains($url, "\r") || str_contains($url, "\n")) {
+             throw new \InvalidArgumentException("Redirect target contains a CR/LF character.");
+         }
+         if (str_starts_with($url, '//')) {
+             throw new \InvalidArgumentException("Redirect target is protocol-relative (starts with '//'); prepend an explicit scheme if an external redirect is intended.");
+         }
          if ($status < 300 || $status > 308) { $status = 302; }
          $response = new static('', $status, $headers);
          $response->header('Location', $url);

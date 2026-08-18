@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2] - 2026-08-18
+
+Patch release. One silent runtime defect in the debugbar timeline
+panel that has been present since 3.1.0 introduced the
+`DebugbarServiceProvider` — surfaced by a real request where the
+"Request" duration read `1.787e9 s` (i.e. the current Unix timestamp)
+instead of the actual request wall-clock duration.
+
+### Fixed
+- **`src/Foundation/DebugbarServiceProvider.php`** — `TimeDataCollector`
+  is now constructed with no positional argument. The previous
+  `new TimeDataCollector('time')` passed the string `'time'` as the
+  collector's *first constructor parameter*, which is
+  `$requestStartTime` (float), not the collector name. PHP cast
+  `(float)'time'` to `0.0`, so the collector's stored request start
+  was the Unix epoch. `getRequestDuration()` then returned
+  `microtime(true) - 0` ≈ current Unix timestamp, which the timeline
+  panel rendered as a `~1.78e9 s` "Request" measure.
+
+  The collector name `time` comes from `TimeDataCollector::getName()`
+  and is honoured by `DebugBar::addCollector()` regardless of
+  constructor args. With no constructor argument the collector falls
+  back to `$_SERVER['REQUEST_TIME_FLOAT']` (then `microtime(true)`),
+  which is what the timeline panel needs.
+
+  None of the other collectors in the provider were affected:
+  `MessagesCollector` *does* accept a name in its constructor,
+  `MemoryCollector` / `PhpInfoCollector` / `RequestDataCollector` have
+  no constructor and `getName()` returns the default string — extra
+  positional args are silently discarded.
+
+### Added
+- **`tests/Feature/TimeDataCollectorConstructorTest.php`** (new) —
+  three tests pinning the fix: a source-shape test that forbids
+  `new TimeDataCollector('time')` from reappearing; a behavioural
+  test that constructs the collector the same way the framework now
+  does, runs `collect()`, and asserts the duration is sub-second
+  rather than ~1.78e9; and a documenting test that confirms the
+  legacy broken form really does collapse to `requestStartTime = 0`,
+  so any future revert would be caught immediately.
+
 ## [3.1.1] - 2026-08-18
 
 Patch release. Two defensive fixes in `App::run()`'s "early" exception

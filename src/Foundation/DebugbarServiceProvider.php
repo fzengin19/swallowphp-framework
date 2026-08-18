@@ -51,7 +51,18 @@ class DebugbarServiceProvider extends AbstractServiceProvider
             $debugbar = new DebugBar();
 
             // Built-in collectors that need no framework-specific wiring.
-            $debugbar->addCollector(new TimeDataCollector('time'));
+            //
+            // TimeDataCollector::__construct's first positional argument is
+            // $requestStartTime (float), NOT a collector name — passing the
+            // string 'time' here would set $requestStartTime = (float)'time'
+            // = 0.0 and make getRequestDuration() return microtime(true) - 0
+            // ≈ current Unix timestamp (rendered as a ~1.78e9s "Request"
+            // duration in the timeline panel). The collector name 'time'
+            // comes from TimeDataCollector::getName() and is honoured by
+            // DebugBar::addCollector() regardless of constructor args.
+            // The default constructor falls back to $_SERVER['REQUEST_TIME_FLOAT']
+            // (then microtime(true)) which is what we actually want.
+            $debugbar->addCollector(new TimeDataCollector());
             $debugbar->addCollector(new MemoryCollector('memory'));
             $debugbar->addCollector(new PhpInfoCollector('php'));
             $debugbar->addCollector(new RequestDataCollector('request'));

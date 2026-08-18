@@ -250,9 +250,9 @@ Database connection configuration.
 |-----|------|---------|-------------|
 | `default` | string | `'mysql'` | Default connection name |
 | `connections` | array | - | Connection configurations |
-| `log_queries` | bool | `false` | Log all queries |
-| `slow_threshold_ms` | int | `500` | Slow query threshold (ms) |
-| `log_bindings` | bool | `true` | Include bindings in query logs |
+| `log_queries` | bool | `false` | **Deprecated** — no-op since v3.1.0. Use the debugbar (`app.debug=true`) SQL panel instead. |
+| `slow_threshold_ms` | int | `500` | **Deprecated** — no-op since v3.1.0. |
+| `log_bindings` | bool | `true` | **Deprecated** — no-op since v3.1.0. |
 
 > **Note on connection fields.** The connection layer (`src/Database/Database.php`) reads only `driver`, `host`, `port`, `database`, `username`, `password`, `charset`, and `options`. The fields `unix_socket`, `collation`, `prefix`, `strict`, and `engine` are accepted in the connection config but **not currently consumed by the connection layer** — they have no runtime effect on how the connection is opened or used.
 

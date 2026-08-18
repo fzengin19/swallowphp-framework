@@ -691,6 +691,48 @@ return [
 
 ---
 
+## Debugging
+
+### `debugbar()`
+
+Resolve the active [DebugBar](https://github.com/php-debugbar/php-debugbar) instance, or `null` when the debugbar is disabled. The framework wires six built-in panels when `app.debug` is `true`:
+
+| Panel | Shows |
+|---|---|
+| `time` | Timeline with `startMeasure` / `stopMeasure` markers |
+| `memory` | Peak memory usage |
+| `php` | PHP version, loaded extensions, php.ini values |
+| `request` | `$_SERVER`, `$_GET`, `$_POST` snapshot |
+| `config` | Application config snapshot at debugbar init time |
+| `pdo` | Every SQL statement with bindings + caller backtrace |
+| `messages` | Every `Psr\Log` call (mirrored automatically) |
+
+Enable by setting `app.debug` to `true`:
+
+```php
+// config/app.php
+return [
+    'debug' => true,
+    // …
+];
+```
+
+The helper is safe to call unconditionally — it returns `null` when the debugbar is disabled or the framework has not yet bootstrapped (so `App::run()` is not required up front):
+
+```php
+// In a layout, render only when active:
+<?php if (debugbar()): ?>
+    <?= debugbar()->renderHead() ?>
+    <?= debugbar()->render() ?>
+<?php endif; ?>
+```
+
+The framework does **not** auto-inject the rendered HTML into responses. Adding `<?= debugbar()->render() ?>` to your layout is the explicit choice; the opt-in is yours.
+
+**Returns:** `DebugBar\DebugBar|null`
+
+---
+
 ## Quick Reference
 
 | Function | Purpose |
@@ -725,3 +767,4 @@ return [
 | `getFile()` | File URL |
 | `isUnsafeFilesystemPath()` | Validate filesystem path (rejects absolute and traversal) |
 | `mailto()` | Send email |
+| `debugbar()` | Get active DebugBar instance (or `null` when `app.debug=false`) |

@@ -268,8 +268,19 @@ class Route
     foreach ($pipeline as $middleware) {
       // Middleware'i işleyiciye bağla
       $handler = function ($request) use ($middleware, $handler) {
-        // Middleware'in handle metodunu çağır ve sonucu işleyiciye aktar
-        return $middleware->handle($request, $handler);
+        // Framework-level timing around the middleware's handle() call. We
+        // do NOT rely on Middleware::handle() (base class) to do this: a
+        // subclass that overrides handle() and forgets parent::handle()
+        // would silently drop its timeline marker, which is exactly the
+        // bug we caught while wiring the debugbar. By wrapping here, the
+        // marker is recorded no matter how the user's handle() is shaped.
+        $name = 'middleware.' . $middleware::class;
+        \SwallowPHP\Framework\Support\DebugbarTiming::startMeasure($name, $name);
+        try {
+          return $middleware->handle($request, $handler);
+        } finally {
+          \SwallowPHP\Framework\Support\DebugbarTiming::stopMeasure($name);
+        }
       };
     }
     // İşleyiciyi çağır ve isteği işle

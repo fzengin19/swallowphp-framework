@@ -52,11 +52,13 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Query Logging (Optional)
+    | Query Logging (DEPRECATED — v3.1.0)
     |--------------------------------------------------------------------------
-    | database.log_queries: true/false -> Tüm çalıştırılan sorguları loglar.
-    | database.slow_threshold_ms: int  -> Bu eşik üzerindeki sorgular "slow" olarak warning seviyesinde loglanır.
-    | database.log_bindings: true/false -> Log mesajına bound parametreleri dahil eder.
+    | The keys below were read by the now-removed LoggedPDO class. They are
+    | kept here as a no-op so old user configs do not throw, but they have
+    | no effect. To inspect live queries, enable the debugbar:
+    |   config('app.debug') === true
+    | and the SQL panel will collect every query with bindings + backtrace.
     */
     'log_queries' => false,
     'slow_threshold_ms' => 500,

@@ -4,6 +4,81 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-08-18
+
+Minimal debugbar integration. Opt-in: toggle `app.debug` from `false` to `true`
+and the framework exposes six debugbar panels (timeline, memory, request,
+config, SQL, messages) wired automatically. No HTML response injection — the
+view layer is responsible for calling `debugbar()->renderHead()` /
+`debugbar()->render()` when it wants them. The previous
+`LoggedPDO`/`LoggedPDOStatement` shim is replaced by the debugbar's own
+`TraceablePDO` and `PDOCollector`, which carry bindings + backtrace out of the
+box.
+
+### Added
+- **`src/Foundation/DebugbarServiceProvider.php`** — `League\Container`
+  service provider that registers `DebugBar\DebugBar` as a shared singleton
+  with six built-in collectors (`time`, `memory`, `php`, `request`, `messages`,
+  `pdo`). Short-circuits with `RuntimeException` when `app.debug` is false,
+  so the helpers can blanket-catch and skip.
+- **`src/Foundation/DebugbarLogAdapter.php`** — `Psr\Log\LoggerInterface`
+  decorator that forwards every log call to the production logger
+  unchanged and mirrors a copy into the `messages` collector. Best-effort:
+  a missing debugbar never breaks logging.
+- **`debugbar()` helper** in `src/Methods.php` — returns the active
+  `DebugBar\DebugBar` instance, or `null` when the debugbar is disabled
+  or the framework is not yet bootstrapped. Safe to call unconditionally.
+- **`tests/Feature/DebugbarServiceProviderTest.php`** — 10 integration
+  tests covering provider registration, opt-out, helper, log mirroring,
+  PDO collector wiring, and the `app.debug=false` fallbacks.
+- **`src/Support/DebugbarTiming.php`** — `startMeasure()` / `stopMeasure()`
+  wrapper around `TimeDataCollector`. Silent no-op when the debugbar is
+  not bound (`app.debug=false`). Call sites pair the two in `try/finally`
+  so the timeline stays balanced when the inner code throws.
+- **`src/Routing/Router.php`** — `Router::dispatch()` is wrapped in a
+  `'routing'` marker.
+- **`src/Routing/Route.php`** — Middleware pipeline wraps each
+  `$middleware->handle()` call in a `middleware.<class>` marker. The wrap
+  lives at the pipeline level (not in `Middleware::handle()`) so subclasses
+  that override `handle()` without `parent::handle()` still record their
+  timeline entry.
+- **`src/Http/Middleware/Middleware.php`** — `handle()` is now `abstract`.
+  Subclasses implement it directly; the debugbar hook sits in the
+  pipeline so a subclass that overrides `handle()` does not lose its
+  measure.
+- **`src/Methods.php`** — `view()` is wrapped in a `view.<template>`
+  marker. `finally` closes the measure even when the template throws.
+- **`tests/Feature/DebugbarTimelineTest.php`** — 6 tests pinning the
+  routing, middleware, and view markers, plus the `app.debug=false`
+  opt-out path.
+
+### Changed
+- **`src/Database/Database.php`** — `initialize()` now wraps the underlying
+  `PDO` in `DebugBar\DataCollector\PDO\TraceablePDO` and registers it with
+  the `PDOCollector` when the debugbar is available. With `app.debug=false`
+  the connection is a plain `PDO` as before.
+- **`src/Foundation/App.php`** — the `LoggerInterface` factory now wraps the
+  resolved logger in `DebugbarLogAdapter` when the debugbar is enabled.
+  The 3rd-argument `$isString` to `MessagesCollector::addMessage` carries
+  the `Psr\Log` context as a structured payload when present.
+- **`src/Config/database.php`** — `log_queries`, `slow_threshold_ms`,
+  `log_bindings` keys are kept as a no-op (deprecated comment added) so
+  existing user configs do not throw, but they have no effect.
+
+### Removed
+- **`src/Database/Instrumentation/LoggedPDO.php`** and
+  **`src/Database/Instrumentation/LoggedPDOStatement.php`** — replaced by
+  the debugbar's `TraceablePDO` / `TraceablePDOStatement`, which carry
+  binding values, caller backtrace, and slow-query detection out of the
+  box. The dependency on `php-debugbar/php-debugbar` (already in
+  `composer.json`) is now the canonical SQL instrumentation path.
+
+### Deprecated
+- **`database.log_queries` / `database.slow_threshold_ms` /
+  `database.log_bindings`** — formerly read by `LoggedPDO`. Now no-op.
+  To inspect live queries, enable the debugbar (`app.debug=true`) and read
+  the SQL panel.
+
 ## [3.0.4] - 2026-08-18
 
 Bug fix: absolute paths passed as `database.sqlite`, `cache.stores.file.path`,

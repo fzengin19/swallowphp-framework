@@ -866,6 +866,8 @@ if (!function_exists('view')) {
      */
     function view(string $view, array $data = [], ?string $layout = null, int $status = 200): \SwallowPHP\Framework\Http\Response
     {
+        \SwallowPHP\Framework\Support\DebugbarTiming::startMeasure('view.' . $view, 'view.' . $view);
+        try {
         $appViewPath = config('app.view_path', null);
         // Framework's default view path (assuming framework is in vendor)
         $frameworkViewPath = dirname(__DIR__, 2) . '/src/resources/views';
@@ -956,6 +958,9 @@ if (!function_exists('view')) {
         }
 
         return \SwallowPHP\Framework\Http\Response::html($finalContent, $status);
+        } finally {
+            \SwallowPHP\Framework\Support\DebugbarTiming::stopMeasure('view.' . $view);
+        }
     }
 }
 
@@ -1040,6 +1045,31 @@ if (!function_exists('isRoute')) {
 
             // Return false if any error occurred during the check
             return false;
+        }
+    }
+
+    /**
+     * Resolve the active DebugBar instance, or null when the debugbar is
+     * disabled (app.debug === false) or the framework has not been
+     * bootstrapped yet.
+     *
+     * The helper is intentionally forgiving — it returns null rather than
+     * throwing, so application code can call it unconditionally:
+     *
+     *     // In a view, only renders when debugbar is active:
+     *     <?php if (debugbar()): ?>
+     *         <?= debugbar()->renderHead() ?>
+     *         <?= debugbar()->render() ?>
+     *     <?php endif; ?>
+     *
+     * @return \DebugBar\DebugBar|null
+     */
+    function debugbar(): ?\DebugBar\DebugBar
+    {
+        try {
+            return App::container()->get(\DebugBar\DebugBar::class);
+        } catch (\Throwable $_) {
+            return null;
         }
     }
 }

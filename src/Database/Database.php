@@ -176,8 +176,25 @@ class Database
             ];
             $pdoOptions = array_replace($defaultOptions, $options);
 
-            // Use LoggedPDO to enable global query logging at PDO level
-            $this->connection = new \SwallowPHP\Framework\Database\Instrumentation\LoggedPDO($dsn, $username, $password, $pdoOptions);
+            // Use a plain PDO; the debugbar's PDOCollector (when bound in
+            // the container, i.e. when app.debug is true) wraps it in a
+            // TraceablePDO so every query + bindings + backtrace lands in
+            // the SQL panel. The legacy LoggedPDO/LoggedPDOStatement classes
+            // that used to live in src/Database/Instrumentation were
+            // removed in v3.1.0; the database.log_queries config key is
+            // now a no-op.
+            $realPdo = new \PDO($dsn, $username, $password, $pdoOptions);
+            $this->connection = $realPdo;
+            try {
+                $debugbar = App::container()->get(\DebugBar\DebugBar::class);
+                if ($debugbar->hasCollector('pdo')) {
+                    $traced = new \DebugBar\DataCollector\PDO\TraceablePDO($realPdo);
+                    $this->connection = $traced;
+                    $debugbar->getCollector('pdo')->addConnection($traced, $driver);
+                }
+            } catch (\Throwable $_) {
+                // Debugbar not enabled in this environment — plain PDO is fine.
+            }
             $this->connectedSuccessfully = true;
             self::$connections[$cacheKey] = $this->connection;
 

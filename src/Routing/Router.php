@@ -131,6 +131,20 @@ class Router
     /** Dispatches the request to the appropriate route. */
     public static function dispatch(Request $request): mixed
     {
+        // 'routing' covers route matching + middleware pipeline + controller
+        // dispatch. To split controller time out separately, add a marker
+        // around the route's invokable call inside the matched branch.
+        \SwallowPHP\Framework\Support\DebugbarTiming::startMeasure('routing', 'routing');
+        try {
+            return self::dispatchInner($request);
+        } finally {
+            \SwallowPHP\Framework\Support\DebugbarTiming::stopMeasure('routing');
+        }
+    }
+
+    /** Inner dispatch, wrapped by the debugbar 'routing' marker. */
+    private static function dispatchInner(Request $request): mixed
+    {
         self::$request = $request; // Store current request statically
         $requestUriPath = $request->getPath(); // Use getPath() from Request object
 

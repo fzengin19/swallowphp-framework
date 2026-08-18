@@ -134,12 +134,12 @@ class App
                         if (!class_exists(\SwallowPHP\Framework\Log\FileLogger::class)) {
                             throw new \RuntimeException("FileLogger class not found.");
                         }
-                        return new \SwallowPHP\Framework\Log\FileLogger($path, $level);
+                        $logger = new \SwallowPHP\Framework\Log\FileLogger($path, $level);
                     } catch (\Exception $e) {
                         throw new \RuntimeException("Failed to initialize FileLogger: " . $e->getMessage(), 0, $e);
                     }
                 } elseif ($driver === 'errorlog') {
-                    return new class ($level) implements LoggerInterface {
+                    $logger = new class ($level) implements LoggerInterface {
                         use \Psr\Log\LoggerTrait;
                         private int $minLevelValue;
                         private array $logLevels = [LogLevel::DEBUG => 100, LogLevel::INFO => 200, LogLevel::NOTICE => 250, LogLevel::WARNING => 300, LogLevel::ERROR => 400, LogLevel::CRITICAL => 500, LogLevel::ALERT => 550, LogLevel::EMERGENCY => 600];
@@ -162,6 +162,19 @@ class App
                 } else {
                     throw new \RuntimeException("Unsupported log driver [{$driver}] configured for channel '{$defaultChannel}'.");
                 }
+
+                // Mirror every log call into the debugbar's messages panel
+                // when the debugbar is enabled. The wrapper is best-effort:
+                // if the debugbar is missing or the container has not been
+                // fully wired, the production logger is returned unchanged.
+                try {
+                    $debugbar = self::container()->get(\DebugBar\DebugBar::class);
+                    $logger = new DebugbarLogAdapter($logger, $debugbar);
+                } catch (\Throwable $_) {
+                    // Debugbar disabled or not registered; keep the raw logger.
+                }
+
+                return $logger;
             });
 
             // Session Manager Service - Defined AFTER Config and Logger
@@ -212,6 +225,14 @@ class App
                 self::$container->addServiceProvider($provider);
             }
             self::$pendingServiceProviders = [];
+
+            // Debugbar is wired as a service provider so it can be opted
+            // into / out of via app.debug without touching core bootstrap
+            // code. The provider itself short-circuits when app.debug is
+            // false (its DebugBar factory throws, which the call sites
+            // catch). Always registered so the binding exists; consumers
+            // see DebugBar::class only when app.debug === true.
+            self::$container->addServiceProvider(new DebugbarServiceProvider());
         }
         return self::$container;
     }

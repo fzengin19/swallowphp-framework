@@ -282,8 +282,18 @@ class App
             throw new \ErrorException($message, 0, $severity, $file, $line);
         });
 
-        $earlyExceptionHandler = set_exception_handler(function ($exception) {
-            http_response_code(500);
+        // Register the early handler and ALWAYS restore it once the
+        // container is initialised — set_exception_handler() returns the
+        // previous handler (which is `null` when none was registered), but
+        // our handler is still pushed onto the stack regardless. Gating the
+        // restore on a truthy return value leaks our handler into the rest
+        // of the request, where it then fires on every post-send exception
+        // and emits a "headers already sent" warning when it tries to set
+        // the response code a second time.
+        set_exception_handler(function ($exception) {
+            if (!headers_sent()) {
+                http_response_code(500);
+            }
             echo "<h1>Fatal Error</h1><p>An error occurred during application initialization.</p>";
             error_log("Early Exception: " . $exception->getMessage() . " in " . $exception->getFile() . ":" . $exception->getLine());
             exit;
@@ -296,9 +306,9 @@ class App
             $app = self::getInstance(); // This initializes container if not already done
             $container = self::container(); // Get the initialized container
 
-            if ($earlyExceptionHandler) {
-                restore_exception_handler();
-            }
+            // Always restore the exception handler — see the comment on
+            // the set_exception_handler() call above for the reason.
+            restore_exception_handler();
 
             // --- Configure PHP based on loaded config ---
             $config = $container->get(Config::class);

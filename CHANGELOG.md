@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-08-18
+
+Patch release. Two defensive fixes in `App::run()`'s "early" exception
+handler bootstrap — both pre-existing on the path since the initial
+3.0.0 release, both non-breaking, both invisible in the happy path.
+Surfaced by the skeleton's debugbar lifecycle: a `TimeDataCollector`
+measure being double-stopped by the renderer + `finalizeRequest()` now
+no longer leaks into the framework's bootstrap handler.
+
+### Fixed
+- **`src/Foundation/App.php`** — the `set_exception_handler()` closure
+  registered at the top of `App::run()` now guards `http_response_code(500)`
+  with `headers_sent()`. Previously, any uncaught exception that fired
+  after `Response::send()` + `ob_end_flush()` flushed the response
+  headers to the client would trip a `Cannot set response code -
+  headers already sent` PHP warning *before* the handler could log the
+  original failure. The handler is now safe to invoke in the
+  post-send state.
+- **`src/Foundation/App.php`** — `restore_exception_handler()` is now
+  invoked unconditionally after the container is initialised. The old
+  guard `if ($earlyExceptionHandler)` only restored when PHP already
+  had a default exception handler installed (the `set_exception_handler()`
+  return value is the *previous* handler, which is `null` in the common
+  case). Without the restore, the early bootstrap handler was leaked
+  into the rest of the request, ready to fire on every later uncaught
+  exception — and to emit the warning from the previous bullet each
+  time. The pair of fixes is what made the skeleton's
+  `Debugbar::finalizeRequest()` double-stop benign.
+
+### Added
+- **`tests/Feature/EarlyExceptionHandlerTest.php`** (new) — 3 source-shape
+  tests pinning both halves of the fix. Behavioural coverage lives in
+  the downstream skeleton's integration suite; the framework-side test
+  guards against accidental reverts of either guard.
+
 ## [3.1.0] - 2026-08-18
 
 Minimal debugbar integration. Opt-in: toggle `app.debug` from `false` to `true`

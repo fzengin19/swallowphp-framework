@@ -145,7 +145,7 @@ class Database
                         @mkdir($storagePath, 0755, true);
                     }
                 }
-                $dbPath = rtrim($storagePath, '/\\') . '/' . ltrim($database, '/\\');
+                $dbPath = \SwallowPHP\Framework\Support\Path::joinAbsolute($storagePath, $database);
                 $dbDir = dirname($dbPath);
                 if (!is_dir($dbDir)) {
                     if (!@mkdir($dbDir, 0755, true) && !is_dir($dbDir)) {

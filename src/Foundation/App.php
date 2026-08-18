@@ -117,7 +117,7 @@ class App
                     }
 
                     // Combine absolute storage path with relative log file path
-                    $path = rtrim($storagePath, '/\\') . '/' . ltrim($relativePath, '/\\');
+                    $path = \SwallowPHP\Framework\Support\Path::joinAbsolute($storagePath, $relativePath);
 
                     // Ensure the final log directory exists (FileLogger constructor also checks this)
                     $logDir = dirname($path);

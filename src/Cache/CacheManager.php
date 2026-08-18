@@ -89,7 +89,7 @@ class CacheManager
                     @mkdir($storagePath, 0755, true);
             }
 
-            $cachePath = rtrim($storagePath, '/\\') . '/' . ltrim($relativePath, '/\\');
+            $cachePath = \SwallowPHP\Framework\Support\Path::joinAbsolute($storagePath, $relativePath);
 
             return new FileCache($cachePath, $maxSize);
 
@@ -127,7 +127,7 @@ class CacheManager
                     @mkdir($storagePath, 0755, true);
             }
 
-            $dbPath = rtrim($storagePath, '/\\') . '/' . ltrim($relativePath, '/\\');
+            $dbPath = \SwallowPHP\Framework\Support\Path::joinAbsolute($storagePath, $relativePath);
 
             return new SqliteCache($dbPath, $tableName); // Pass table name
 

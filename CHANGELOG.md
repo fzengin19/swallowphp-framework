@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.4] - 2026-08-18
+
+Bug fix: absolute paths passed as `database.sqlite`, `cache.stores.file.path`,
+`cache.stores.sqlite.path`, or any logger `path` config value were being
+silently prefixed by `app.storage_path`, producing a doubled-up path like
+`/var/lib/app/storage/var/lib/app/db.sqlite` and a stray file inside the
+storage tree. Patch release — public API unchanged, only the path-join
+internal is fixed.
+
+### Fixed
+- **Database (sqlite)** — `src/Database/Database.php` no longer prefixes
+  `app.storage_path` when `database.connections.sqlite.database` is already
+  an absolute path. POSIX absolute (`/foo`), Windows drive-letter
+  (`D:\data\app.db`), and UNC (`\\server\share`) paths are now used verbatim.
+- **Cache (file)** — `src/Cache/CacheManager.php` `createFileDriver()` now
+  honours absolute `cache.stores.file.path` values.
+- **Cache (sqlite)** — `src/Cache/CacheManager.php` `createSqliteDriver()`
+  now honours absolute `cache.stores.sqlite.path` values.
+- **Logging (file)** — `src/Foundation/App.php` logger `single` driver now
+  honours an absolute `path` config value.
+
+### Added
+- **src/Support/Path.php** (new) — `Path::joinAbsolute(string $base, string
+  $path)` centralises the "join onto base unless absolute" logic. All four
+  call sites above route through it. Strips a single trailing separator from
+  the base, returns the path verbatim when it's absolute (POSIX / POSIX
+  backslash / Windows drive-letter). Empty path returns the base.
+- **tests/Unit/Support/PathTest.php** (new) — 10 unit tests covering
+  relative join, POSIX absolute, Windows drive-letter, empty path, trailing
+  base slash, and the exact regression case.
+- **tests/Feature/PathJoinRegressionTest.php** (new) — 5 integration tests
+  proving the four call sites no longer prefix the storage path when given
+  an absolute path, and that the relative-path behaviour is preserved.
+
 ## [4.0.0] - 2026-08-17 (yanked)
 
 This release was tagged and reverted in the same day (see commit 501e1c1, which softened the

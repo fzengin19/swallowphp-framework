@@ -150,8 +150,7 @@ return [
     | Use 0 to turn off reporting completely (not recommended unless handled).
     |
     */
-    // 'error_reporting_level' => env('APP_DEBUG', false) ? E_ALL : (E_ALL & ~E_DEPRECATED & ~E_NOTICE),
-    'error_reporting_level' => E_ALL, // Framework default, app should override based on env('APP_DEBUG')
+    'error_reporting_level' => env('APP_DEBUG', false) ? E_ALL : (E_ALL & ~E_DEPRECATED & ~E_NOTICE),
 
     /*
     |--------------------------------------------------------------------------

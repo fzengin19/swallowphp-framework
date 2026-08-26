@@ -272,9 +272,15 @@ class App
     public static function run(): void
     {
         // --- Error and Exception Handling Setup ---
-        error_reporting(E_ALL);
+        // The pre-config bootstrap phase runs on the safe default level:
+        // a deprecation emitted by a dependency must never escalate to an
+        // ErrorException (HTTP 500) before the app's configured
+        // error_reporting_level takes over further below in run().
+        error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
         ini_set('display_errors', 0);
 
+        // Only severities still enabled by error_reporting() become exceptions;
+        // the app-configured level replaces this default once config is loaded.
         set_error_handler(function ($severity, $message, $file, $line) {
             if (!(error_reporting() & $severity)) {
                 return false;

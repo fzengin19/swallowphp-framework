@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3] - 2026-08-26
+
+Patch release. Three defects found in a targeted audit of the request
+path — two critical, one high — plus a message-level inconsistency the
+same audit surfaced.
+
+### Fixed
+- **`src/Cache/FileCache.php`** — `increment()` no longer deadlocks
+  against its own file lock (and `decrement()`, which delegates to it,
+  is fixed by extension). The method used to open the cache file, take
+  an exclusive `flock()` and *then* call `loadCacheIfNeeded()`, which
+  opens a second descriptor to the same inode and requests a shared
+  lock. `flock()` locks belong to the open file description, not to the
+  process, so the request blocked forever waiting on itself
+  (`locks_lock_inode_wait`). `increment()` now reads and writes through
+  the single locked descriptor: the on-disk JSON is decoded inside the
+  exclusive lock, the incremented item is merged into that fresh copy,
+  and the result is written back in place via `ftruncate()` /
+  `fwrite()` / `fflush()`. The rewrite also closes two adjacent hazards:
+  delegating to `saveCache()` would have swapped the inode out from
+  under the held lock with its temp-file + `rename()` write, and a plain
+  `file_put_contents(..., LOCK_EX)` would have taken a second,
+  conflicting lock from another handle. Additionally the in-memory
+  `$this->cache` view is synced to what was written — so later
+  `get()` / `set()` calls on the same instance can no longer clobber
+  the counter with a stale copy of the file — expired items restart
+  their lifetime from the configured TTL instead of staying instantly
+  expired, and over-cap files are handled exactly like
+  `loadCacheIfNeeded()` handles them.
+- **`src/Http/Middleware/RateLimiter.php`** — rate-limit buckets are now
+  keyed by `sha1('rate_limit:' . route . ':' . ip)`, exposed as the new
+  `RateLimiter::buildCacheKey()`. Unnamed routes fall back to their URI
+  for the identity (`/contact`), and `/` is a reserved character that
+  `FileCache::validateKey()` rejects — every unnamed route threw an
+  `InvalidArgumentException` on its very first request, silently
+  disabling rate limiting entirely. Hashing keeps the key within the
+  PSR-16 charset and a bounded length regardless of route name, URI or
+  client IP. The get/set window remains non-atomic near the boundary
+  (unchanged); this fix restores the middleware working at all.
+- **`src/Cache/FileCache.php`** — the `validateKey()` error message
+  listed `:` among the reserved characters while the validation regex
+  does not reject it; the message now states the rule the regex
+  actually enforces.
+- **`src/Foundation/App.php`**, **`src/Config/app.php`** — dependency
+  deprecations no longer escalate to HTTP 500. `App::run()` hardcoded
+  `error_reporting(E_ALL)` while its error handler converts every still-
+  enabled severity into an `ErrorException`; combined with the shipped
+  config defaulting to `E_ALL`, any deprecation emitted by any
+  dependency (`rakit/validation` under PHP 8.4+, for example) turned
+  each affected request into an uncaught exception and a fatal 500.
+  Both the pre-config bootstrap phase and the shipped default now run on
+  the documented safe level (`E_ALL & ~E_DEPRECATED & ~E_NOTICE`, or
+  full `E_ALL` when `APP_DEBUG` is truthy). Apps keep the final word via
+  `app.error_reporting_level`.
+
+### Added
+- **`tests/Feature/ReleaseHotfixTest.php`** (new) — behavioural
+  regression coverage: increment/decrement round-trips without
+  re-entering the file lock; cross-instance increments merge into the
+  on-disk state without losing sibling keys; unnamed-route rate-limit
+  keys pass PSR-16 validation and a real `FileCache` round-trip;
+  deprecations stay non-fatal at the configured reporting level; and
+  source-shape guards pin the safe defaults in `App::run()` and the
+  shipped app config. Concurrency was additionally verified manually
+  (8 parallel processes x 25 increments = exactly 200).
+
 ## [3.1.2] - 2026-08-18
 
 Patch release. One silent runtime defect in the debugbar timeline

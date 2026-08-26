@@ -259,6 +259,8 @@ class FileCache implements CacheInterface
     public function increment(string $key, int $step = 1): int|false
     {
         $this->validateKey($key);
+        $defaultTtl = $this->ttlToTimestamp(config('cache.ttl'));
+
         $fp = @fopen($this->cacheFile, 'c+'); // Open for read/write, create if not exist
         if (!$fp) {
             error_log("Cache error in increment(): Could not open file '{$this->cacheFile}'");
@@ -271,16 +273,43 @@ class FileCache implements CacheInterface
                 return false;
             }
 
-            // Reload cache data inside the lock
-            $this->loaded = false; // Force reload within lock
-            $this->loadCacheIfNeeded();
+            // Read the current state through the SAME descriptor we hold the
+            // exclusive lock on. Never call loadCacheIfNeeded() while holding
+            // this lock: it opens a second handle to this file and requests
+            // LOCK_SH — flock() is not recursive across handles, so the
+            // process would block against its own lock forever.
+            $json = @stream_get_contents($fp, $this->maxCacheSize + 1024);
+            rewind($fp);
 
-            $item = $this->cache[$key] ?? null;
+            if ($json === false) {
+                throw new \RuntimeException("Failed to read cache file content: {$this->cacheFile}");
+            }
+
+            $cache = [];
+            if ($json !== '') {
+                if (strlen($json) > $this->maxCacheSize) {
+                    // Same policy as loadCacheIfNeeded(): an over-cap file is
+                    // treated as unusable and restarted.
+                    error_log("Cache file exceeded max size ({$this->maxCacheSize} bytes): {$this->cacheFile}. Cache cleared.");
+                } else {
+                    $data = json_decode($json, true);
+                    if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+                        error_log("Cache file corruption detected: " . json_last_error_msg() . " in {$this->cacheFile}");
+                    } else {
+                        $cache = $data;
+                    }
+                }
+            }
+
+            $item = $cache[$key] ?? null;
+            $expired = $item !== null
+                && isset($item['expiration']) && is_int($item['expiration'])
+                && time() >= $item['expiration'];
             $currentValue = 0;
 
-            if ($item !== null && !$this->isExpired($key) && isset($item['value']) && is_numeric($item['value'])) {
+            if ($item !== null && !$expired && isset($item['value']) && is_numeric($item['value'])) {
                 $currentValue = (int) $item['value'];
-            } elseif ($item !== null && !$this->isExpired($key)) {
+            } elseif ($item !== null && !$expired) {
                 // Item exists but is not numeric, cannot increment
                 error_log("Cache error in increment(): Value for key '{$key}' is not numeric.");
                 flock($fp, LOCK_UN);
@@ -290,16 +319,43 @@ class FileCache implements CacheInterface
 
             $newValue = $currentValue + $step;
 
-            // Save the new value (using set logic without reload)
-            $expirationTimestamp = $item['expiration'] ?? $this->ttlToTimestamp(config('cache.ttl'));
-            $this->cache[$key] = [
+            // An expired item restarts its lifetime from the configured TTL.
+            $expirationTimestamp = (!$expired && isset($item['expiration'])) ? $item['expiration'] : $defaultTtl;
+            $cache[$key] = [
                 'value' => $newValue,
                 'expiration' => $expirationTimestamp,
                 'created_at' => $item['created_at'] ?? time()
             ];
 
-            if (!$this->saveCache()) { // saveCache handles prune and writing
-                flock($fp, LOCK_UN); // Ensure unlock on save failure
+            // Keep the in-memory view coherent with what we are about to write
+            // so later get()/set()/saveCache() calls on this instance cannot
+            // clobber the counter with a stale copy of the file.
+            $this->cache = $cache;
+            $this->loaded = true;
+
+            $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+            $json = json_encode($this->cache, $flags);
+            if ($json !== false && strlen($json) > $this->maxCacheSize) {
+                $this->pruneCacheIfNeeded();
+                $json = json_encode($this->cache, $flags);
+            }
+            if ($json === false) {
+                error_log("Failed to encode cache data: " . json_last_error_msg());
+                flock($fp, LOCK_UN);
+                return false;
+            }
+
+            // Write in place through the locked descriptor. saveCache()'s
+            // temp-file+rename would swap the inode out from under our lock,
+            // and file_put_contents(..., LOCK_EX) would take a SECOND lock on
+            // the same inode from another handle — both deadlock or race here.
+            $written = false;
+            if (ftruncate($fp, 0)) {
+                $written = fwrite($fp, $json);
+            }
+            if ($written === false || $written < strlen($json) || !fflush($fp)) {
+                error_log("Failed to write cache file: {$this->cacheFile}");
+                flock($fp, LOCK_UN); // Ensure unlock on write failure
                 return false;
             }
 
@@ -466,7 +522,7 @@ class FileCache implements CacheInterface
             throw new \InvalidArgumentException("Cache key cannot be empty.");
         }
         if (preg_match('/[{}()\/\\\\@]/', $key)) {
-            throw new \InvalidArgumentException("Cache key '{$key}' contains reserved characters: {}()/\@:");
+            throw new \InvalidArgumentException("Cache key '{$key}' contains reserved characters: {}()/\@");
         }
     }
 

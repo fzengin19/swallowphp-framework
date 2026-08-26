@@ -51,8 +51,7 @@ class RateLimiter
             }
             return;
         }
-        $routeName = $route->getName() ?? $route->getUri(); // Use name or URI for key
-        $cacheKey = 'rate_limit:' . $routeName . ':' . $ipAddress;
+        $cacheKey = self::buildCacheKey($route, $ipAddress);
 
         $cache = App::container()->get(CacheInterface::class); // Get cache instance
 
@@ -104,4 +103,18 @@ class RateLimiter
     }
 
      // getClientIp was here, but moved to Request class
+
+    /**
+     * Builds the PSR-16-safe cache key for a rate-limit bucket.
+     *
+     * Unnamed routes fall back to their URI ("/contact"), which contains "/"
+     * — a reserved cache-key character that FileCache::validateKey() rejects.
+     * Hashing the identity keeps the key within the allowed charset and a
+     * bounded length regardless of route name/URI/IP input.
+     */
+    public static function buildCacheKey(Route $route, string $ipAddress): string
+    {
+        $routeName = $route->getName() ?? $route->getUri();
+        return sha1('rate_limit:' . $routeName . ':' . $ipAddress);
+    }
 }
